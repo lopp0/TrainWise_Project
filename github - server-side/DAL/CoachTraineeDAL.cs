@@ -4,7 +4,7 @@ namespace TrainWise.DAL
 {
     public class CoachTraineeDAL : DBservice
     {
-        public void Connect(int coachId, int userId)
+        public void ConnectTrainee(int coachId, int userId)
         {
             using (SqlConnection con = Connect())
             {
@@ -20,7 +20,7 @@ namespace TrainWise.DAL
             }
         }
 
-        public void Disconnect(int coachId, int userId)
+        public void DisconnectTrainee(int coachId, int userId)
         {
             using (SqlConnection con = Connect())
             {
