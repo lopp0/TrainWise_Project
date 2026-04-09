@@ -108,6 +108,41 @@ namespace TrainWise.DAL
                 }
             }
         }
+        
+        public void DeleteCoach(int coachId)
+        {
+            using (SqlConnection con = Connect())
+            {
+                var param = new Dictionary<string, object> { { "@CoachID", coachId } };
+                using (SqlCommand cmd = CreateCommandWithStoredProcedure("sp_DeleteCoach", con, param))
+                {
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+        public Coach? GetCoachByUserId(int userId)
+        {
+            using (SqlConnection con = Connect())
+            {
+                var param = new Dictionary<string, object> { { "@UserID", userId } };
+                using (SqlCommand cmd = CreateCommandWithStoredProcedure("sp_GetCoachByUserID", con, param))
+                using (SqlDataReader reader = cmd.ExecuteReader())
+                {
+                    if (reader.Read())
+                    {
+                        return new Coach
+                        {
+                            CoachID = (int)reader["CoachID"],
+                            UserID = (int)reader["UserID"],
+                            FullName = reader["FullName"].ToString(),
+                            Email = reader["Email"].ToString()
+                        };
+                    }
+                }
+            }
+            return null;
+        }
     }
 }
 
