@@ -81,14 +81,21 @@ namespace TrainWise.BL
             _dal.UpdateUser(u);
         }
 
-        public void Delete(int userId)
+       public void Delete(int userId)
         {
-            if (userId <= 0)
-                throw new ArgumentException("UserID must be positive");
-
-            _dal.DeleteUser(userId);
+        if (userId <= 0)
+            throw new ArgumentException("UserID must be positive")
+        var user = _dal.GetUserById(userId);
+        if (user != null && user.IsCoach)
+        {
+            CoachDAL coachDal = new CoachDAL();
+            var coach = coachDal.GetCoachByUserId(userId);
+            if (coach != null)
+                coachDal.DeleteCoach(coach.CoachID);
         }
 
+    _dal.DeleteUser(userId);
+}
         public User? GetById(int userId)
         {
             if (userId <= 0)
