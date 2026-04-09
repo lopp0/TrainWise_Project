@@ -19,10 +19,10 @@ namespace TrainWise.BL
             if (_userDal.GetUserById(userId) == null)
                 throw new ArgumentException("User does not exist");
 
-            _dal.Connect(coachId, userId);
+            _dal.ConnectTrainee(coachId, userId);
         }
 
-        public void Disconnect(int coachId, int userId)
+        public void DisconnectTrainee(int coachId, int userId)
         {
             if (coachId <= 0) throw new ArgumentException("CoachID must be positive");
             if (userId <= 0) throw new ArgumentException("UserID must be positive");
