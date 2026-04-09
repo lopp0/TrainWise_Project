@@ -1,4 +1,4 @@
-﻿namespace TrainWise.BL
+namespace TrainWise.BL.Models
 {
     public class CreateInjuryReportRequest
     {
