@@ -200,7 +200,8 @@ namespace TrainWise.DAL
                 BaselineEstablishedDate = reader["BaselineEstablishedDate"] as DateTime?,
                 HealthDeclaration = reader["HealthDeclaration"] as bool? ?? false,
                 ConfirmTerms = reader["ConfirmTerms"] as bool? ?? false,
-                TermConfirmationDate = reader["TermConfirmationDate"] as DateTime?
+                TermConfirmationDate = reader["TermConfirmationDate"] as DateTime?,
+                IsCoach = reader["IsCoach"] as bool? ?? false
             };
         }
     }
