@@ -20,7 +20,7 @@ namespace TrainWise.DAL
                     {"@DistanceKM", al.DistanceKM},
                     {"@AvgHeartRate", al.AvgHeartRate ?? (object)DBNull.Value},
                     {"@MaxHeartRate", al.MaxHeartRate ?? (object)DBNull.Value},
-                    {"@CaloriesBurned", al.CaloriesBurned},
+                   {"@CaloriesBurned", al.CaloriesBurned ?? (object)DBNull.Value},
                     {"@SourceDevice", al.SourceDevice},
                     {"@ExertionLevel", al.ExertionLevel},
                     {"@Duration", al.Duration},
@@ -48,7 +48,7 @@ namespace TrainWise.DAL
                     {"@DistanceKM", al.DistanceKM},
                     {"@AvgHeartRate", al.AvgHeartRate ?? (object)DBNull.Value},
                     {"@MaxHeartRate", al.MaxHeartRate ?? (object)DBNull.Value},
-                    {"@CaloriesBurned", al.CaloriesBurned},
+                    {"@CaloriesBurned", al.CaloriesBurned ?? (object)DBNull.Value},
                     {"@ExertionLevel", al.ExertionLevel},
                     {"@Duration", al.Duration},
                     {"@CalculatedLoadForSession", al.CalculatedLoadForSession}
