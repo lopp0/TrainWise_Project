@@ -1,15 +1,17 @@
+// שכבת API ראשית — axios instance + פונקציות auth ו-activity logs
 import axios from 'axios';
 
 /**
- * Shared axios instance for all API calls to the TrainWise backend.
- * No JWT token system - uses session-based auth with userId.
+ * axios instance משותף לכל קריאות ה-API ל-backend של TrainWise.
+ * אין JWT — מבוסס session עם userId.
  */
 
-// API Configuration
-const BASE_URL = 'http://127.0.0.1:5249'; // Reaches PC via `adb reverse tcp:5249 tcp:5249` over USB
-const API_TIMEOUT = 30000; // 30 seconds
+// כתובת הבסיס — הטלפון מגיע ל-PC דרך 'adb reverse tcp:5249 tcp:5249'
+const BASE_URL = 'http://127.0.0.1:5249';
+// timeout של 30 שניות לכל בקשה
+const API_TIMEOUT = 30000;
 
-// Create axios instance with default config
+// יצירת axios instance עם הגדרות ברירת מחדל
 const apiClient = axios.create({
   baseURL: BASE_URL,
   timeout: API_TIMEOUT,
@@ -19,24 +21,23 @@ const apiClient = axios.create({
 });
 
 // ============================================================================
-// AUTH ENDPOINTS
+// AUTH ENDPOINTS — כניסה והרשמה
 // ============================================================================
 
 /**
- * Login user with email and password.
- * Returns full User object on success.
- * @param {string} email - User email
- * @param {string} password - User password
- * @returns {Promise<Object>} User object containing userId, fullName, etc.
+ * login — כניסה עם אימייל וסיסמה.
+ * מחזיר אובייקט User מלא עם userId, fullName וכו'.
  */
 export const login = async (email, password) => {
   try {
+    // POST לנקודת הקצה של ה-login
     const response = await apiClient.post('/api/auth/login', {
       email,
       password,
     });
     return response.data;
   } catch (error) {
+    // הצגת הודעת שגיאה ידידותית
     throw new Error(
       error.response?.data || 'Login failed. Please check your credentials.'
     );
@@ -44,12 +45,12 @@ export const login = async (email, password) => {
 };
 
 /**
- * Register a new user. Backend hard-codes ProfileImagePath, baseline fields, and CreatedAt
- * server-side — extra fields in the payload are ignored by the ASP.NET deserializer.
- * @param {Object} payload - CreateUserRequest shape: fullName, birthYear, gender, height,
+ * registerUser — הרשמת משתמש חדש.
+ * השרת קובע בעצמו profileImagePath, שדות baseline ו-CreatedAt.
+ * @param {Object} payload - CreateUserRequest: fullName, birthYear, gender, height,
  *   weight, activityLevel, deviceType, userName, email, password, experienceLevel,
  *   healthDeclaration, confirmTerms, termConfirmationDate, isCoach.
- * @returns {Promise<Object>} `{ userID }` on success
+ * @returns {Promise<Object>} { userID } בהצלחה
  */
 export const registerUser = async (payload) => {
   try {
@@ -63,23 +64,19 @@ export const registerUser = async (payload) => {
 };
 
 // ============================================================================
-// ACTIVITY LOG ENDPOINTS
+// ACTIVITY LOG ENDPOINTS — יומן פעילות
 // ============================================================================
 
 /**
- * Fetch all activity logs for a specific user.
- * @param {number} userId - The user ID
- * @returns {Promise<Array>} Array of activity log objects
+ * getActivityLogs — שליפת כל לוגי הפעילות של משתמש.
+ * מוסיף מידע מפורט על השגיאה כדי לעזור בדיבאג (backend down, adb reverse וכו').
  */
 export const getActivityLogs = async (userId) => {
   try {
     const response = await apiClient.get(`/api/ActivityLog/user/${userId}`);
     return response.data;
   } catch (error) {
-    // Surface the actual cause (network vs HTTP status vs server message)
-    // so a failure here doesn't show up as the opaque "Failed to fetch
-    // activity logs" RedBox. Common causes: backend down, adb reverse not
-    // set after fresh APK install, or a 500 from the controller.
+    // בניית הודעת שגיאה מפורטת — HTTP status + body
     const status = error.response?.status;
     const body = error.response?.data;
     const detail = status
@@ -91,10 +88,8 @@ export const getActivityLogs = async (userId) => {
 };
 
 /**
- * Create a new activity log entry.
- * Must include all required fields from the activity log schema.
- * @param {Object} activityData - Activity log object
- * @returns {Promise<Object>} Created activity log with ID
+ * postActivityLog — יצירת רשומת פעילות חדשה.
+ * נדרש למלא את כל שדות הסכמה של ActivityLog.
  */
 export const postActivityLog = async (activityData) => {
   try {
@@ -107,9 +102,8 @@ export const postActivityLog = async (activityData) => {
 };
 
 /**
- * Update an existing activity log.
- * @param {Object} activityData - Activity log object with ID
- * @returns {Promise<Object>} Updated activity log
+ * putActivityLog — עדכון רשומת פעילות קיימת.
+ * משמש לאישור אימוני Health Connect (שינוי exertionLevel + isConfirmed).
  */
 export const putActivityLog = async (activityData) => {
   try {
@@ -122,9 +116,7 @@ export const putActivityLog = async (activityData) => {
 };
 
 /**
- * Delete an activity log by ID.
- * @param {number} activityLogId - The activity log ID to delete
- * @returns {Promise<void>}
+ * deleteActivityLog — מחיקת רשומת פעילות לפי ID.
  */
 export const deleteActivityLog = async (activityLogId) => {
   try {
@@ -136,13 +128,11 @@ export const deleteActivityLog = async (activityLogId) => {
 };
 
 // ============================================================================
-// USER DEVICE ENDPOINTS
+// USER DEVICE ENDPOINTS — מכשירי המשתמש
 // ============================================================================
 
 /**
- * Fetch all devices linked to a user.
- * @param {number} userId - The user ID
- * @returns {Promise<Array>} Array of device objects
+ * getUserDevices — שליפת כל המכשירים המקושרים למשתמש.
  */
 export const getUserDevices = async (userId) => {
   try {
@@ -155,10 +145,8 @@ export const getUserDevices = async (userId) => {
 };
 
 /**
- * Register a new device for a user.
- * @param {number} userId - The user ID
- * @param {Object} deviceData - Device info (deviceName, lastSync, permissionsGranted)
- * @returns {Promise<Object>} Created device object with ID
+ * postUserDevice — רישום מכשיר חדש למשתמש.
+ * @param {Object} deviceData - deviceName, lastSync, permissionsGranted
  */
 export const postUserDevice = async (userId, deviceData) => {
   try {
@@ -174,11 +162,7 @@ export const postUserDevice = async (userId, deviceData) => {
 };
 
 /**
- * Update device information (e.g., lastSync timestamp).
- * @param {number} userId - The user ID
- * @param {number} deviceId - The device ID
- * @param {Object} deviceData - Updated device info
- * @returns {Promise<Object>} Updated device object
+ * putUserDevice — עדכון פרטי מכשיר (לדוגמה lastSync).
  */
 export const putUserDevice = async (userId, deviceId, deviceData) => {
   try {
@@ -194,23 +178,23 @@ export const putUserDevice = async (userId, deviceId, deviceData) => {
 };
 
 // ============================================================================
-// HELPER FUNCTIONS
+// HELPER FUNCTIONS — עזרים
 // ============================================================================
 
 /**
- * Update the base URL dynamically (useful for env-based URLs).
- * @param {string} newUrl - New base URL
+ * setBaseURL — שינוי כתובת הבסיס בזמן ריצה.
+ * שימושי לסביבות שונות (dev/staging/prod).
  */
 export const setBaseURL = (newUrl) => {
   apiClient.defaults.baseURL = newUrl;
 };
 
 /**
- * Get the current base URL.
- * @returns {string} Current base URL
+ * getBaseURL — קריאת כתובת הבסיס הנוכחית.
  */
 export const getBaseURL = () => {
   return apiClient.defaults.baseURL;
 };
 
+// ה-instance הגולמי — לשימוש ישיר כשצריך headers נוספים או interceptors
 export default apiClient;

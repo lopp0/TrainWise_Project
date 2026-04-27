@@ -1,3 +1,4 @@
+// מסך סיום הרשמה — אימייל, סיסמה, הסכמות וכפתור "Done"
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
@@ -10,59 +11,83 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Animated,
+  Animated,       // אנימציית pulse בזמן שליחה
 } from 'react-native';
+// SafeAreaView — מגן על notch ובר תחתון
 import { SafeAreaView } from 'react-native-safe-area-context';
+// שליטה בשורת הסטטוס
 import { StatusBar } from 'expo-status-bar';
+// אייקוני ✓ וחיצים
 import { Ionicons, AntDesign } from '@expo/vector-icons';
+// login מה-AuthContext — לכניסה אוטומטית לאחר הרשמה
 import { useAuth } from '../api/AuthContext';
+// registerUser — שליחת DTO לשרת
 import { registerUser } from '../api/api';
 
-// ─── Checkbox ─────────────────────────────────────────────────────
+// ─── קומפוננט Checkbox — תיבת סימון מותאמת ───────────────────────
+// props: checked (boolean), onPress (callback), children (תווית)
 const Checkbox = ({ checked, onPress, children }) => (
   <TouchableOpacity style={s.checkRow} onPress={onPress} activeOpacity={0.75}>
+    {/* ריבוע הסימון — אדום כשמסומן */}
     <View style={[s.checkBox, checked && s.checkBoxChecked]}>
+      {/* ✓ מוצג רק כשמסומן */}
       {checked && <Ionicons name="checkmark" size={13} color="#fff" />}
     </View>
+    {/* תוכן התווית */}
     {children}
   </TouchableOpacity>
 );
 
-// ─── Screen ───────────────────────────────────────────────────────
+// ─── מפות המרה מטקסט לערכים נומריים ─────────────────────────────
+// רמת פעילות: מילה → ערך נומרי לשרת
 const ACTIVITY_LEVEL = { Beginner: 1, Regular: 2, Advanced: 3 };
+// רמת ניסיון: מילה → ערך נומרי לשרת
 const EXPERIENCE_LEVEL = { Low: 1, Medium: 3, High: 5 };
 
 const SignUpFinal = ({ navigation, route }) => {
+  // login — לכניסה אוטומטית לאחר הרשמה מוצלחת
   const { login } = useAuth();
+  // פרמטרים שהועברו ממסכי ההרשמה הקודמים
   const {
     name, age, weight, height, sex,
     trainingLevel, weeklyEst, role, profileImage,
   } = route?.params ?? {};
 
+  // שדות הטופס
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  // שלוש הסכמות — חייבות להיות מסומנות לפני שליחה
   const [agreedTOS, setAgreedTOS] = useState(false);
   const [agreedPrivacy, setAgreedPrivacy] = useState(false);
   const [agreedMedical, setAgreedMedical] = useState(false);
+  // האם שליחה בתהליך — חוסם כפתור ומפעיל ספינר
   const [submitting, setSubmitting] = useState(false);
+  // ערך אנימציה לאפקט pulse בזמן שליחה
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  // אנימציית pulse — פועלת כל עוד submitting=true
   useEffect(() => {
     if (submitting) {
       const pulse = Animated.loop(
         Animated.sequence([
+          // דעיכה מלאה
           Animated.timing(fadeAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
+          // דעיכה כמעט מלאה
           Animated.timing(fadeAnim, { toValue: 0.15, duration: 900, useNativeDriver: true }),
         ])
       );
       pulse.start();
+      // ניקוי האנימציה כשמפסיקים לשלוח
       return () => pulse.stop();
     } else {
+      // איפוס opacity לאפס כשאין שליחה
       fadeAnim.setValue(0);
     }
   }, [submitting]);
 
+  // regex לאימות פורמט אימייל בסיסי
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  // כפתור Done פעיל רק אם כל התנאים מתקיימים
   const canSubmit =
     emailValid &&
     password.trim().length > 0 &&
@@ -70,38 +95,49 @@ const SignUpFinal = ({ navigation, route }) => {
     agreedPrivacy &&
     agreedMedical;
 
+  // שליחת טופס ההרשמה
   const handleDone = async () => {
     if (!canSubmit) return;
 
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    // תאריך היום בפורמט YYYY-MM-DD לשדה termConfirmationDate
+    const todayStr = now.toISOString().split('T')[0];
 
+    // בניית ה-DTO — ממירים את ערכי הסקר לפורמט שהשרת מצפה
     const payload = {
       fullName:                name ?? null,
+      // גיל → שנת לידה: שנה נוכחית פחות הגיל
       birthYear:               age != null ? now.getFullYear() - age : null,
+      // מגדר: ממפה 'male'/'female' לאנגלית גדולה
       gender:                  sex === 'male' ? 'Male' : sex === 'female' ? 'Female' : null,
       height:                  height ?? null,
       weight:                  weight ?? null,
+      // רמת פעילות: ממיר מחרוזת לנומרי
       activityLevel:           ACTIVITY_LEVEL[trainingLevel] ?? null,
       createdAt:               now.toISOString(),
+      // סוג מכשיר: 'android' או 'ios' לפי מה שרץ בפועל
       deviceType:              Platform.OS,
       userName:                null,
       email:                   email.trim(),
       password:                password,
+      // רמת ניסיון: ממיר מחרוזת לנומרי
       experienceLevel:         EXPERIENCE_LEVEL[weeklyEst] ?? null,
       healthDeclaration:       agreedMedical,
       confirmTerms:            agreedTOS,
       termConfirmationDate:    todayStr,
       profileImagePath:        profileImage ?? null,
+      // baseline טרם הוקם בהרשמה ראשונית
       isBaselineEstablished:   false,
       baselineEstablishedDate: null,
+      // isCoach: אמת אם תפקיד 'trainer' או 'both'
       isCoach:                 role === 'trainer' || role === 'both',
     };
 
     setSubmitting(true);
     try {
+      // רישום המשתמש בשרת
       await registerUser(payload);
-      // Auto-login so the user lands directly in the app
+      // כניסה אוטומטית — המשתמש נכנס ישירות לאפליקציה ללא מסך Login
       await login(email.trim(), password);
     } catch (err) {
       Alert.alert('Sign Up Failed', err.message || 'Something went wrong. Please try again.');
@@ -112,25 +148,28 @@ const SignUpFinal = ({ navigation, route }) => {
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
       <StatusBar style="light" />
+      {/* KeyboardAvoidingView — מונע מהמקלדת לכסות שדות */}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
           contentContainerStyle={s.scroll}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="handled"   // לחיצה על כפתור סוגרת מקלדת
           showsVerticalScrollIndicator={false}
         >
 
-          {/* Back arrow */}
+          {/* חץ חזרה — מושבת בזמן שליחה */}
           <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7} disabled={submitting}>
             <Ionicons name="arrow-back" size={24} color="#ff2c60" />
           </TouchableOpacity>
 
-          {/* Title */}
+          {/* כותרת "Sign Up" עם אפקט echo (שתי שכבות) */}
           <View style={s.titleWrapper}>
+            {/* שכבת הצל — סגולה, מוזזת */}
             <Text style={[s.titleBase, s.titleEcho]}>Sign Up</Text>
+            {/* שכבת החזית — ורוד */}
             <Text style={[s.titleBase, s.titleFront]}>Sign Up</Text>
           </View>
 
-          {/* Email */}
+          {/* שדה אימייל */}
           <Text style={s.fieldLabel}>YOUR EMAIL:</Text>
           <TextInput
             style={s.input}
@@ -143,7 +182,7 @@ const SignUpFinal = ({ navigation, route }) => {
             autoCorrect={false}
           />
 
-          {/* Password */}
+          {/* שדה סיסמה */}
           <Text style={[s.fieldLabel, { marginTop: 22 }]}>YOUR PASSWORD:</Text>
           <TextInput
             style={s.input}
@@ -151,42 +190,46 @@ const SignUpFinal = ({ navigation, route }) => {
             placeholderTextColor="rgba(19,23,61,0.35)"
             value={password}
             onChangeText={setPassword}
-            secureTextEntry
+            secureTextEntry          // הסתרת הסיסמה
             autoCapitalize="none"
             autoCorrect={false}
           />
 
-          {/* Google */}
+          {/* כניסה עם Google (כפתור UI בלבד — לא ממומש) */}
           <Text style={s.googlePrompt}>Or sign up with google:</Text>
           <TouchableOpacity style={s.googleBtn} activeOpacity={0.85}>
             <AntDesign name="google" size={20} color="#EA4335" />
             <Text style={s.googleText}>Sign in with Google</Text>
           </TouchableOpacity>
 
-          {/* Checkboxes */}
+          {/* קטע הסכמות — שלושה Checkboxes */}
           <View style={s.checkSection}>
+            {/* הסכמה לתנאי שימוש */}
             <Checkbox checked={agreedTOS} onPress={() => setAgreedTOS(v => !v)}>
               <Text style={s.checkLabel}>
                 I agree to the <Text style={s.checkLink}>TOS</Text>
               </Text>
             </Checkbox>
+            {/* הסכמה למדיניות פרטיות */}
             <Checkbox checked={agreedPrivacy} onPress={() => setAgreedPrivacy(v => !v)}>
               <Text style={s.checkLabel}>
                 I agree to the <Text style={s.checkLink}>Privacy Policy</Text>
               </Text>
             </Checkbox>
+            {/* הצהרה רפואית */}
             <Checkbox checked={agreedMedical} onPress={() => setAgreedMedical(v => !v)}>
               <Text style={s.checkLabel}>I have a medical agreement</Text>
             </Checkbox>
           </View>
 
-          {/* Done */}
+          {/* כפתור Done — מושבת כשהטופס לא תקין או בשליחה */}
           <TouchableOpacity
             style={[s.doneBtn, (!canSubmit || submitting) && s.btnDisabled]}
             activeOpacity={canSubmit && !submitting ? 0.82 : 1}
             onPress={handleDone}
             disabled={!canSubmit || submitting}
           >
+            {/* ספינר בזמן שליחה; טקסט "Done!" בשאר הזמן */}
             {submitting ? (
               <ActivityIndicator color="#fff" />
             ) : (
@@ -194,6 +237,7 @@ const SignUpFinal = ({ navigation, route }) => {
             )}
           </TouchableOpacity>
 
+          {/* הודעת "loading" עם אנימציית pulse — מוצגת בזמן שליחה */}
           {submitting && (
             <Animated.Text style={[s.loadingNote, { opacity: fadeAnim }]}>
               Loading up profile...{'\n'}Your patiance is appreciated!
@@ -206,8 +250,11 @@ const SignUpFinal = ({ navigation, route }) => {
   );
 };
 
+// סגנונות המסך
 const s = StyleSheet.create({
+  // רקע כחול כהה — עקבי עם WelcomeScreen
   safe: { flex: 1, backgroundColor: '#13173d' },
+  // גלילה מרכוזית עם padding
   scroll: {
     alignItems: 'center',
     paddingHorizontal: 24,
@@ -215,26 +262,29 @@ const s = StyleSheet.create({
     paddingBottom: 48,
   },
 
-  // Back button
+  // כפתור חזרה
   backBtn: {
     alignSelf: 'flex-start',
     marginBottom: 8,
     padding: 4,
   },
 
-  // Title
+  // עטיפת כותרת — לפריסה של שתי שכבות
   titleWrapper: { paddingBottom: 8, paddingRight: 8, marginBottom: 32 },
+  // בסיס כותרת — משותף לשתי השכבות
   titleBase: {
     fontSize: 52,
     fontWeight: '900',
     fontStyle: 'italic',
     letterSpacing: 1,
-    transform: [{ rotate: '-3deg' }],
+    transform: [{ rotate: '-3deg' }],  // הטיה קלה לאפקט ויזואלי
   },
+  // שכבת הצל — סגולה, מוזזת ימינה ולמטה
   titleEcho: { color: '#c524e6', position: 'absolute', top: 5, left: 5 },
+  // שכבת החזית — ורוד
   titleFront: { color: '#ff2c60' },
 
-  // Field labels
+  // תוויות שדה (YOUR EMAIL, YOUR PASSWORD)
   fieldLabel: {
     alignSelf: 'flex-start',
     color: '#ff2c60',
@@ -245,7 +295,7 @@ const s = StyleSheet.create({
     marginBottom: 10,
   },
 
-  // Input
+  // שדה קלט — רקע לבן עם מסגרת מנטה
   input: {
     width: '100%',
     backgroundColor: '#ffffff',
@@ -258,7 +308,7 @@ const s = StyleSheet.create({
     color: '#13173d',
   },
 
-  // Google
+  // טקסט "Or sign up with google"
   googlePrompt: {
     color: '#a0a0c0',
     fontSize: 12,
@@ -266,6 +316,7 @@ const s = StyleSheet.create({
     marginBottom: 10,
     textAlign: 'center',
   },
+  // כפתור Google — לבן עם צל
   googleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -284,9 +335,11 @@ const s = StyleSheet.create({
   },
   googleText: { color: '#3c3c3c', fontSize: 15, fontWeight: '600' },
 
-  // Checkboxes
+  // קטע הסכמות
   checkSection: { width: '100%', marginTop: 28, gap: 16 },
+  // שורת Checkbox
   checkRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  // ריבוע הסימון — מסגרת אדומה
   checkBox: {
     width: 22,
     height: 22,
@@ -296,15 +349,18 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // ריבוע מסומן — רקע אדום
   checkBoxChecked: { backgroundColor: '#ff2c60' },
   checkLabel: { color: '#ffffff', fontSize: 13, fontWeight: '500', flex: 1 },
+  // קישור בתוך תווית (TOS, Privacy Policy)
   checkLink: { color: '#ff2c60', fontWeight: '700', textDecorationLine: 'underline' },
 
+  // כפתור מושבת — שקיפות גבוהה
   btnDisabled: {
     opacity: 0.35,
   },
 
-  // Done button
+  // כפתור Done — אדום עם מסגרת סגולה
   doneBtn: {
     marginTop: 36,
     width: '65%',
@@ -326,6 +382,7 @@ const s = StyleSheet.create({
     fontWeight: '900',
     fontStyle: 'italic',
   },
+  // הודעת pulse בזמן שליחה
   loadingNote: {
     color: '#a0a0c0',
     fontSize: 11,

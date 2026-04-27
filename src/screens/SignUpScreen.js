@@ -1,3 +1,4 @@
+// מסך הרשמה ראשוני — פרטים אישיים, גיל/משקל/גובה, רמת אימון, תפקיד
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
@@ -15,21 +16,31 @@ import {
   Platform,
   Dimensions,
 } from 'react-native';
+// SafeAreaView — מגן על notch
 import { SafeAreaView } from 'react-native-safe-area-context';
+// שליטה בשורת הסטטוס
 import { StatusBar } from 'expo-status-bar';
+// אייקוני חץ וסימון
 import { Ionicons } from '@expo/vector-icons';
+// בחירת תמונה מגלריה
 import * as ImagePicker from 'expo-image-picker';
 
+// רוחב המסך לחישוב גדלים יחסיים
 const { width: SCREEN_W } = Dimensions.get('window');
+// גודל עיגולי הבחירה לתפקיד (Trainer/Trainee/Both) — 3 עיגולים שורה
 const CIRCLE_SIZE = Math.floor((SCREEN_W - 48 - 32) / 3);
 
-// ─── Local styled dropdown ────────────────────────────────────────
+// ─── Dropdown מקומי (בלי תלות ב-ComboBox) ────────────────────────
+// props: items (מערך {label, value}), value, onChange, placeholder
 const DropDown = ({ items, value, onChange, placeholder }) => {
+  // האם הרשימה פתוחה
   const [open, setOpen] = useState(false);
+  // החיפוש של ה-item הנבחר
   const selected = items.find(i => i.value === value);
 
   return (
     <>
+      {/* שדה הבחירה — לחיצה פותחת Modal */}
       <TouchableOpacity style={dd.field} onPress={() => setOpen(true)} activeOpacity={0.8}>
         <Text style={[dd.text, !selected && dd.placeholder]} numberOfLines={1}>
           {selected ? selected.label : placeholder}
@@ -37,10 +48,14 @@ const DropDown = ({ items, value, onChange, placeholder }) => {
         <Ionicons name="chevron-down" size={14} color="#aaa" />
       </TouchableOpacity>
 
+      {/* Modal הרשימה */}
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        {/* לחיצה על הרקע סוגרת */}
         <Pressable style={dd.backdrop} onPress={() => setOpen(false)}>
+          {/* עצירת הפצת לחיצה מהגיליון */}
           <Pressable style={dd.sheet} onPress={() => {}}>
             <Text style={dd.sheetTitle}>{placeholder}</Text>
+            {/* רשימת אפשרויות */}
             <FlatList
               data={items}
               keyExtractor={item => String(item.value)}
@@ -53,6 +68,7 @@ const DropDown = ({ items, value, onChange, placeholder }) => {
                     onPress={() => { onChange(item.value); setOpen(false); }}
                   >
                     <Text style={[dd.itemText, isSel && dd.itemTextSel]}>{item.label}</Text>
+                    {/* ✓ לפריט הנבחר */}
                     {isSel && <Ionicons name="checkmark" size={16} color="#ff2c60" />}
                   </TouchableOpacity>
                 );
@@ -65,7 +81,9 @@ const DropDown = ({ items, value, onChange, placeholder }) => {
   );
 };
 
+// סגנונות ה-Dropdown המקומי
 const dd = StyleSheet.create({
+  // שדה בחירה — לבן עם מסגרת מנטה
   field: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -79,7 +97,9 @@ const dd = StyleSheet.create({
   },
   text: { color: '#13173d', fontSize: 12, flex: 1, marginRight: 4 },
   placeholder: { color: '#bbb' },
+  // overlay כהה
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 24 },
+  // גיליון הרשימה — כחול כהה
   sheet: { backgroundColor: '#1d2155', borderRadius: 14, padding: 14 },
   sheetTitle: {
     color: '#ff2c60',
@@ -89,6 +109,7 @@ const dd = StyleSheet.create({
     textAlign: 'center',
     textDecorationLine: 'underline',
   },
+  // פריט ברשימה
   item: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -98,26 +119,37 @@ const dd = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#2a2f6a',
   },
+  // פריט נבחר — רקע כחול
   itemSel: { backgroundColor: '#2a2f6a' },
   itemText: { color: '#fff', fontSize: 14 },
+  // טקסט נבחר — ורוד ומודגש
   itemTextSel: { color: '#ff2c60', fontWeight: '700' },
 });
 
-// ─── Wheel picker data ────────────────────────────────────────────
-const AGE_VALUES    = Array.from({ length: 87  }, (_, i) => i + 13);  // 13–99
-const WEIGHT_VALUES = Array.from({ length: 271 }, (_, i) => i + 30);  // 30–300
-const HEIGHT_VALUES = Array.from({ length: 131 }, (_, i) => i + 120); // 120–250
+// ─── ערכי הגלגלת ─────────────────────────────────────────────────
+// גיל: 13–99 (87 ערכים)
+const AGE_VALUES    = Array.from({ length: 87  }, (_, i) => i + 13);
+// משקל: 30–300 ק"ג (271 ערכים)
+const WEIGHT_VALUES = Array.from({ length: 271 }, (_, i) => i + 30);
+// גובה: 120–250 ס"מ (131 ערכים)
+const HEIGHT_VALUES = Array.from({ length: 131 }, (_, i) => i + 120);
 
-// ─── Wheel picker component ───────────────────────────────────────
+// ─── קומפוננט WheelPicker — גלגלת גלילה לבחירת מספר ────────────
+// גובה כל שורה
 const ITEM_H = 40;
-const VISIBLE = 5;          // must be odd so centre slot is unambiguous
-const HALF = Math.floor(VISIBLE / 2); // = 2  (padding rows top & bottom)
+// מספר שורות גלויות — חייב להיות אי-זוגי כדי שהמרכז יהיה חד-משמעי
+const VISIBLE = 5;
+// מספר שורות "כרית" מעל ומתחת (= 2) כדי שהערך הראשון/אחרון יגיע למרכז
+const HALF = Math.floor(VISIBLE / 2);
 
+// props: values (מערך), selected (ערך נוכחי), onSelect (callback), unit (יחידה)
 const WheelPicker = ({ values, selected, onSelect, unit }) => {
+  // ref ל-ScrollView לגלילה פרוגרמטית
   const ref = useRef(null);
+  // אינדקס הבחירה — מבוטח: לא שלילי
   const safeIndex = Math.max(0, values.indexOf(selected));
 
-  // Scroll to the pre-selected value after the layout pass
+  // גלילה לערך הנבחר לאחר שה-layout מוכן (60ms delay)
   useEffect(() => {
     const t = setTimeout(() => {
       ref.current?.scrollTo({ y: safeIndex * ITEM_H, animated: false });
@@ -125,33 +157,38 @@ const WheelPicker = ({ values, selected, onSelect, unit }) => {
     return () => clearTimeout(t);
   }, []);
 
+  // בסיום תנועת גלילה — מחשב איזה ערך נמצא במרכז
   const onMomentumEnd = (e) => {
     const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
+    // הגבלת האינדקס לתחום התקין
     const clamped = Math.max(0, Math.min(idx, values.length - 1));
     onSelect(values[clamped]);
   };
 
-  // Null rows at top/bottom so first and last values can reach centre
+  // שורות null מעל ומתחת — מאפשרות לערכים הראשון/אחרון להגיע למרכז
   const padded = [...Array(HALF).fill(null), ...values, ...Array(HALF).fill(null)];
 
   return (
     <View style={wp.outer}>
-      {/* Centre-slot highlight sits behind the text */}
+      {/* הדגשת השורה המרכזית — מוצב מאחורי הטקסט */}
       <View pointerEvents="none" style={wp.highlight} />
+      {/* גלגלת הגלילה */}
       <ScrollView
         ref={ref}
         style={wp.scroll}
-        snapToInterval={ITEM_H}
-        decelerationRate="fast"
+        snapToInterval={ITEM_H}          // מנגנן "snap" — תמיד מיישר לשורה
+        decelerationRate="fast"           // עצירה מהירה
         showsVerticalScrollIndicator={false}
         onMomentumScrollEnd={onMomentumEnd}
-        nestedScrollEnabled
+        nestedScrollEnabled               // מאפשר גלילה בתוך ScrollView חיצוני
         scrollEventThrottle={16}
       >
         {padded.map((val, i) => {
+          // האם זה הערך הנבחר (אינו null)
           const isSel = val !== null && val === selected;
           return (
             <View key={i} style={wp.item}>
+              {/* הצגת הערך עם יחידה; null מוצג כרקע ריק */}
               <Text style={[wp.text, isSel && wp.textSel]}>
                 {val !== null ? `${val}${unit ?? ''}` : ''}
               </Text>
@@ -163,11 +200,14 @@ const WheelPicker = ({ values, selected, onSelect, unit }) => {
   );
 };
 
+// סגנונות WheelPicker
 const wp = StyleSheet.create({
+  // מיכל — חותך ל-5 שורות
   outer: { height: ITEM_H * VISIBLE, overflow: 'hidden' },
+  // הדגשת המרכז — מסגרת מנטה חצי-שקופה
   highlight: {
     position: 'absolute',
-    top: ITEM_H * HALF,
+    top: ITEM_H * HALF,          // ממוקם בשורה המרכזית
     left: 0,
     right: 0,
     height: ITEM_H,
@@ -178,54 +218,66 @@ const wp = StyleSheet.create({
     zIndex: 1,
   },
   scroll: { flex: 1 },
+  // שורה יחידה
   item: { height: ITEM_H, justifyContent: 'center', alignItems: 'center' },
+  // טקסט לא נבחר — שקוף למחצה
   text: { color: 'rgba(19,23,61,0.3)', fontSize: 13, fontWeight: '500' },
+  // טקסט נבחר — מודגש וגדול יותר
   textSel: { color: '#13173d', fontSize: 16, fontWeight: '900' },
 });
 
-// ─── Dropdown data ────────────────────────────────────────────────
+// ─── נתוני Dropdown ───────────────────────────────────────────────
+// רמת אימון
 const TRAINING_LEVEL_ITEMS = [
   { label: 'Beginner',  value: 'Beginner'  },
   { label: 'Regular',   value: 'Regular'   },
   { label: 'Advanced',  value: 'Advanced'  },
 ];
+// הערכת אימונים שבועיים
 const WEEKLY_EST_ITEMS = [
   { label: 'Low (0–1 time per week)', value: 'Low'    },
   { label: 'Medium (2–4)',            value: 'Medium' },
   { label: 'High (5+)',               value: 'High'   },
 ];
 
-// ─── Screen ───────────────────────────────────────────────────────
+// ─── מסך הרשמה ────────────────────────────────────────────────────
 const SignUpScreen = ({ navigation }) => {
+  // ref לגלילה פרוגרמטית (שמורה לשימוש עתידי)
   const scrollRef = useRef(null);
 
+  // שדות הטופס עם ערכי ברירת מחדל
   const [name, setName] = useState('');
-  const [profileImage, setProfileImage] = useState(null);
-  const [sex, setSex] = useState(null);
+  const [profileImage, setProfileImage] = useState(null); // URI מהגלריה
+  const [sex, setSex] = useState(null);                   // 'male' / 'female' / null
   const [age, setAge] = useState(25);
-  const [weight, setWeight] = useState(70);
-  const [height, setHeight] = useState(170);
+  const [weight, setWeight] = useState(70);               // ק"ג
+  const [height, setHeight] = useState(170);              // ס"מ
   const [trainingLevel, setTrainingLevel] = useState(null);
   const [weeklyEst, setWeeklyEst] = useState(null);
-  const [role, setRole] = useState(null);
+  const [role, setRole] = useState(null);                 // 'trainer' / 'trainee' / 'both'
 
+  // בחירת תמונת פרופיל מהגלריה
   const pickImage = async () => {
+    // בקשת הרשאת גלריה
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission required', 'We need access to your photo library to upload a profile picture.');
       return;
     }
+    // פתיחת בוחר תמונות — חיתוך ריבועי, איכות 80%
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
     });
+    // שמירת ה-URI אם הבחירה לא בוטלה
     if (!result.canceled) {
       setProfileImage(result.assets[0].uri);
     }
   };
 
+  // כפתור Next פעיל רק אם כל שדות החובה מלאים
   const canProceed =
     name.trim().length > 0 &&
     sex !== null &&
@@ -233,14 +285,17 @@ const SignUpScreen = ({ navigation }) => {
     weeklyEst !== null &&
     role !== null;
 
+  // מעבר לשלב הסופי של ההרשמה עם כל הפרמטרים
   const handleNext = () => {
     if (!canProceed) return;
+    // העברת כל הנתונים שהוזנו בשלב זה ל-SignUpFinal
     navigation.navigate('SignUpFinal', { name, age, weight, height, sex, trainingLevel, weeklyEst, role, profileImage });
   };
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
       <StatusBar style="light" />
+      {/* KeyboardAvoidingView — מונע מהמקלדת לכסות שדות */}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
           ref={scrollRef}
@@ -249,15 +304,18 @@ const SignUpScreen = ({ navigation }) => {
           showsVerticalScrollIndicator={false}
         >
 
-          {/* ── Title ─────────────────────────────────────── */}
+          {/* כותרת "Sign Up" עם אפקט echo */}
           <View style={s.titleWrapper}>
+            {/* שכבת הצל — סגולה */}
             <Text style={[s.titleBase, s.titleEcho]}>Sign Up</Text>
+            {/* שכבת החזית — ורוד */}
             <Text style={[s.titleBase, s.titleFront]}>Sign Up</Text>
           </View>
 
-          {/* ── Section 1: Personal info ───────────────────── */}
+          {/* קטע 1: פרטים אישיים */}
           <Text style={s.sectionHeading}>PLEASE FILL OUT THE INFORMATION BELLOW:</Text>
 
+          {/* שם */}
           <Text style={s.fieldLabel}>WHAT SHOULD WE CALL YOU?</Text>
           <TextInput
             style={s.input}
@@ -265,14 +323,16 @@ const SignUpScreen = ({ navigation }) => {
             placeholderTextColor="rgba(19,23,61,0.35)"
             value={name}
             onChangeText={setName}
-            autoCapitalize="words"
+            autoCapitalize="words"    // אות ראשונה של כל מילה גדולה
           />
 
-          {/* Upload image */}
+          {/* כפתור העלאת תמונה — מציג תמונה שנבחרה או אייקון ענן */}
           <TouchableOpacity style={s.uploadBtn} onPress={pickImage} activeOpacity={0.8}>
             {profileImage ? (
+              // הצגת התמונה שנבחרה
               <Image source={{ uri: profileImage }} style={s.uploadedImage} />
             ) : (
+              // placeholder — אייקון ענן + טקסט
               <>
                 <Ionicons name="cloud-upload-outline" size={34} color="#87ffd7" />
                 <Text style={s.uploadText}>Upload your{'\n'}image here</Text>
@@ -280,27 +340,29 @@ const SignUpScreen = ({ navigation }) => {
             )}
           </TouchableOpacity>
 
-          {/* Sex selection */}
+          {/* בחירת מגדר — שני כפתורי תמונה */}
           <View style={s.sexSection}>
             <Text style={s.sexHeading}>Select your sex</Text>
             <Text style={s.sexSubLabel}>Click the sex that represents you</Text>
             <View style={s.sexRow}>
+              {/* זכר — תמונה 001 (נבחר) / 000 (לא נבחר) */}
               <TouchableOpacity
                 style={s.sexBtn}
-                onPress={() => setSex(sex === 'male' ? null : 'male')}
+                onPress={() => setSex(sex === 'male' ? null : 'male')}   // toggle
                 activeOpacity={0.85}
               >
                 <Image
                   source={
                     sex === 'male'
-                      ? require('../../assets/images/001.png')
-                      : require('../../assets/images/000.png')
+                      ? require('../../assets/images/001.png')   // גרסה נבחרת
+                      : require('../../assets/images/000.png')   // גרסה רגילה
                   }
                   style={s.sexImage}
                   resizeMode="contain"
                 />
               </TouchableOpacity>
 
+              {/* נקבה — תמונה 003 (נבחר) / 002 (לא נבחר) */}
               <TouchableOpacity
                 style={s.sexBtn}
                 onPress={() => setSex(sex === 'female' ? null : 'female')}
@@ -319,25 +381,30 @@ const SignUpScreen = ({ navigation }) => {
             </View>
           </View>
 
-          {/* ── Section 2: Stats ───────────────────────────── */}
+          {/* קטע 2: נתונים סטטיסטיים — 3 גלגלות אחד ליד השני */}
           <Text style={[s.sectionHeading, { marginTop: 30 }]}>INSERT YOUR STATS:</Text>
           <View style={s.statsRow}>
+            {/* גלגלת גיל */}
             <View style={s.statBox}>
               <Text style={s.statLabel}>Select age</Text>
               <WheelPicker values={AGE_VALUES} selected={age} onSelect={setAge} />
             </View>
+            {/* מרווח */}
             <View style={{ width: 8 }} />
+            {/* גלגלת משקל */}
             <View style={s.statBox}>
               <Text style={s.statLabel}>Select weight</Text>
               <WheelPicker values={WEIGHT_VALUES} selected={weight} onSelect={setWeight} unit=" kg" />
             </View>
             <View style={{ width: 8 }} />
+            {/* גלגלת גובה */}
             <View style={s.statBox}>
               <Text style={s.statLabel}>Select height</Text>
               <WheelPicker values={HEIGHT_VALUES} selected={height} onSelect={setHeight} unit=" cm" />
             </View>
           </View>
 
+          {/* רמת אימון */}
           <Text style={[s.sectionHeading, { marginTop: 20 }]}>What is your training level?</Text>
           <DropDown
             items={TRAINING_LEVEL_ITEMS}
@@ -346,6 +413,7 @@ const SignUpScreen = ({ navigation }) => {
             placeholder="Select here..."
           />
 
+          {/* הערכה שבועית */}
           <Text style={[s.sectionHeading, { marginTop: 20 }]}>What is your weekly training estimate?</Text>
           <DropDown
             items={WEEKLY_EST_ITEMS}
@@ -353,9 +421,10 @@ const SignUpScreen = ({ navigation }) => {
             onChange={setWeeklyEst}
             placeholder="Select here..."
           />
+          {/* הסבר מדוע נשאל — מניעת עומס יתר */}
           <Text style={s.helperNote}>That will help us prevent overload and potential injuries</Text>
 
-          {/* ── I am a ────────────────────────────────────── */}
+          {/* בחירת תפקיד — 3 עיגולים: Trainer / Trainee / Both */}
           <Text style={[s.sectionHeading, { marginTop: 24, alignSelf: 'center' }]}>I am a:</Text>
           <View style={s.roleRow}>
             {[
@@ -363,6 +432,7 @@ const SignUpScreen = ({ navigation }) => {
               { value: 'trainee',  label: 'Trainee'  },
               { value: 'both',     label: 'Both'     },
             ].map(({ value, label }) => (
+              // עיגול בחירה — מודגש כשנבחר
               <TouchableOpacity
                 key={value}
                 style={[s.roleCircle, role === value && s.roleCircleSelected]}
@@ -374,6 +444,7 @@ const SignUpScreen = ({ navigation }) => {
             ))}
           </View>
 
+          {/* כפתור Next — מושבת כשהטופס לא שלם */}
           <TouchableOpacity
             style={[s.nextBtn, !canProceed && s.btnDisabled]}
             activeOpacity={canProceed ? 0.82 : 1}
@@ -389,8 +460,11 @@ const SignUpScreen = ({ navigation }) => {
   );
 };
 
+// סגנונות המסך
 const s = StyleSheet.create({
+  // רקע כחול כהה — עקבי עם WelcomeScreen
   safe: { flex: 1, backgroundColor: '#13173d' },
+  // גלילה מרכוזית
   scroll: {
     alignItems: 'center',
     paddingHorizontal: 24,
@@ -398,19 +472,19 @@ const s = StyleSheet.create({
     paddingBottom: 48,
   },
 
-  // Title
+  // כותרת — עטיפה לשתי שכבות
   titleWrapper: { paddingBottom: 8, paddingRight: 8, marginBottom: 14 },
   titleBase: {
     fontSize: 52,
     fontWeight: '900',
     fontStyle: 'italic',
     letterSpacing: 1,
-    transform: [{ rotate: '-3deg' }],
+    transform: [{ rotate: '-3deg' }],  // הטיה קלה
   },
   titleEcho: { color: '#c524e6', position: 'absolute', top: 5, left: 5 },
   titleFront: { color: '#ff2c60' },
 
-  // Section headings & field labels
+  // כותרות קטעים ותוויות שדות
   sectionHeading: {
     alignSelf: 'flex-start',
     color: '#ff2c60',
@@ -434,7 +508,7 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Input
+  // שדה קלט — לבן עם מסגרת מנטה
   input: {
     width: '100%',
     backgroundColor: '#ffffff',
@@ -447,7 +521,7 @@ const s = StyleSheet.create({
     color: '#13173d',
   },
 
-  // Upload button
+  // אזור העלאת תמונה — מסגרת מקוטעת
   uploadBtn: {
     width: '100%',
     borderWidth: 2,
@@ -467,13 +541,14 @@ const s = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
   },
+  // תמונה שהועלתה — עגולה
   uploadedImage: {
     width: 100,
     height: 100,
     borderRadius: 50,
   },
 
-  // Sex
+  // קטע בחירת מגדר
   sexSection: {
     width: '100%',
     alignItems: 'center',
@@ -507,19 +582,20 @@ const s = StyleSheet.create({
     height: 200,
   },
 
-  // Stats row
+  // שורת גלגלות הסטטיסטיקה
   statsRow: {
     flexDirection: 'row',
     width: '100%',
     marginBottom: 4,
   },
+  // קופסת גלגלת יחידה
   statBox: {
     flex: 1,
     backgroundColor: '#ffffff',
     borderWidth: 2,
     borderColor: '#87ffd7',
     borderRadius: 10,
-    overflow: 'hidden',
+    overflow: 'hidden',   // חותך את הגלגלת לגבולות הקופסה
   },
   statLabel: {
     color: '#ff2c60',
@@ -531,7 +607,7 @@ const s = StyleSheet.create({
     paddingBottom: 2,
   },
 
-  // Helper note
+  // הערה מסבירה
   helperNote: {
     color: '#a0a0c0',
     fontSize: 11,
@@ -541,7 +617,7 @@ const s = StyleSheet.create({
     alignSelf: 'flex-start',
   },
 
-  // Role circles
+  // שורת עיגולי תפקיד
   roleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -549,6 +625,7 @@ const s = StyleSheet.create({
     marginTop: 14,
     marginBottom: 8,
   },
+  // עיגול בחירה — כחול כהה ברירת מחדל
   roleCircle: {
     width: CIRCLE_SIZE,
     height: CIRCLE_SIZE,
@@ -557,6 +634,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // עיגול נבחר — מנטה בהיר
   roleCircleSelected: {
     backgroundColor: '#59e5c2',
   },
@@ -567,7 +645,7 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Next button
+  // כפתור Next
   nextBtn: {
     marginTop: 26,
     width: '55%',
@@ -583,6 +661,7 @@ const s = StyleSheet.create({
     shadowRadius: 6,
     elevation: 6,
   },
+  // מושבת — שקיפות גבוהה
   btnDisabled: {
     opacity: 0.35,
   },

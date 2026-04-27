@@ -1,76 +1,79 @@
+// SyncService — אורקסטרציה של תהליך הסנכרון בין Health Connect ל-Backend
 import {
-  getStructuredWorkouts,
-  initializeHealthConnect,
-  checkPermissions,
-  requestPermissions,
+  getStructuredWorkouts,   // שליפת אימונים מ-HC בפורמט מובנה
+  initializeHealthConnect, // אתחול מודול HC
+  checkPermissions,        // בדיקת הרשאות קיימות
+  requestPermissions,      // בקשת הרשאות מהמשתמש
 } from './HealthConnectService';
 import {
-  postActivityLog,
-  getActivityLogs,
-
-  putUserDevice,
+  postActivityLog,         // יצירת לוג פעילות ב-Backend
+  getActivityLogs,         // שליפת לוגים קיימים מה-Backend
+  putUserDevice,           // עדכון lastSync של המכשיר
 } from './api';
+// טעינה ובדיקת tombstone — אימונים שנמחקו לא יסונכרנו שוב
 import { loadHcTombstones, isTombstoned } from '../constants/hcTombstones';
 
 /**
  * SyncService
- * 
- * Orchestrates the sync process between Health Connect and the TrainWise backend.
- * Handles deduplication, error management, and device sync tracking.
+ *
+ * מנהל את תהליך הסנכרון המלא בין Health Connect ל-Backend של TrainWise.
+ * מטפל בכפילויות, שגיאות וניהול זמן סנכרון של מכשיר.
  */
 
 /**
- * Get the last N days as a date range.
- * 
- * @param {number} days - Number of days to look back
+ * מחשב טווח תאריכים של N ימים אחורה מהיום.
+ *
+ * @param {number} days - מספר הימים לאחור
  * @returns {Object} { startDate: Date, endDate: Date }
  */
 const getDateRangeForDays = (days = 7) => {
+  // זמן הסיום = עכשיו
   const endDate = new Date();
   const startDate = new Date();
+  // זמן ההתחלה = לפני N ימים
   startDate.setDate(startDate.getDate() - days);
-  
+
   return { startDate, endDate };
 };
 
 /**
- * Check if two workouts are the same based on start time.
- * Uses a 60-second tolerance to account for minor time differences.
- * 
- * @param {Object} hcWorkout - Health Connect workout
- * @param {Object} existingLog - Existing activity log from backend
- * @returns {boolean} true if workouts match
+ * בדיקה האם שני אימונים זהים לפי זמן התחלה.
+ * משתמשת בסבלנות של דקה אחת לטיפול בהפרשי זמן קלים.
+ *
+ * @param {Object} hcWorkout - אימון מ-Health Connect
+ * @param {Object} existingLog - לוג קיים מה-Backend
+ * @returns {boolean} true אם האימונים תואמים
  */
 const areWorkoutsDuplicate = (hcWorkout, existingLog) => {
-  // Backend returns DateTime with Kind=Unspecified (no Z suffix), so
-  // `new Date(...)` parses it as local time while HC sends UTC (Z) — a 2–3h
-  // drift makes ms-comparison miss every match. Compare the wall-clock
-  // portion at minute granularity instead.
+  // Backend מחזיר DateTime ללא Z (Kind=Unspecified) — new Date() מפרש אותו
+  // כשעון מקומי; HC שולח UTC עם Z — פער של 2-3 שעות גורם להחמצת כל ההתאמות.
+  // פתרון: השוואה של החלק "שעון הקיר" ברזולוציית דקה (16 תווים ראשונים).
   const normalize = (t) => String(t || '').replace(/Z$/, '').slice(0, 16);
   return normalize(hcWorkout.startTime) === normalize(existingLog.startTime);
 };
 
 /**
- * Filter workouts to exclude those that already exist in the backend.
- * 
- * @param {Array} healthConnectWorkouts - Workouts from Health Connect
- * @param {Array} existingLogs - Existing activity logs from backend
- * @returns {Object} { new: Array, duplicates: Array }
+ * מסנן אימונים שכבר קיימים ב-Backend ואימונים עם tombstone.
+ *
+ * @param {Array} healthConnectWorkouts - אימונים מ-Health Connect
+ * @param {Array} existingLogs - לוגים קיימים מה-Backend
+ * @returns {Object} { new: Array, duplicates: Array, tombstoned: Array }
  */
 const deduplicateWorkouts = (healthConnectWorkouts, existingLogs) => {
-  const newWorkouts = [];
-  const duplicates = [];
-  const tombstoned = [];
+  const newWorkouts = [];    // אימונים חדשים שיש לסנכרן
+  const duplicates = [];     // אימונים שכבר קיימים
+  const tombstoned = [];     // אימונים שנמחקו ולא יסונכרנו
 
   healthConnectWorkouts.forEach((hcWorkout) => {
-    // Tombstones: if the user already deleted this HC workout from the
-    // backend, HC still has it but we must NOT re-import. Without this,
-    // every sync re-creates the deleted row as Pending.
+    // בדיקת tombstone: אם המשתמש מחק אימון זה מהאפליקציה —
+    // HC עדיין שומר אותו, אבל אנחנו לא נייבא אותו שוב.
+    // ללא זה, כל סנכרון יחדש את השורה שנמחקה.
     if (isTombstoned(hcWorkout)) {
       tombstoned.push(hcWorkout);
       return;
     }
 
+    // בדיקה אם הלוג כבר קיים בפי-Backend לפי זמן התחלה
     const isDuplicate = existingLogs.some((log) =>
       areWorkoutsDuplicate(hcWorkout, log)
     );
@@ -86,9 +89,9 @@ const deduplicateWorkouts = (healthConnectWorkouts, existingLogs) => {
 };
 
 /**
- * Post a single workout to the backend.
- * 
- * @param {Object} workout - Structured workout object
+ * שולח אימון בודד ל-Backend.
+ *
+ * @param {Object} workout - אימון מובנה לשליחה
  * @returns {Promise<Object>} { success: boolean, data?: Object, error?: string }
  */
 const postWorkout = async (workout) => {
@@ -105,70 +108,67 @@ const postWorkout = async (workout) => {
 };
 
 /**
- * Update device's last sync timestamp.
- * 
- * @param {number} userId - User ID
- * @param {number} deviceId - Device ID
- * @returns {Promise<boolean>} true if successful
+ * מעדכן את זמן הסנכרון האחרון של המכשיר.
+ *
+ * @param {number} userId - מזהה המשתמש
+ * @param {number} deviceId - מזהה המכשיר (Backend row ID)
+ * @returns {Promise<boolean>} true אם העדכון הצליח
  */
 const updateDeviceLastSync = async (userId, deviceId) => {
+  // deviceId שנוצר מקומית (לדוגמה: "dev-1234-abc") אינו שורה ב-Backend —
+  // מדלגים על הקריאה כדי למנוע שגיאת 404
   if (!deviceId || typeof deviceId !== 'number') {
-    // Non-numeric / locally-generated device ID — backend has no matching row.
-    // Skip the housekeeping call; the main workout sync is already done.
     return true;
   }
   try {
     const deviceData = {
-      lastSync: new Date().toISOString(),
+      lastSync: new Date().toISOString(),   // זמן הסנכרון הנוכחי
       permissionsGranted: true,
     };
 
     await putUserDevice(userId, deviceId, deviceData);
     return true;
   } catch (error) {
+    // כישלון בעדכון lastSync לא חוסם את הסנכרון עצמו
     console.log('Skipping device lastSync update:', error.message);
     return false;
   }
 };
 
 /**
- * Main sync function.
- * Orchestrates the entire sync process:
- * 1. Initialize Health Connect
- * 2. Check permissions
- * 3. Fetch workouts for last 7 days
- * 4. Fetch existing logs from backend
- * 5. Deduplicate
- * 6. Post new workouts
- * 7. Update device lastSync
- * 
- * @param {number} userId - User ID (required)
- * @param {number} deviceId - Device ID (required)
- * @param {number} lookbackDays - Number of days to sync (default 7)
- * 
- * @returns {Promise<Object>} Sync result summary:
- *   {
- *     success: boolean,
- *     synced: number (workouts successfully posted),
- *     skipped: number (duplicate workouts),
- *     errors: Array (error details),
- *     workouts: Array (synced workout objects),
- *   }
+ * syncWorkoutsToBackend — הפונקציה הראשית לסנכרון.
+ * מתזמרת את כל תהליך הסנכרון:
+ * 1. אתחול Health Connect
+ * 2. בדיקת/בקשת הרשאות
+ * 3. שליפת אימונים מ-HC
+ * 4. שליפת לוגים קיימים מ-Backend
+ * 5. סינון כפילויות
+ * 6. שליחת אימונים חדשים
+ * 7. עדכון lastSync של המכשיר
+ *
+ * @param {number} userId - מזהה המשתמש (חובה)
+ * @param {number} deviceId - מזהה המכשיר (חובה)
+ * @param {number} lookbackDays - מספר ימים לסנכרון (ברירת מחדל 7)
+ *
+ * @returns {Promise<Object>} סיכום הסנכרון:
+ *   { success, synced, skipped, errors, workouts }
  */
 export const syncWorkoutsToBackend = async (
   userId,
   deviceId,
   lookbackDays = 7
 ) => {
+  // אובייקט תוצאה — מאוכלס לאורך התהליך
   const result = {
     success: false,
-    synced: 0,
-    skipped: 0,
-    errors: [],
-    workouts: [],
+    synced: 0,          // כמה אימונים סונכרנו בהצלחה
+    skipped: 0,         // כמה דולגו (כפילויות + tombstones)
+    errors: [],         // שגיאות שנאספו
+    workouts: [],       // אובייקטי האימונים שנוצרו
   };
 
   try {
+    // וידוא שהפרמטרים הנדרשים קיימים
     if (!userId || !deviceId) {
       throw new Error('userId and deviceId are required');
     }
@@ -177,55 +177,56 @@ export const syncWorkoutsToBackend = async (
       `Starting sync for user ${userId}, device ${deviceId}, lookback ${lookbackDays} days`
     );
 
-    // Step 1: Verify Health Connect is initialized
+    // שלב 1: וידוא שה-SDK של Health Connect זמין
     console.log('Step 1: Initializing Health Connect...');
     const isAvailable = await initializeHealthConnect();
     if (!isAvailable) {
       throw new Error('Health Connect is not available on this device');
     }
 
-    // Step 2: Check permissions; if any are missing, prompt instead of aborting.
+    // שלב 2: בדיקת הרשאות; אם חסרות — בקשה מהמשתמש
     console.log('Step 2: Checking permissions...');
     let permStatus = await checkPermissions();
     let allGranted =
       permStatus.granted.length >= permStatus.permissions.length;
 
     if (!allGranted) {
+      // פתיחת מסך ההרשאות של Health Connect
       console.log('Step 2a: Permissions missing, prompting user...');
       const prompted = await requestPermissions();
       permStatus = prompted;
       allGranted = prompted.granted.length >= prompted.permissions.length;
     }
 
+    // אם עדיין אין הרשאות — מפסיקים את הסנכרון
     if (!allGranted) {
       throw new Error('Permissions were denied. Please grant them in Health Connect settings.');
     }
 
-    // Step 3: Fetch workouts from Health Connect
+    // שלב 3: שליפת אימונים מ-Health Connect לטווח הזמן הנבחר
     console.log('Step 3: Fetching workouts from Health Connect...');
     const { startDate, endDate } = getDateRangeForDays(lookbackDays);
     const healthConnectWorkouts = await getStructuredWorkouts(startDate, endDate);
-    
+
     if (!healthConnectWorkouts || healthConnectWorkouts.length === 0) {
       console.log('No workouts found in Health Connect');
       result.success = true;
       result.synced = 0;
       result.skipped = 0;
-      
-      // Still update device lastSync even if no workouts
+
+      // גם ללא אימונים — מעדכנים זמן הסנכרון
       await updateDeviceLastSync(userId, deviceId);
       return result;
     }
 
     console.log(`Found ${healthConnectWorkouts.length} workouts in Health Connect`);
 
-    // Step 4: Fetch existing logs from backend
+    // שלב 4: שליפת לוגים קיימים מה-Backend לצורך סינון כפילויות
     console.log('Step 4: Fetching existing activity logs from backend...');
     const existingLogs = await getActivityLogs(userId);
     console.log(`Found ${existingLogs.length || 0} existing logs in backend`);
 
-    // Step 5: Deduplicate (loads tombstones first so deleted HC workouts
-    // are not re-imported on every sync)
+    // שלב 5: סינון כפילויות — כולל טעינת tombstones מ-AsyncStorage
     console.log('Step 5: Deduplicating workouts...');
     await loadHcTombstones();
     const { new: newWorkouts, duplicates, tombstoned } = deduplicateWorkouts(
@@ -233,22 +234,24 @@ export const syncWorkoutsToBackend = async (
       existingLogs || []
     );
 
+    // סך הכול דולגו = כפילויות + tombstones
     result.skipped = duplicates.length + tombstoned.length;
     console.log(`${newWorkouts.length} new workouts to sync, ${duplicates.length} duplicates, ${tombstoned.length} tombstoned`);
 
-    // Step 6: Post new workouts to backend
+    // שלב 6: שליחת אימונים חדשים ל-Backend אחד-אחד
     console.log('Step 6: Posting new workouts to backend...');
     for (const workout of newWorkouts) {
-      // Add userId to each workout
+      // הוספת userId לכל אימון לפני השליחה
       workout.userID = userId;
 
       const postResult = await postWorkout(workout);
-      
+
       if (postResult.success) {
         result.synced++;
         result.workouts.push(postResult.data);
         console.log('✓ Posted workout:', workout.startTime);
       } else {
+        // שגיאה בשליחה אחת לא עוצרת את שאר האימונים
         result.errors.push({
           workout: workout.startTime,
           error: postResult.error,
@@ -257,11 +260,12 @@ export const syncWorkoutsToBackend = async (
       }
     }
 
-    // Step 7: Update device lastSync timestamp
+    // שלב 7: עדכון lastSync של המכשיר ב-Backend
     console.log('Step 7: Updating device last sync timestamp...');
     const deviceUpdateSuccess = await updateDeviceLastSync(userId, deviceId);
-    
+
     if (!deviceUpdateSuccess) {
+      // אזהרה בלבד — לא מכשיל את כל הסנכרון
       result.errors.push({
         step: 'updateDeviceLastSync',
         error: 'Failed to update device sync timestamp',
@@ -269,6 +273,7 @@ export const syncWorkoutsToBackend = async (
       console.warn('Warning: Failed to update device lastSync');
     }
 
+    // סנכרון הסתיים בהצלחה
     result.success = true;
     console.log('✓ Sync completed successfully');
     console.log('Summary:', {
@@ -279,6 +284,7 @@ export const syncWorkoutsToBackend = async (
 
     return result;
   } catch (error) {
+    // שגיאה כללית — מחזירים תוצאת כישלון
     console.error('Sync failed:', error);
     result.success = false;
     result.errors.push({
@@ -291,11 +297,11 @@ export const syncWorkoutsToBackend = async (
 };
 
 /**
- * Fetch new workouts from Health Connect without syncing to backend.
- * Useful for preview or manual review before sync.
- * 
- * @param {number} lookbackDays - Number of days to fetch
- * @returns {Promise<Array>} Array of structured workouts
+ * getNewWorkoutsPreview — שליפת אימונים חדשים ל-preview בלי לשמור.
+ * שימושי לתצוגה מקדימה לפני אישור ידני.
+ *
+ * @param {number} lookbackDays - מספר ימים לאחור
+ * @returns {Promise<Array>} מערך אימונים מובנים
  */
 export const getNewWorkoutsPreview = async (lookbackDays = 7) => {
   try {
@@ -309,16 +315,14 @@ export const getNewWorkoutsPreview = async (lookbackDays = 7) => {
 };
 
 /**
- * Clear old activity logs (for testing or data cleanup).
- * ⚠️ Use with caution - this is destructive.
- * 
- * NOT IMPLEMENTED - kept for documentation purposes.
- * Backend has its own data retention policies.
+ * clearOldLogs — ניקוי לוגים ישנים (לא ממומש).
+ * ⚠️ פעולה הרסנית — שמורה לשימוש עתידי דרך כלי Admin של ה-Backend.
  */
 export const clearOldLogs = async () => {
   console.warn('clearOldLogs not implemented - use backend admin tools');
 };
 
+// ייצוא ברירת מחדל — מכיל את הפונקציות הראשיות
 export default {
   syncWorkoutsToBackend,
   getNewWorkoutsPreview,

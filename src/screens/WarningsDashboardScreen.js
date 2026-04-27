@@ -1,3 +1,4 @@
+// מסך לוח אזהרות — סטטוס עומס, גרף שבועי, ACWR, המלצות
 import React, {useState, useEffect} from 'react';
 import {
   View,
@@ -9,27 +10,37 @@ import {
   TouchableOpacity,
   Modal,
 } from 'react-native';
+// אייקוני עזרה וניווט
 import { Ionicons } from '@expo/vector-icons';
+// BarChart מספריית react-native-chart-kit
 import {BarChart} from 'react-native-chart-kit';
+// ייבוא צבעים, גופנים וריווחים מהתמה
 import {Colors, Fonts, Spacing} from '../theme/colors';
+// קומפוננטים משותפים
 import ScreenHeader from '../components/ScreenHeader';
 import Card from '../components/Card';
 import PrimaryButton from '../components/PrimaryButton';
+// שליפת לוגי פעילות מה-Backend
 import { getActivityLogsByUser } from '../services/api';
+// userId של המשתמש המחובר
 import { useAuth } from '../api/AuthContext';
+// פונקציות ניהול יום תחילת שבוע
 import {
   getWeekStartDate,
   getWeekStartDay,
   getWeekDayLabels,
-  subscribeWeekStart,
+  subscribeWeekStart,     // האזנה לשינוי יום תחילת שבוע
 } from '../constants/weekStart';
 
 
+// רוחב המסך לגרף BarChart
 const screenWidth = Dimensions.get('window').width;
 
+// פורמט קצר של תאריך: "Jan 5"
 const formatShortDate = (d) =>
   `${d.toLocaleString('en-US', { month: 'short' })} ${d.getDate()}`;
 
+// בניית תווית טווח שבוע: "This week · Jan 5 – Jan 11"
 const getWeekRangeLabel = (offset, weekStartDay) => {
   const ws = getWeekStartDate(offset, weekStartDay);
   const we = new Date(ws);
@@ -39,6 +50,7 @@ const getWeekRangeLabel = (offset, weekStartDay) => {
   return `${formatShortDate(ws)} – ${formatShortDate(we)}`;
 };
 
+// קביעת רמת עומס לפי יחס ACWR: >1.3=Red, 0.8-1.3=Yellow, <0.8=Green
 const determineLoadLevel = (ratio) => {
   if (ratio == null || ratio <= 0) return 'Green';
   if (ratio > 1.3) return 'Red';
@@ -46,6 +58,7 @@ const determineLoadLevel = (ratio) => {
   return 'Green';
 };
 
+// סיכום עומס סשנים בטווח תאריכים — תומך בשני פורמטי שמות שדות
 const sumSessionLoadsInRange = (logs, startDate, endDate) => {
   return logs.reduce((sum, log) => {
     const st = new Date(log.startTime || log.StartTime);
@@ -58,6 +71,7 @@ const sumSessionLoadsInRange = (logs, startDate, endDate) => {
   }, 0);
 };
 
+// בניית טקסט המלצה דינמי לפי רמת עומס + יחס ACWR
 const buildRecommendation = (level, ratio, stress) => {
   if (ratio <= 0) {
     return 'No recent training detected. Log a workout to start tracking your load.';
@@ -76,27 +90,42 @@ const buildRecommendation = (level, ratio, stress) => {
 };
 
 const WarningsDashboardScreen = ({navigation}) => {
+  // userId לשאילתות API
   const { userId } = useAuth();
+  // האם בטעינה
   const [loading, setLoading] = useState(true);
+  // עומס יומי לגרף — 7 ערכים (אחד לכל יום בשבוע)
   const [weeklyLoad, setWeeklyLoad] = useState([0, 0, 0, 0, 0, 0, 0]);
+  // תוויות ציר X לגרף — שמות ימים לפי יום תחילת השבוע
   const [weekLabels, setWeekLabels] = useState(['Sun','Mon','Tue','Wed','Thu','Fri','Sat']);
+  // רמת עומס נוכחית: 'Green' / 'Yellow' / 'Red'
   const [currentLoadLevel, setCurrentLoadLevel] = useState('Green');
+  // יחס ACWR — Acute-to-Chronic Workload Ratio
   const [acRatio, setAcRatio] = useState(0);
+  // ציון לחץ 0-100
   const [stressScore, setStressScore] = useState(0);
+  // טקסט המלצה דינמי
   const [recommendation, setRecommendation] = useState(
     'No recommendation available yet. Log some workouts to get started.',
   );
+  // הנושא של Help Modal שפתוח כרגע (null = סגור)
   const [helpTopic, setHelpTopic] = useState(null);
-  const [weekOffset, setWeekOffset] = useState(0); // 0 = current week, -1 = last week, etc.
+  // offset שבוע: 0=שבוע נוכחי, -1=שבוע שעבר וכו'
+  const [weekOffset, setWeekOffset] = useState(0);
+  // כל הלוגים המאושרים — לחישובי ACWR
   const [allLogs, setAllLogs] = useState([]);
+  // היסטוריית עומס (לא בשימוש פעיל — שמורה לתאימות אחורה)
   const [allLoadHistory, setAllLoadHistory] = useState([]);
+  // יום תחילת שבוע מוקומי — מתעדכן בזמן אמת דרך subscribe
   const [weekStartDay, setWeekStartDayState] = useState(getWeekStartDay());
 
+  // האזנה לשינויים ביום תחילת השבוע (SettingsScreen → AsyncStorage → כאן)
   useEffect(() => {
     const unsub = subscribeWeekStart((day) => setWeekStartDayState(day));
     return () => unsub && unsub();
   }, []);
 
+  // תוכן Help Modal לכל נושא
   const HELP_TEXT = {
     status: {
       title: 'Current Status',
@@ -120,26 +149,37 @@ const WarningsDashboardScreen = ({navigation}) => {
     },
   };
 
+  // טעינה ראשונית של לוגים בעלייה למסך
   useEffect(() => {
     loadDashboardData();
   }, []);
 
+  // חישוב מחדש של הגרף והמדדים בכל שינוי של offset, לוגים או יום תחילת שבוע
   useEffect(() => {
     renderWeek(allLogs, allLoadHistory, weekOffset);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekOffset, allLogs, allLoadHistory, weekStartDay]);
 
+  /**
+   * renderWeek — מחשב את כל המדדים עבור שבוע נתון.
+   * משתמש בנוסחת ACWR המצומדת (Gabbett 2016):
+   *   acute  = סכום עומסי הסשנים בשבוע המוצג (7 ימים)
+   *   chronic = ממוצע שבועי ב-28 ימים הכוללים את השבוע המוצג
+   */
   const renderWeek = (logs, loadHistory, offset) => {
+    // תחילת השבוע המוצג לפי הגדרת המשתמש
     const weekStart = getWeekStartDate(offset, weekStartDay);
+    // תוויות ימים בסדר הנכון
     const labels = getWeekDayLabels(weekStartDay);
     const weekData = new Array(7).fill(0);
 
-    // Per-day session-load sum for the displayed week only.
-    // Two sessions on the same day sum together. Empty days stay 0.
+    // חישוב עומס כל יום בשבוע המוצג
+    // שני סשנים באותו יום מסתכמים; ימים ריקים נשארים 0
     logs.forEach((log) => {
       const st = new Date(log.startTime || log.StartTime);
       const d = new Date(st);
       d.setHours(0, 0, 0, 0);
+      // מרחק בימים מתחילת השבוע
       const diffDays = Math.round(
         (d - weekStart) / (1000 * 60 * 60 * 24),
       );
@@ -152,67 +192,68 @@ const WarningsDashboardScreen = ({navigation}) => {
     setWeeklyLoad(weekData.map((v) => Math.round(v)));
     setWeekLabels(labels);
 
-    // Standard ACWR (Gabbett 2016, "coupled" form):
-    //   acute   = sum of session loads for the displayed week (7 days)
-    //   chronic = AVERAGE weekly load over the trailing 28-day window that
-    //             INCLUDES the displayed week → sum(28 days ending weekEnd) / 4
-    // This is the formula used in sports-science papers and matches the
-    // backend LoadCalculationBL. The previous "uncoupled" form (prior 21
-    // days only) made the chronic baseline volatile and the displayed
-    // ratio swing dramatically between adjacent weeks.
+    // ACWR (נוסחה מצומדת, Gabbett 2016):
+    //   acute   = סכום עומסי הסשנים בשבוע המוצג (7 ימים)
+    //   chronic = ממוצע שבועי ב-28 ימים שמסתיימים ביום האחרון של השבוע המוצג
+    //           = sum(28 ימים) / 4
+    // הנוסחה הקודמת (21 ימים ללא שבוע נוכחי) גרמה לתנודתיות גבוהה
+    // בין שבועות סמוכים — הנוסחה הנוכחית יציבה יותר ותואמת את ה-Backend.
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 6);
     weekEnd.setHours(23, 59, 59, 999);
 
+    // חלון 28 ימים: 21 ימים לפני תחילת השבוע + 7 ימי השבוע המוצג
     const chronic28Start = new Date(weekStart);
-    chronic28Start.setDate(weekStart.getDate() - 21); // 21 days before weekStart + 7 displayed = 28
+    chronic28Start.setDate(weekStart.getDate() - 21);
     chronic28Start.setHours(0, 0, 0, 0);
 
     const acute = sumSessionLoadsInRange(logs, weekStart, weekEnd);
     const chronic28Sum = sumSessionLoadsInRange(logs, chronic28Start, weekEnd);
-    const chronic = chronic28Sum / 4; // weekly-equivalent average over 28 days
+    const chronic = chronic28Sum / 4; // ממוצע שבועי על פני 4 שבועות
 
-    // Ratio / level semantics:
-    //   - chronic > 0 : standard ACWR.
-    //   - chronic = 0 AND acute = 0 : no training, Green (rest).
-    //   - chronic = 0 AND acute > 0 : bootstrapping after rest — treat as
-    //     high relative risk (undefined ratio → Red/Yellow by acute volume).
+    // חישוב יחס ורמה:
+    //   chronic > 0 : ACWR רגיל
+    //   chronic = 0, acute = 0 : אין אימונים — Green
+    //   chronic = 0, acute > 0 : אחרי מנוחה ארוכה — סיכון התחלה לפי עוצמה מוחלטת
     let ratio = 0;
     let level = 'Green';
     if (chronic > 0) {
       ratio = acute / chronic;
       level = determineLoadLevel(ratio);
     } else if (acute > 0) {
-      // No prior baseline: flag spike risk based on absolute volume.
-      // 1000+ in a single week after rest is a strong spike.
+      // אין baseline — הערכת סיכון לפי עוצמה מוחלטת
       ratio = acute >= 1000 ? 2.0 : acute >= 300 ? 1.1 : 0.9;
       level = determineLoadLevel(ratio);
     }
 
-    // Stress 0-100 scale.
+    // ציון לחץ 0-100:
+    // עם baseline: (acute/chronic) × 50, מוגבל ל-0-100
+    // ללא baseline: acute/20, מוגבל ל-0-100
     let stress = 0;
     if (chronic > 0) {
       stress = Math.max(0, Math.min(100, Math.round((acute / chronic) * 50)));
     } else if (acute > 0) {
-      // Without a baseline we can't normalize; scale by absolute acute load.
       stress = Math.max(0, Math.min(100, Math.round(acute / 20)));
     }
 
+    // עדכון State לתצוגה
     setCurrentLoadLevel(level);
     setAcRatio(ratio);
     setStressScore(stress);
     setRecommendation(buildRecommendation(level, ratio, stress));
   };
 
+  // שליפת כל הלוגים המאושרים מה-Backend
   const loadDashboardData = async () => {
     setLoading(true);
     try {
       const logsResponse = await getActivityLogsByUser(userId);
+      // סינון לוגים לא מאושרים — isConfirmed === false
       const logs = (logsResponse.data || []).filter(
         (l) => (l.isConfirmed ?? l.IsConfirmed) !== false,
       );
       setAllLogs(logs);
-      setAllLoadHistory([]); // unused — kept for prior code compatibility
+      setAllLoadHistory([]); // לא בשימוש — שמורה לתאימות
     } catch (error) {
       console.log('Dashboard load error:', error.message);
     } finally {
@@ -220,52 +261,58 @@ const WarningsDashboardScreen = ({navigation}) => {
     }
   };
 
+  // רענון — שולף מחדש את הלוגים (ה-ACWR מחושב מהם ישירות)
   const handleRefresh = async () => {
-    // All stats computed from ActivityLogs directly now — just re-fetch.
     await loadDashboardData();
   };
 
+  // צבע לפי רמת עומס
   const getLevelColor = (level) => {
     if (level === 'Red') return Colors.red;
     if (level === 'Yellow') return Colors.yellow;
     return Colors.green;
   };
 
+  // הגדרות עיצוב ה-BarChart
   const chartConfig = {
     backgroundGradientFrom: Colors.cardBackground,
     backgroundGradientTo: Colors.cardBackground,
-    decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(255, 64, 129, ${opacity})`,
+    decimalPlaces: 0,              // ללא ספרות עשרוניות בגרף
+    color: (opacity = 1) => `rgba(255, 64, 129, ${opacity})`,   // ורוד
     labelColor: (opacity = 1) => `rgba(176, 190, 197, ${opacity})`,
     barPercentage: 0.7,
     fillShadowGradient: Colors.primaryLight,
     fillShadowGradientOpacity: 1,
     propsForBackgroundLines: {
       stroke: Colors.border,
-      strokeDasharray: '4',
+      strokeDasharray: '4',        // קווים מקוטעים
     },
   };
 
+  // ערך מקסימום לציר Y — מעוגל ל-500 הקרובה, לפחות 100
   const chartMax = Math.max(100, Math.ceil(Math.max(...weeklyLoad, 0) / 500) * 500);
+  // נתוני הגרף עם dataset מוסתר לנעילת ציר Y
   const chartData = {
     labels: weekLabels,
     datasets: [
       {
         data: weeklyLoad.length > 0 ? weeklyLoad : [0],
       },
-      // Hidden dataset to pin the Y-axis max to a clean round number
+      // Dataset שקוף — מגדיר את ציר Y המקסימלי לערך עגול
       { data: [chartMax], withDots: false, color: () => 'transparent' },
     ],
   };
 
   return (
     <View style={styles.container}>
+      {/* כותרת המסך — ללא כפתור חזרה (טאב) */}
       <ScreenHeader title="Warnings" subtitle="Training Load Overview" />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
         {loading ? (
+          // ספינר עד שהנתונים נטענים
           <ActivityIndicator
             size="large"
             color={Colors.primary}
@@ -273,14 +320,16 @@ const WarningsDashboardScreen = ({navigation}) => {
           />
         ) : (
           <>
-            {/* Load Level Indicator */}
+            {/* כרטיסיית מצב נוכחי */}
             <Card>
+              {/* שורת כותרת + כפתור עזרה */}
               <View style={styles.titleRow}>
                 <Text style={styles.cardTitle}>Current Status</Text>
                 <TouchableOpacity onPress={() => setHelpTopic('status')} hitSlop={8}>
                   <Ionicons name="help-circle-outline" size={18} color={Colors.textSecondary} />
                 </TouchableOpacity>
               </View>
+              {/* נקודת מצב + טקסט Green/Yellow/Red */}
               <View style={styles.statusRow}>
                 <View
                   style={[
@@ -296,6 +345,7 @@ const WarningsDashboardScreen = ({navigation}) => {
                   {currentLoadLevel}
                 </Text>
               </View>
+              {/* מדדים: AC Ratio + Stress — כל אחד עם כפתור עזרה */}
               <View style={styles.metricsRow}>
                 <View style={styles.metric}>
                   <View style={styles.metricLabelRow}>
@@ -304,6 +354,7 @@ const WarningsDashboardScreen = ({navigation}) => {
                       <Ionicons name="help-circle-outline" size={14} color={Colors.textSecondary} />
                     </TouchableOpacity>
                   </View>
+                  {/* 2 ספרות עשרוניות */}
                   <Text style={styles.metricValue}>{acRatio.toFixed(2)}</Text>
                 </View>
                 <View style={styles.metric}>
@@ -318,7 +369,7 @@ const WarningsDashboardScreen = ({navigation}) => {
               </View>
             </Card>
 
-            {/* Weekly Load Chart */}
+            {/* כרטיסיית גרף עומס שבועי */}
             <Card>
               <View style={styles.titleRow}>
                 <Text style={styles.cardTitle}>Weekly Training Load</Text>
@@ -326,7 +377,9 @@ const WarningsDashboardScreen = ({navigation}) => {
                   <Ionicons name="help-circle-outline" size={18} color={Colors.textSecondary} />
                 </TouchableOpacity>
               </View>
+              {/* ניווט בין שבועות — חץ שמאל/ימין + תווית טווח */}
               <View style={styles.weekNavRow}>
+                {/* חץ אחורה — שבוע קודם */}
                 <TouchableOpacity
                   style={styles.weekNavBtn}
                   onPress={() => setWeekOffset((o) => o - 1)}
@@ -335,6 +388,7 @@ const WarningsDashboardScreen = ({navigation}) => {
                   <Ionicons name="chevron-back" size={20} color={Colors.primary} />
                 </TouchableOpacity>
                 <Text style={styles.weekNavLabel}>{getWeekRangeLabel(weekOffset, weekStartDay)}</Text>
+                {/* חץ קדימה — מושבת בשבוע הנוכחי */}
                 <TouchableOpacity
                   style={[styles.weekNavBtn, weekOffset >= 0 && styles.weekNavBtnDisabled]}
                   onPress={() => weekOffset < 0 && setWeekOffset((o) => o + 1)}
@@ -348,21 +402,22 @@ const WarningsDashboardScreen = ({navigation}) => {
                   />
                 </TouchableOpacity>
               </View>
+              {/* הגרף עצמו */}
               <BarChart
                 data={chartData}
                 width={screenWidth - Spacing.lg * 4}
                 height={220}
                 chartConfig={chartConfig}
-                fromZero
-                showValuesOnTopOfBars
-                withInnerLines
+                fromZero              // ציר Y מתחיל מ-0
+                showValuesOnTopOfBars // ערך מעל כל עמודה
+                withInnerLines        // קווי עזר אופקיים
                 segments={4}
                 style={styles.chart}
               />
               <Text style={styles.chartCaption}>Daily session load (load units)</Text>
             </Card>
 
-            {/* Recommendation */}
+            {/* כרטיסיית המלצה חכמה */}
             <Card>
               <Text style={styles.cardTitle}>Smart Recommendation</Text>
               <Text style={styles.recommendationText}>{recommendation}</Text>
@@ -371,24 +426,29 @@ const WarningsDashboardScreen = ({navigation}) => {
         )}
       </ScrollView>
 
+      {/* Help Modal — מוצג בלחיצה על ? */}
       <Modal
         visible={!!helpTopic}
         transparent
         animationType="fade"
         onRequestClose={() => setHelpTopic(null)}
       >
+        {/* לחיצה על הרקע סוגרת */}
         <TouchableOpacity
           activeOpacity={1}
           style={styles.helpBackdrop}
           onPress={() => setHelpTopic(null)}
         >
           <View style={styles.helpCard}>
+            {/* כותרת נושא העזרה */}
             <Text style={styles.helpTitle}>
               {helpTopic ? HELP_TEXT[helpTopic].title : ''}
             </Text>
+            {/* גוף ההסבר */}
             <Text style={styles.helpBody}>
               {helpTopic ? HELP_TEXT[helpTopic].body : ''}
             </Text>
+            {/* כפתור סגירה */}
             <TouchableOpacity
               style={styles.helpClose}
               onPress={() => setHelpTopic(null)}
@@ -399,31 +459,36 @@ const WarningsDashboardScreen = ({navigation}) => {
         </TouchableOpacity>
       </Modal>
 
+      {/* פס תחתון קבוע — כפתורי ניווט */}
       <View style={styles.bottomActions}>
-  <PrimaryButton title="Refresh" onPress={handleRefresh} />
-  <View style={styles.secondaryRow}>
-    <TouchableOpacity
-      style={styles.secondaryButton}
-      onPress={() => navigation.navigate('AddWorkout')}>
-      <Text style={styles.secondaryButtonText}>Add Workout</Text>
-    </TouchableOpacity>
-    <TouchableOpacity
-      style={styles.secondaryButton}
-      onPress={() => navigation.navigate('InjuryReport')}>
-      <Text style={styles.secondaryButtonText}>Report Injury</Text>
-    </TouchableOpacity>
-    <TouchableOpacity
-      style={styles.secondaryButton}
-      onPress={() => navigation.navigate('Settings')}>
-      <Text style={styles.secondaryButtonText}>Settings</Text>
-    </TouchableOpacity>
-  </View>
-</View>
+        {/* כפתור Refresh — טוען מחדש את הלוגים */}
+        <PrimaryButton title="Refresh" onPress={handleRefresh} />
+        {/* שורת כפתורים משניים */}
+        <View style={styles.secondaryRow}>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => navigation.navigate('AddWorkout')}>
+            <Text style={styles.secondaryButtonText}>Add Workout</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => navigation.navigate('InjuryReport')}>
+            <Text style={styles.secondaryButtonText}>Report Injury</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => navigation.navigate('Settings')}>
+            <Text style={styles.secondaryButtonText}>Settings</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </View>
   );
 };
 
+// סגנונות המסך
 const styles = StyleSheet.create({
+  // מיכל ראשי
   container: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -431,17 +496,20 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: Spacing.xxl,
   },
+  // כותרת כרטיסייה
   cardTitle: {
     color: Colors.primary,
     fontSize: Fonts.subtitleSize,
     fontWeight: Fonts.bold,
     marginBottom: Spacing.md,
   },
+  // שורת מצב (נקודה + טקסט)
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: Spacing.md,
   },
+  // נקודת מצב עגולה
   statusDot: {
     width: 16,
     height: 16,
@@ -452,6 +520,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: Fonts.bold,
   },
+  // שורת מדדים — AC Ratio + Stress
   metricsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -470,22 +539,25 @@ const styles = StyleSheet.create({
     fontWeight: Fonts.bold,
     marginTop: 4,
   },
+  // הגרף — הזזה שמאלה לפיצוי על padding
   chart: {
     borderRadius: 12,
     marginLeft: -Spacing.md,
   },
+  // טקסט המלצה
   recommendationText: {
     color: Colors.textPrimary,
     fontSize: Fonts.bodySize,
     lineHeight: 22,
   },
+  // פס תחתון קבוע
   bottomActions: {
     paddingVertical: Spacing.md,
     borderTopWidth: 1,
     borderTopColor: Colors.border,
     backgroundColor: Colors.cardBackground,
-    
   },
+  // כפתור משני
   secondaryButton: {
     alignItems: 'center',
     paddingVertical: Spacing.sm,
@@ -494,29 +566,33 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: Fonts.bodySize,
   },
-
+  // שורת כפתורים משניים
   secondaryRow: {
-  flexDirection: 'row',
-  justifyContent: 'space-around',
-  paddingHorizontal: Spacing.md,
-},
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: Spacing.md,
+  },
+  // שורת כותרת + כפתור עזרה
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: Spacing.md,
   },
+  // שורת תווית + ? ליד מדד
   metricLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
+  // כיתוב תחת הגרף
   chartCaption: {
     textAlign: 'center',
     marginTop: Spacing.xs,
     color: Colors.textMuted,
     fontSize: Fonts.captionSize,
   },
+  // שורת ניווט שבועי
   weekNavRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -527,6 +603,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
   },
+  // כפתור ניווט מושבת — שקוף למחצה
   weekNavBtnDisabled: {
     opacity: 0.4,
   },
@@ -537,12 +614,14 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
   },
+  // רקע Help Modal — כהה חצי-שקוף
   helpBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     paddingHorizontal: Spacing.lg,
   },
+  // כרטיסיית Help Modal
   helpCard: {
     backgroundColor: Colors.cardBackground,
     borderRadius: 12,
@@ -562,6 +641,7 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: Spacing.lg,
   },
+  // כפתור סגירת Help
   helpClose: {
     backgroundColor: Colors.primary,
     borderRadius: 8,

@@ -1,3 +1,4 @@
+// מסך Health Connect — סקירת אימונים, אישור רמת מאמץ, מחיקה
 import React, { useState, useCallback } from 'react';
 import {
   View,
@@ -10,43 +11,60 @@ import {
   Alert,
   Modal,
 } from 'react-native';
+// אייקוני ✓, מחיקה, זמן וכדומה
 import { Ionicons } from '@expo/vector-icons';
+// useFocusEffect — רענון רשימה בכניסה לטאב
 import { useFocusEffect } from '@react-navigation/native';
+// userId של המשתמש המחובר
 import { useAuth } from './AuthContext';
+// פונקציות Context הסנכרון — הרשאות, סנכרון, עדכון badge
 import { useHealthSync } from './HealthSyncContext';
+// לוגי פעילות: שליפה, עדכון, מחיקה
 import { getActivityLogs, putActivityLog, deleteActivityLog } from './api';
+// חישוב עומס יומי לאחר שינוי
 import { calculateDailyLoad } from '../services/api';
+// צבעי ערכת הנושא
 import { Colors } from '../theme/colors';
+// tombstone — מניעת ייבוא חוזר של אימון שנמחק
 import { tombstoneWorkout, loadHcTombstones } from '../constants/hcTombstones';
 
 /**
- * GoogleFitScreen
+ * GoogleFitScreen — מסך סקירת Health Connect.
  *
- * Health Connect workout review screen. Sync from HC → backend happens
- * automatically in HealthSyncContext on app open and on app foreground.
- * This screen shows the resulting workouts and lets the user confirm each
- * one (set exertion level) so it counts toward training load.
+ * הסנכרון HC → Backend מתרחש אוטומטית ב-HealthSyncContext בעת פתיחת האפליקציה
+ * ובכל חזרה לפורגראונד. מסך זה מציג את האימונים שנוצרו ומאפשר:
+ *   - אישור כל אימון (קביעת רמת מאמץ) כדי שיחושב בעומס האימון
+ *   - מחיקת אימון (+ tombstone כדי שלא יסונכרן שוב)
+ *   - Pull-to-refresh ידני לסנכרון על דרישה
  */
 const GoogleFitScreen = () => {
+  // userId לשאילתות API
   const { userId } = useAuth();
+  // פונקציות וסטטוס מה-HealthSyncContext
   const {
-    permissionsGranted,
-    requestHCPermissions,
-    refreshUnconfirmedCount,
-    runAutoSync,
-    isSyncing,
-    lastSyncError,
+    permissionsGranted,       // האם הרשאות HC ניתנו
+    requestHCPermissions,     // בקשת הרשאות (בפעם הראשונה)
+    refreshUnconfirmedCount,  // עדכון badge של טאב Health
+    runAutoSync,              // הפעלה ידנית של סנכרון
+    isSyncing,                // האם סנכרון פעיל
+    lastSyncError,            // שגיאת הסנכרון האחרון
   } = useHealthSync();
 
+  // רשימת האימונים המוצגים
   const [workouts, setWorkouts] = useState([]);
+  // האם בטעינת הרשימה מה-Backend
   const [isLoadingWorkouts, setIsLoadingWorkouts] = useState(false);
+  // האם Pull-to-refresh פעיל
   const [refreshing, setRefreshing] = useState(false);
+  // האימון שה-Modal הפתוח מתייחס אליו (null = Modal סגור)
   const [confirmingWorkout, setConfirmingWorkout] = useState(null);
+  // רמת מאמץ שנבחרה ב-Modal (1-10)
   const [exertionLevel, setExertionLevel] = useState(5);
+  // האם שמירת אישור בתהליך
   const [savingConfirm, setSavingConfirm] = useState(false);
 
   /**
-   * Load activity logs from backend to display to user.
+   * loadWorkouts — שולף לוגי פעילות מה-Backend ומציגם ממוינים מהחדש לישן.
    */
   const loadWorkouts = useCallback(async () => {
     if (!userId) return;
@@ -54,6 +72,7 @@ const GoogleFitScreen = () => {
     try {
       setIsLoadingWorkouts(true);
       const logs = await getActivityLogs(userId);
+      // מיון מהחדש לישן לפי זמן התחלה
       const sorted = logs.sort(
         (a, b) => new Date(b.startTime) - new Date(a.startTime)
       );
@@ -65,19 +84,18 @@ const GoogleFitScreen = () => {
     }
   }, [userId]);
 
-  // Refresh the on-screen list every time the user opens the Health tab.
-  // The actual HC→backend sync runs in HealthSyncContext on app open /
-  // foreground — no buttons needed.
+  // רענון הרשימה בכל כניסה לטאב Health.
+  // הסנכרון עצמו מנוהל ב-HealthSyncContext — אין צורך בכפתורים.
   useFocusEffect(
     useCallback(() => {
+      // טעינת tombstones לפני הצגת הרשימה
       loadHcTombstones();
       loadWorkouts();
     }, [loadWorkouts])
   );
 
   /**
-   * Pull-to-refresh fallback: triggers a fresh HC→backend sync, then
-   * reloads the list and badge count.
+   * onRefresh — Pull-to-refresh: מריץ סנכרון HC → Backend ואז טוען מחדש.
    */
   const onRefresh = async () => {
     setRefreshing(true);
@@ -90,8 +108,8 @@ const GoogleFitScreen = () => {
   };
 
   /**
-   * One-time setup: request Health Connect permissions. After grant the
-   * provider's auto-sync will pull the user's workouts in.
+   * handleRequestPermissions — הגדרה חד-פעמית: בקשת הרשאות HC.
+   * לאחר מתן הרשאות, מריץ סנכרון ראשוני ומציג את האימונים.
    */
   const handleRequestPermissions = async () => {
     const granted = await requestHCPermissions();
@@ -108,6 +126,7 @@ const GoogleFitScreen = () => {
     );
   };
 
+  // מחיקת אימון — Alert אישור לפני מחיקה
   const handleDeleteWorkout = (workout) => {
     Alert.alert(
       'Delete workout?',
@@ -119,15 +138,15 @@ const GoogleFitScreen = () => {
           style: 'destructive',
           onPress: async () => {
             try {
+              // מחיקת הלוג מה-Backend
               await deleteActivityLog(workout.activityID);
-              // Tombstone Health-Connect-sourced workouts so the next
-              // auto-sync does NOT re-import the same row. Manual logs
-              // never re-appear (they don't exist in HC) so skipping
-              // the tombstone for them keeps the set small.
+              // tombstone לאימוני HC בלבד — מניעת ייבוא חוזר בסנכרון הבא
+              // אימונים ידניים לא מופיעים ב-HC, אז לא צריך tombstone עבורם
               if (workout.sourceDevice === 'Health Connect') {
                 await tombstoneWorkout(workout);
               }
               try {
+                // חישוב מחדש של עומס יום המחיקה + היום הנוכחי
                 const sessionDate = new Date(workout.startTime);
                 await calculateDailyLoad(userId, sessionDate);
                 const today = new Date();
@@ -137,6 +156,7 @@ const GoogleFitScreen = () => {
               } catch (recalcErr) {
                 console.warn('Recalc failed:', recalcErr.message);
               }
+              // רענון הרשימה + badge
               await loadWorkouts();
               await refreshUnconfirmedCount();
             } catch (err) {
@@ -148,17 +168,21 @@ const GoogleFitScreen = () => {
     );
   };
 
+  // פתיחת Modal לאישור אימון — רק אם לא מאושר כבר
   const openConfirmModal = (workout) => {
     if (workout.isConfirmed) return;
     setConfirmingWorkout(workout);
+    // ברירת מחדל: רמת המאמץ הנוכחית של האימון (בד"כ 5 מ-HC)
     setExertionLevel(workout.exertionLevel || 5);
   };
 
+  // סגירת Modal + איפוס סטטוס שמירה
   const closeConfirmModal = () => {
     setConfirmingWorkout(null);
     setSavingConfirm(false);
   };
 
+  // שמירת האישור — PUT לוג עם exertionLevel חדש + isConfirmed=true
   const submitConfirm = async () => {
     if (!confirmingWorkout) return;
     try {
@@ -173,11 +197,12 @@ const GoogleFitScreen = () => {
         maxHeartRate: confirmingWorkout.maxHeartRate ?? null,
         caloriesBurned: confirmingWorkout.caloriesBurned ?? null,
         sourceDevice: confirmingWorkout.sourceDevice || 'Health Connect',
-        exertionLevel,
+        exertionLevel,              // הערך שבחר המשתמש ב-Modal
         duration: confirmingWorkout.duration || 0,
-        isConfirmed: true,
+        isConfirmed: true,          // מאשר את האימון
       });
       closeConfirmModal();
+      // רענון רשימה + badge
       await loadWorkouts();
       await refreshUnconfirmedCount();
       Alert.alert('Workout Confirmed', 'Exertion level saved. Your training load will update on next refresh.');
@@ -187,11 +212,7 @@ const GoogleFitScreen = () => {
     }
   };
 
-  /**
-   * Format time for display.
-   * @param {string|Date} isoString - ISO string or Date object
-   * @returns {string} Formatted time (e.g., "2:30 PM")
-   */
+  // פורמט שעה: "2:30 PM" בזמן ישראל
   const formatTime = (isoString) => {
     try {
       const date = new Date(isoString);
@@ -206,11 +227,7 @@ const GoogleFitScreen = () => {
     }
   };
 
-  /**
-   * Format date for display.
-   * @param {string|Date} isoString - ISO string or Date object
-   * @returns {string} Formatted date (e.g., "Jan 15, 2025")
-   */
+  // פורמט תאריך: "Jan 15, 2025" בזמן ישראל
   const formatDate = (isoString) => {
     try {
       const date = new Date(isoString);
@@ -225,11 +242,7 @@ const GoogleFitScreen = () => {
     }
   };
 
-  /**
-   * Get activity type name from ID.
-   * @param {number} typeId - Activity type ID
-   * @returns {string} Activity type name
-   */
+  // מיפוי activityTypeID → שם קריא
   const getActivityTypeName = (typeId) => {
     const types = {
       1: 'Running',
@@ -242,7 +255,8 @@ const GoogleFitScreen = () => {
   };
 
   /**
-   * Render a single workout item.
+   * renderWorkoutItem — רנדור כרטיסיית אימון יחידה.
+   * לחיצה פותחת את Modal האישור (רק לאימונים ממתינים).
    */
   const renderWorkoutItem = ({ item }) => {
     const duration = item.duration || 0;
@@ -254,8 +268,10 @@ const GoogleFitScreen = () => {
       <TouchableOpacity
         style={styles.workoutCard}
         onPress={() => openConfirmModal(item)}
+        // אימון מאושר: לא ניתן ללחיצה (opacity=1 מונע אנימציה)
         activeOpacity={item.isConfirmed ? 1 : 0.7}
       >
+        {/* כותרת הכרטיסייה: סוג פעילות + תאריך */}
         <View style={styles.workoutHeader}>
           <Text style={styles.activityName}>{activityName}</Text>
           <Text style={styles.workoutDate}>
@@ -263,12 +279,15 @@ const GoogleFitScreen = () => {
           </Text>
         </View>
 
+        {/* שורת סטטיסטיקות — מציגה רק ערכים > 0 */}
         <View style={styles.workoutStats}>
+          {/* משך — תמיד מוצג */}
           <View style={styles.statItem}>
             <Ionicons name="time-outline" size={16} color={Colors.textSecondary} />
             <Text style={styles.statText}>{duration} min</Text>
           </View>
 
+          {/* מרחק — מוצג רק אם > 0 */}
           {distance > 0 && (
             <View style={styles.statItem}>
               <Ionicons name="map-outline" size={16} color={Colors.textSecondary} />
@@ -276,6 +295,7 @@ const GoogleFitScreen = () => {
             </View>
           )}
 
+          {/* קלוריות — מוצג רק אם > 0 */}
           {calories > 0 && (
             <View style={styles.statItem}>
               <Ionicons name="flame-outline" size={16} color={Colors.textSecondary} />
@@ -283,6 +303,7 @@ const GoogleFitScreen = () => {
             </View>
           )}
 
+          {/* דופק — מוצג רק אם > 0 */}
           {item.avgHeartRate > 0 && (
             <View style={styles.statItem}>
               <Ionicons name="heart-outline" size={16} color="#e74c3c" />
@@ -293,7 +314,9 @@ const GoogleFitScreen = () => {
           )}
         </View>
 
+        {/* תחתית הכרטיסייה: badge סטטוס + מקור */}
         <View style={styles.workoutFooter}>
+          {/* badge: Confirmed (ירוק) / Pending (כתום) */}
           <View
             style={[
               styles.statusBadge,
@@ -315,9 +338,11 @@ const GoogleFitScreen = () => {
             </Text>
           </View>
 
+          {/* מקור האימון (Health Connect / Manual) */}
           <Text style={styles.sourceText}>📲 {item.sourceDevice}</Text>
         </View>
 
+        {/* כפתור מחיקה — שורה נפרדת עם גבול אדום */}
         <TouchableOpacity
           style={styles.deleteRowBtn}
           onPress={() => handleDeleteWorkout(item)}
@@ -329,6 +354,7 @@ const GoogleFitScreen = () => {
     );
   };
 
+  // Modal אישור אימון — בחירת רמת מאמץ 1-10
   const renderConfirmModal = () => (
     <Modal
       visible={!!confirmingWorkout}
@@ -336,9 +362,11 @@ const GoogleFitScreen = () => {
       animationType="fade"
       onRequestClose={closeConfirmModal}
     >
+      {/* רקע overlay */}
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>Confirm Workout</Text>
+          {/* פרטי האימון המאושר */}
           {confirmingWorkout && (
             <Text style={styles.modalSubtitle}>
               {getActivityTypeName(confirmingWorkout.activityTypeID)} •{' '}
@@ -347,7 +375,9 @@ const GoogleFitScreen = () => {
             </Text>
           )}
 
+          {/* שאלת רמת מאמץ */}
           <Text style={styles.modalLabel}>How hard was it? (1–10)</Text>
+          {/* 10 כפתורי בחירה — chip עגול */}
           <View style={styles.exertionRow}>
             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => {
               const selected = n === exertionLevel;
@@ -373,6 +403,7 @@ const GoogleFitScreen = () => {
             })}
           </View>
 
+          {/* כפתורי Cancel + Confirm */}
           <View style={styles.modalButtonRow}>
             <TouchableOpacity
               style={[styles.button, styles.secondaryButton, styles.modalButton]}
@@ -386,6 +417,7 @@ const GoogleFitScreen = () => {
               onPress={submitConfirm}
               disabled={savingConfirm}
             >
+              {/* ספינר בזמן שמירה */}
               {savingConfirm ? (
                 <ActivityIndicator color="#fff" />
               ) : (
@@ -401,9 +433,7 @@ const GoogleFitScreen = () => {
     </Modal>
   );
 
-  /**
-   * Render empty state message.
-   */
+  // מצב ריק — מוצג כשאין אימונים
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
       <Ionicons name="fitness-outline" size={64} color="#bdc3c7" />
@@ -416,11 +446,11 @@ const GoogleFitScreen = () => {
 
   return (
     <View style={styles.container}>
-      {/* Header Section */}
+      {/* כותרת + אינדיקטור חיבור */}
       <View style={styles.header}>
         <Text style={styles.title}>Health Connect</Text>
 
-        {/* Connection Status */}
+        {/* נקודת מצב: Connected (ירוק) / Not Connected (אדום) */}
         <View
           style={[
             styles.statusIndicator,
@@ -443,7 +473,7 @@ const GoogleFitScreen = () => {
         </View>
       </View>
 
-      {/* Background-sync error banner */}
+      {/* באנר שגיאת סנכרון — מוצג כשיש שגיאה מהסנכרון האחרון */}
       {lastSyncError && (
         <View style={styles.errorBanner}>
           <Ionicons name="alert-circle-outline" size={20} color="#e74c3c" />
@@ -451,7 +481,7 @@ const GoogleFitScreen = () => {
         </View>
       )}
 
-      {/* One-time setup: only shown when permissions are missing */}
+      {/* כפתור חיבור ראשוני — מוצג רק כשאין הרשאות */}
       {!permissionsGranted && (
         <View style={styles.buttonContainer}>
           <TouchableOpacity
@@ -459,6 +489,7 @@ const GoogleFitScreen = () => {
             onPress={handleRequestPermissions}
             disabled={isSyncing}
           >
+            {/* ספינר בזמן בקשת הרשאות */}
             {isSyncing ? (
               <ActivityIndicator color="#fff" />
             ) : (
@@ -471,7 +502,7 @@ const GoogleFitScreen = () => {
         </View>
       )}
 
-      {/* Hint banner: tells the user how the new flow works */}
+      {/* באנר הנחיה למשתמש מחובר */}
       {permissionsGranted && (
         <View style={styles.hintBanner}>
           <Ionicons name="information-circle-outline" size={16} color={Colors.textSecondary} />
@@ -481,11 +512,13 @@ const GoogleFitScreen = () => {
         </View>
       )}
 
+      {/* Modal אישור */}
       {renderConfirmModal()}
 
-      {/* Workouts List */}
+      {/* רשימת האימונים — Pull-to-refresh מריץ סנכרון */}
       <FlatList
         data={workouts}
+        // מפתח: activityID או random (מניעת crash אם חסר ID)
         keyExtractor={(item) => item.activityID?.toString() || Math.random().toString()}
         renderItem={renderWorkoutItem}
         ListEmptyComponent={renderEmptyState}
@@ -500,15 +533,17 @@ const GoogleFitScreen = () => {
 };
 
 // ============================================================================
-// STYLES
+// סגנונות המסך
 // ============================================================================
 
 const styles = StyleSheet.create({
+  // מיכל ראשי
   container: {
     flex: 1,
     backgroundColor: Colors.background,
   },
 
+  // כותרת עליונה — רקע כרטיסייה
   header: {
     backgroundColor: Colors.cardBackground,
     paddingHorizontal: 16,
@@ -525,6 +560,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
+  // אינדיקטור חיבור — pill עגול
   statusIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -534,10 +570,12 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
 
+  // Connected — רקע ירוק חצי-שקוף
   connected: {
     backgroundColor: 'rgba(76, 175, 80, 0.15)',
   },
 
+  // Not Connected — רקע אדום חצי-שקוף
   disconnected: {
     backgroundColor: 'rgba(244, 67, 54, 0.15)',
   },
@@ -556,6 +594,7 @@ const styles = StyleSheet.create({
     color: Colors.danger,
   },
 
+  // שמור לשימוש עתידי — lastSync
   lastSyncContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -572,6 +611,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
 
+  // באנר שגיאה
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -589,6 +629,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  // באנר הצלחה — שמור לשימוש עתידי
   successBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -606,6 +647,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
+  // באנר הנחיה — אפור עדין
   hintBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -622,6 +664,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
 
+  // מיכל כפתור חיבור
   buttonContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -629,6 +672,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 
+  // כפתור בסיסי
   button: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -639,6 +683,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 
+  // כפתור ראשי — צבע מותג
   primaryButton: {
     backgroundColor: Colors.primary,
   },
@@ -649,6 +694,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
+  // כפתור משני — רקע בהיר + מסגרת
   secondaryButton: {
     backgroundColor: Colors.cardBackgroundLight,
     borderWidth: 1,
@@ -661,6 +707,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
+  // FlatList
   list: {
     flex: 1,
   },
@@ -671,6 +718,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
 
+  // כרטיסיית אימון — גבול שמאלי בצבע מותג
   workoutCard: {
     backgroundColor: Colors.cardBackground,
     borderRadius: 10,
@@ -685,6 +733,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
+  // כותרת כרטיסייה
   workoutHeader: {
     marginBottom: 10,
   },
@@ -701,6 +750,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
 
+  // שורת סטטיסטיקות
   workoutStats: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -720,6 +770,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
+  // תחתית כרטיסייה
   workoutFooter: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -729,6 +780,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
 
+  // badge מצב (Confirmed/Pending)
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -764,6 +816,7 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
   },
 
+  // מצב ריק
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
@@ -786,6 +839,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
 
+  // Modal אישור
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
@@ -821,6 +875,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
+  // שורת chip רמת מאמץ
   exertionRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -828,6 +883,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
 
+  // chip רמת מאמץ
   exertionChip: {
     width: 40,
     height: 40,
@@ -839,6 +895,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  // chip נבחר — צבע מותג
   exertionChipSelected: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
@@ -854,6 +911,7 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
   },
 
+  // שורת כפתורי Modal
   modalButtonRow: {
     flexDirection: 'row',
     gap: 10,
@@ -863,6 +921,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  // כפתור מחיקה — שורה נפרדת תחת הכרטיסייה
   deleteRowBtn: {
     flexDirection: 'row',
     alignItems: 'center',
