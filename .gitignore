@@ -1,0 +1,75 @@
+# =================== Visual Studio / .NET ===================
+.vs/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.cache
+*.vspscc
+
+# =================== Node / React Native / Expo ===================
+node_modules/
+.expo/
+.expo-shared/
+dist/
+web-build/
+.metro-health-check*
+
+# =================== Android (RN native) ===================
+android/build/
+android/.gradle/
+android/.cxx/
+android/app/build/
+android/app/.cxx/
+android/local.properties
+android/.idea/
+*.keystore
+!debug.keystore
+
+# =================== iOS (RN native) ===================
+ios/build/
+ios/Pods/
+ios/Podfile.lock
+ios/*.xcworkspace/xcuserdata/
+ios/*.xcodeproj/xcuserdata/
+ios/*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# =================== Build outputs ===================
+build/
+*.jsbundle
+*.apk
+*.aab
+*.ipa
+
+# =================== Logs ===================
+npm-debug.log*
+yarn-error.log
+yarn-debug.log*
+*.log
+
+# =================== OS files ===================
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# =================== IDE ===================
+.idea/
+.vscode/
+*.iml
+.gradle
+local.properties
+
+# =================== Python (PDF generator scripts) ===================
+__pycache__/
+*.pyc
+venv/
+.env
+
+# =================== Claude / scratch ===================
+.claude/
+
+# =================== Temporary scratch projects ===================
+my-app/

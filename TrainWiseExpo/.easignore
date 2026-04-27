@@ -1,0 +1,10 @@
+node_modules/react-native-reanimated/android/build/
+node_modules/react-native-worklets/android/build/
+node_modules/react-native-health-connect/android/build/
+android/build/
+android/.gradle/
+android/.cxx/
+android/app/build/
+android/app/.cxx/
+android/.idea/
+android/.kotlin/
