@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "TrainWiseExpo",
+    "slug": "TrainWiseExpo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "trainwiseexpo",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.health.READ_EXERCISE",
+        "android.permission.health.READ_HEART_RATE",
+        "android.permission.health.READ_DISTANCE",
+        "android.permission.health.READ_TOTAL_CALORIES_BURNED",
+        "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
+        "android.permission.health.READ_STEPS"
+      ],
+      "package": "com.anonymous.TrainWiseExpo"
+    },
+    "plugins": [
+      "react-native-health-connect",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ]
+    ]
+  }
+}
