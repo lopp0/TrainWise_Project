@@ -15,9 +15,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '../api/AuthContext';
+import { Colors } from '../theme/colors';
+import { useThemedStyles } from '../theme/useThemedStyles';
+import { useTheme } from '../theme/ThemeContext';
 
 const LoginScreen = ({ navigation }) => {
   const { login } = useAuth();
+  const styles = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -39,7 +44,7 @@ const LoginScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-      <StatusBar style="light" />
+      <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -74,7 +79,7 @@ const LoginScreen = ({ navigation }) => {
           <TextInput
             style={styles.input}
             placeholder="Your Email here..."
-            placeholderTextColor="#a0a0a0"
+            placeholderTextColor={Colors.textMuted}
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -86,7 +91,7 @@ const LoginScreen = ({ navigation }) => {
           <TextInput
             style={styles.input}
             placeholder="Your password here..."
-            placeholderTextColor="#a0a0a0"
+            placeholderTextColor={Colors.textMuted}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -127,10 +132,10 @@ const LoginScreen = ({ navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (Colors) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#13173d',
+    backgroundColor: Colors.background,
   },
   keyboardView: {
     flex: 1,
@@ -163,17 +168,17 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   titleEcho: {
-    color: '#c524e6',
+    color: Colors.primaryDark,
     position: 'absolute',
     top: 6,
     left: 6,
   },
   titleFront: {
-    color: '#ff2c60',
+    color: Colors.primary,
   },
   fieldLabel: {
     alignSelf: 'flex-start',
-    color: '#ff2c60',
+    color: Colors.primary,
     fontSize: 15,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -182,21 +187,21 @@ const styles = StyleSheet.create({
   },
   input: {
     width: '100%',
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.inputBackground,
     borderWidth: 2,
-    borderColor: '#87ffd7',
+    borderColor: Colors.inputBorder,
     borderRadius: 10,
     paddingVertical: 12,
     paddingHorizontal: 16,
     fontSize: 14,
-    color: '#13173d',
+    color: Colors.textPrimary,
   },
   signInButton: {
     marginTop: 28,
     width: '100%',
-    backgroundColor: '#ff2c60',
+    backgroundColor: Colors.primary,
     borderWidth: 6,
-    borderColor: '#c524e6',
+    borderColor: Colors.primaryDark,
     borderRadius: 32,
     paddingVertical: 14,
     alignItems: 'center',
@@ -223,14 +228,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   resetPrompt: {
-    color: '#ff2c60',
+    color: Colors.primary,
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.4,
     textAlign: 'center',
   },
   resetHere: {
-    color: '#ffffff',
+    color: Colors.textPrimary,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.4,
@@ -243,13 +248,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   signUpPrompt: {
-    color: '#a0a0c0',
+    color: Colors.textSecondary,
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.4,
   },
   signUpLink: {
-    color: '#ff2c60',
+    color: Colors.primary,
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.4,

@@ -7,15 +7,15 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
-  Switch,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import {Colors, Fonts, Spacing} from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import ScreenHeader from '../components/ScreenHeader';
 import Card from '../components/Card';
 import PrimaryButton from '../components/PrimaryButton';
-import {getUserById, updateUser as updateUserApi} from '../services/api';
+import {getUserById, updateUser as updateUserApi, deleteUser as deleteUserApi} from '../services/api';
 import { useAuth } from '../api/AuthContext';
 import { useTheme } from '../theme/ThemeContext';
 import {
@@ -25,18 +25,24 @@ import {
 } from '../constants/weekStart';
 
 const SettingsScreen = ({navigation}) => {
-  const { userId, updateUser: updateAuthUser } = useAuth();
+  const { userId, updateUser: updateAuthUser, logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Delete-account flow uses TWO independent confirmations to avoid
+  // accidental wipes: a native Alert ("are you sure?"), then a modal
+  // that requires the user to retype their email exactly. Final delete
+  // only fires after both pass.
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [birthYear, setBirthYear] = useState('');
   const [gender, setGender] = useState('');
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
-  const [isCoachMode, setIsCoachMode] = useState(false);
   const [weekStart, setWeekStart] = useState(getWeekStartDay());
   // Server-managed fields the BL requires on update — kept hidden but echoed back.
   const [serverFields, setServerFields] = useState({
@@ -127,6 +133,50 @@ const SettingsScreen = ({navigation}) => {
 
   const showPolicy = (title, text) => {
     Alert.alert(title, text, [{text: 'OK'}]);
+  };
+
+  // Step 1 of delete: native Alert. If the user taps Continue we open the
+  // modal (step 2) where they must type their email exactly. Cancelling
+  // here closes everything with no state change.
+  const startDeleteFlow = () => {
+    Alert.alert(
+      'Delete account?',
+      'This will permanently erase your profile, every workout, every injury report, every connection with your coach or trainees, and every chat message. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () => {
+            setDeleteConfirmText('');
+            setDeleteModalVisible(true);
+          },
+        },
+      ],
+    );
+  };
+
+  const confirmDelete = async () => {
+    // Defense in depth — even if the button somehow got tapped while
+    // disabled, refuse if the typed text doesn't match.
+    if (deleteConfirmText.trim().toLowerCase() !== email.trim().toLowerCase()) {
+      Alert.alert('Email does not match', 'Please type your email exactly to confirm.');
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteUserApi(userId);
+      setDeleteModalVisible(false);
+      // logout() clears AsyncStorage + AuthContext; AppNavigator then
+      // swaps AppStack for AuthStack so the user lands on the Welcome
+      // screen with no in-memory user reference left behind.
+      await logout();
+    } catch (error) {
+      const detail = error?.response?.data || error?.message || 'Unknown error.';
+      Alert.alert('Could not delete account', String(detail));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   if (loading) {
@@ -228,7 +278,7 @@ const SettingsScreen = ({navigation}) => {
               );
             })}
           </View>
-          <Text style={styles.hint}>Light mode uses the logo's mint/teal palette.</Text>
+          <Text style={styles.hint}>Light mode uses the logo&apos;s mint/teal palette.</Text>
         </Card>
 
         {/* Week start */}
@@ -255,25 +305,6 @@ const SettingsScreen = ({navigation}) => {
           </View>
           <Text style={styles.hint}>
             Affects the Home + Warnings weekly charts and the AC ratio window.
-          </Text>
-        </Card>
-
-        {/* Profile Switch */}
-        <Card>
-          <Text style={styles.cardTitle}>Profile Mode</Text>
-          <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>
-              {isCoachMode ? 'Coach' : 'Trainee'}
-            </Text>
-            <Switch
-              value={isCoachMode}
-              onValueChange={setIsCoachMode}
-              trackColor={{false: Colors.inputBorder, true: Colors.primaryDark}}
-              thumbColor={isCoachMode ? Colors.primary : Colors.textMuted}
-            />
-          </View>
-          <Text style={styles.hint}>
-            Switch between trainee and coach views of the app.
           </Text>
         </Card>
 
@@ -314,7 +345,86 @@ const SettingsScreen = ({navigation}) => {
             <Text style={styles.linkArrow}>{'>'}</Text>
           </TouchableOpacity>
         </Card>
+
+        {/* Danger zone — separated visually so a stray tap on Save Changes
+            can never land on the destructive action. Confirmation lives
+            inside startDeleteFlow → modal, see top of file. */}
+        <Card>
+          <Text style={styles.dangerTitle}>Danger Zone</Text>
+          <Text style={styles.dangerBody}>
+            Permanently delete your TrainWise account and every record we have about you.
+            This cannot be undone.
+          </Text>
+          <TouchableOpacity
+            style={styles.dangerButton}
+            onPress={startDeleteFlow}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.dangerButtonText}>Delete my account</Text>
+          </TouchableOpacity>
+        </Card>
       </ScrollView>
+
+      {/* Step 2 of delete: type-your-email modal. The final red button is
+          disabled until the typed text matches the user's email (case-
+          insensitive, whitespace-trimmed). Backdrop tap cancels. */}
+      <Modal
+        visible={deleteModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !deleting && setDeleteModalVisible(false)}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.modalBackdrop}
+          onPress={() => !deleting && setDeleteModalVisible(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Confirm deletion</Text>
+            <Text style={styles.modalBody}>
+              To confirm, please type your email exactly:
+            </Text>
+            <Text style={styles.modalEmail}>{email}</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={deleteConfirmText}
+              onChangeText={setDeleteConfirmText}
+              placeholder="Type your email here"
+              placeholderTextColor={Colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              editable={!deleting}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancel}
+                onPress={() => setDeleteModalVisible(false)}
+                disabled={deleting}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalConfirm,
+                  (deleteConfirmText.trim().toLowerCase() !== email.trim().toLowerCase() || deleting) &&
+                    styles.modalConfirmDisabled,
+                ]}
+                onPress={confirmDelete}
+                disabled={
+                  deleteConfirmText.trim().toLowerCase() !== email.trim().toLowerCase() || deleting
+                }
+              >
+                {deleting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>Delete forever</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       <View style={styles.bottomActions}>
         <PrimaryButton
@@ -480,6 +590,104 @@ const makeStyles = (Colors) => StyleSheet.create({
   secondaryButtonText: {
     color: Colors.textSecondary,
     fontSize: Fonts.bodySize,
+  },
+  // Danger zone — semantic red (theme-independent) so the destructive
+  // action reads as destructive on both light and dark.
+  dangerTitle: {
+    color: Colors.red,
+    fontSize: Fonts.subtitleSize,
+    fontWeight: Fonts.bold,
+    marginBottom: Spacing.md,
+  },
+  dangerBody: {
+    color: Colors.textSecondary,
+    fontSize: Fonts.captionSize + 1,
+    lineHeight: 20,
+    marginBottom: Spacing.md,
+  },
+  dangerButton: {
+    backgroundColor: Colors.red,
+    paddingVertical: Spacing.md,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  dangerButtonText: {
+    color: '#fff',
+    fontSize: Fonts.bodySize,
+    fontWeight: Fonts.bold,
+  },
+  // Delete-confirm modal
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.lg,
+  },
+  modalCard: {
+    backgroundColor: Colors.cardBackground,
+    borderRadius: 14,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  modalTitle: {
+    color: Colors.red,
+    fontSize: Fonts.subtitleSize,
+    fontWeight: Fonts.bold,
+    marginBottom: Spacing.sm,
+  },
+  modalBody: {
+    color: Colors.textPrimary,
+    fontSize: Fonts.bodySize,
+    marginBottom: Spacing.xs,
+  },
+  modalEmail: {
+    color: Colors.primary,
+    fontSize: Fonts.bodySize,
+    fontWeight: Fonts.bold,
+    marginBottom: Spacing.md,
+  },
+  modalInput: {
+    backgroundColor: Colors.inputBackground,
+    borderRadius: 10,
+    padding: Spacing.md,
+    color: Colors.textPrimary,
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+    fontSize: Fonts.bodySize,
+    marginBottom: Spacing.lg,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  modalCancel: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  modalCancelText: {
+    color: Colors.textPrimary,
+    fontSize: Fonts.bodySize,
+    fontWeight: Fonts.semiBold,
+  },
+  modalConfirm: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    borderRadius: 10,
+    alignItems: 'center',
+    backgroundColor: Colors.red,
+  },
+  modalConfirmDisabled: {
+    opacity: 0.4,
+  },
+  modalConfirmText: {
+    color: '#fff',
+    fontSize: Fonts.bodySize,
+    fontWeight: Fonts.bold,
   },
 });
 

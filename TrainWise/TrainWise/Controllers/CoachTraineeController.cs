@@ -17,6 +17,12 @@ namespace TrainWise.Controllers
                 _bl.Connect(coachId, userId);
                 return Ok("Connected to coach");
             }
+            catch (InvalidOperationException ex)
+            {
+                // Pair already exists — 409 so the app shows "already connected"
+                // rather than a generic failure.
+                return Conflict(ex.Message);
+            }
             catch (ArgumentException ex)
             {
                 return BadRequest(ex.Message);

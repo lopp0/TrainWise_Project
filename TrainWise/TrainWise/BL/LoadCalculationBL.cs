@@ -30,6 +30,7 @@ namespace TrainWise.BL
             //   thresholds in LoadParameters assume weekly-equivalent units
             //   on both sides; without the /4, ratio can never exceed 1.0
             //   and the status is permanently "Green".
+
             double acuteLoad = sessions
                 .Where(s => s.StartTime.Date >= date.Date.AddDays(-6))
                 .Sum(s => s.CalculatedLoadForSession);
@@ -37,6 +38,18 @@ namespace TrainWise.BL
             double chronic28Sum = sessions
                 .Sum(s => s.CalculatedLoadForSession);
             double chronicLoad = chronic28Sum / 4.0;
+
+            // Cold-start guard: a brand-new user's only workout falls in BOTH the
+            // 7-day acute window AND the 28-day chronic window, so chronicLoad =
+            // acuteLoad/4 and the ratio is a fixed 4.0 — flagging every first
+            // session as a huge overload (Red) regardless of size. Until a real
+            // baseline is established, judge against the experience-based expected
+            // weekly load instead of the near-empty history.
+            if (!context.IsBaselineEstablished)
+            {
+                double bootstrap = GetBootstrapAcuteLoad(context.ExperienceLevel, context.Parameters);
+                chronicLoad = Math.Max(chronicLoad, bootstrap);
+            }
 
             // Step 4 — compute AC Ratio
             double? acRatio = chronicLoad > 0 ? acuteLoad / chronicLoad : (double?)null;
@@ -99,11 +112,11 @@ namespace TrainWise.BL
 
         private string DetermineLoadLevel(double? acRatio, bool hasActiveInjury, LoadParameters p)
         {
-            // Thresholds defined in TrainWise_Project_Documentation.pdf:
             //   Green  : ratio < 0.8
             //   Yellow : 0.8 <= ratio <= 1.3
             //   Red    : ratio > 1.3
             // Injured users use tighter bands per the same doc.
+
             if (acRatio == null) return "Green";
 
             double ratio = acRatio.Value;

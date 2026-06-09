@@ -119,6 +119,17 @@ namespace TrainWise.BL
 
         }
 
+        public User? LoginOrCreateGoogleUser(string googleId, string email, string fullName)
+        {
+            if (string.IsNullOrWhiteSpace(googleId))
+                throw new ArgumentException("GoogleId is required");
+            if (string.IsNullOrWhiteSpace(email))
+                throw new ArgumentException("Email is required");
+
+            return _dal.LoginOrCreateGoogleUser(googleId, email, fullName);
+        }
+
+
         public void UpdateBaseline(int userId, short dailyLoad, short weeklyLoad)
         {
             if (userId <= 0)

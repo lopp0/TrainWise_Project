@@ -8,16 +8,19 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Modal,
+  LayoutAnimation,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {BarChart} from 'react-native-chart-kit';
 import {Colors, Fonts, Spacing} from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import ScreenHeader from '../components/ScreenHeader';
 import Card from '../components/Card';
 import PrimaryButton from '../components/PrimaryButton';
-import { getActivityLogsByUser } from '../services/api';
+import { getActivityLogsByUser, getActiveInjuriesByUser, getCoachRecommendationsByUser } from '../services/api';
 import { useAuth } from '../api/AuthContext';
+import { buildRestRecommendation } from '../utils/restRecommendation';
 import {
   getWeekStartDate,
   getWeekStartDay,
@@ -71,19 +74,24 @@ const buildRecommendation = (level, ratio, stress) => {
   if (level === 'Yellow') {
     return ratio >= 1.0
       ? `You're training above baseline (AC ratio ${ratio.toFixed(2)}). Keep intensity moderate and avoid back-to-back hard sessions this week.`
-      : `Load is building nicely (AC ratio ${ratio.toFixed(2)}). Stay consistent — one more steady session should keep you in the sweet spot.`;
+      : `Load is building nicely (AC ratio ${ratio.toFixed(2)}). Stay consistent. One more steady session should keep you in the sweet spot.`;
   }
   return `You're in the safe zone (AC ratio ${ratio.toFixed(2)}). Good time to add a challenging session if you feel fresh.`;
 };
 
-const WarningsDashboardScreen = ({navigation}) => {
-  const { userId } = useAuth();
+// Experience-based expected WEEKLY load (matches LoadParameters seed:
+// Beginner/Regular/Advanced acute loads). Used as the cold-start chronic floor.
+const BOOTSTRAP_WEEKLY = { 1: 150, 2: 280, 3: 420 };
+
+const WarningsDashboardScreen = () => {
+  const { userId, user } = useAuth();
   const styles = useThemedStyles(makeStyles);
   const [loading, setLoading] = useState(true);
   const [weeklyLoad, setWeeklyLoad] = useState([0, 0, 0, 0, 0, 0, 0]);
   const [weekLabels, setWeekLabels] = useState(['Sun','Mon','Tue','Wed','Thu','Fri','Sat']);
   const [currentLoadLevel, setCurrentLoadLevel] = useState('Green');
   const [acRatio, setAcRatio] = useState(0);
+  const [acuteLoad, setAcuteLoad] = useState(0);
   const [stressScore, setStressScore] = useState(0);
   const [recommendation, setRecommendation] = useState(
     'No recommendation available yet. Log some workouts to get started.',
@@ -93,22 +101,68 @@ const WarningsDashboardScreen = ({navigation}) => {
   const [allLogs, setAllLogs] = useState([]);
   const [allLoadHistory, setAllLoadHistory] = useState([]);
   const [weekStartDay, setWeekStartDayState] = useState(getWeekStartDay());
+  const [hasActiveInjury, setHasActiveInjury] = useState(false);
+  const [coachRecs, setCoachRecs] = useState([]);
+  const [coachOpen, setCoachOpen] = useState(false);     // foldable coach section
+  const [seenRecIds, setSeenRecIds] = useState(() => new Set()); // device-local "read" set
+
+  const SEEN_KEY = `@trainwise_seen_coachrecs_${userId}`;
 
   useEffect(() => {
     const unsub = subscribeWeekStart((day) => setWeekStartDayState(day));
     return () => unsub && unsub();
   }, []);
 
+  // Load the device-local set of already-seen coach recommendations.
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(SEEN_KEY);
+        if (raw) setSeenRecIds(new Set(JSON.parse(raw)));
+      } catch {
+        // ignore — defaults to "all unseen"
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  const recId = (rec) => String(rec.recID ?? rec.RecID);
+  const coachUnseen = coachRecs.filter((r) => !seenRecIds.has(recId(r))).length;
+
+  // Folding the coach section open marks everything in it as seen (persisted),
+  // so the red unseen-count badge clears and stays cleared across visits.
+  const toggleCoach = async () => {
+    const willOpen = !coachOpen;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCoachOpen(willOpen);
+    if (willOpen && coachUnseen > 0) {
+      const next = new Set(seenRecIds);
+      coachRecs.forEach((r) => next.add(recId(r)));
+      setSeenRecIds(next);
+      try {
+        await AsyncStorage.setItem(SEEN_KEY, JSON.stringify([...next]));
+      } catch {
+        // non-fatal
+      }
+    }
+  };
+
   const HELP_TEXT = {
     status: {
       title: 'Current Status',
       body:
-        'Green = safe training zone. Yellow = monitor fatigue, consider easing off. Red = high injury risk — rest or reduce intensity.',
+        'Green = safe training zone. Yellow = monitor fatigue, consider easing off. Red = high injury risk, rest or reduce intensity.',
     },
     acRatio: {
       title: 'AC Ratio',
       body:
         'Acute-to-Chronic workload ratio. Compares your last 7 days of training to your longer-term average. Around 0.8–1.3 is the "sweet spot"; above 1.5 is high risk.',
+    },
+    acuteLoad: {
+      title: 'Weekly Acute Load',
+      body:
+        'Total session-load units accumulated across the displayed week. The "acute" half of the AC ratio: what your body is processing right now. The color matches your current risk level.',
     },
     stress: {
       title: 'Stress Score',
@@ -174,34 +228,50 @@ const WarningsDashboardScreen = ({navigation}) => {
     const chronic28Sum = sumSessionLoadsInRange(logs, chronic28Start, weekEnd);
     const chronic = chronic28Sum / 4; // weekly-equivalent average over 28 days
 
-    // Ratio / level semantics:
-    //   - chronic > 0 : standard ACWR.
-    //   - chronic = 0 AND acute = 0 : no training, Green (rest).
-    //   - chronic = 0 AND acute > 0 : bootstrapping after rest — treat as
-    //     high relative risk (undefined ratio → Red/Yellow by acute volume).
+    // Cold-start guard (mirrors backend LoadCalculationBL): a brand-new user's
+    // only workout falls in BOTH the acute window AND the 28-day window, so
+    // chronic = acute/4 and the ratio is a fixed 4.0 → every first session is a
+    // false Red. Until a real baseline exists (>= 7 distinct training days in
+    // the 28-day window), floor the chronic at the experience-based expected
+    // weekly load so early/small workouts are judged sanely.
+    const distinctDays = new Set();
+    logs.forEach((log) => {
+      const st = new Date(log.startTime || log.StartTime);
+      if (st >= chronic28Start && st <= weekEnd) {
+        const dd = new Date(st);
+        dd.setHours(0, 0, 0, 0);
+        distinctDays.add(dd.getTime());
+      }
+    });
+    const baselineEstablished = distinctDays.size >= 7;
+    const bootstrapWeekly =
+      BOOTSTRAP_WEEKLY[user?.experienceLevel ?? user?.ExperienceLevel] || 150;
+    const effChronic = baselineEstablished ? chronic : Math.max(chronic, bootstrapWeekly);
+
+    // Ratio / level semantics (effChronic = chronic with the cold-start floor):
+    //   - effChronic > 0 : standard ACWR.
+    //   - effChronic = 0 AND acute > 0 : bootstrapping — flag by absolute volume.
     let ratio = 0;
     let level = 'Green';
-    if (chronic > 0) {
-      ratio = acute / chronic;
+    if (effChronic > 0) {
+      ratio = acute / effChronic;
       level = determineLoadLevel(ratio);
     } else if (acute > 0) {
-      // No prior baseline: flag spike risk based on absolute volume.
-      // 1000+ in a single week after rest is a strong spike.
       ratio = acute >= 1000 ? 2.0 : acute >= 300 ? 1.1 : 0.9;
       level = determineLoadLevel(ratio);
     }
 
     // Stress 0-100 scale.
     let stress = 0;
-    if (chronic > 0) {
-      stress = Math.max(0, Math.min(100, Math.round((acute / chronic) * 50)));
+    if (effChronic > 0) {
+      stress = Math.max(0, Math.min(100, Math.round((acute / effChronic) * 50)));
     } else if (acute > 0) {
-      // Without a baseline we can't normalize; scale by absolute acute load.
       stress = Math.max(0, Math.min(100, Math.round(acute / 20)));
     }
 
     setCurrentLoadLevel(level);
     setAcRatio(ratio);
+    setAcuteLoad(Math.round(acute));
     setStressScore(stress);
     setRecommendation(buildRecommendation(level, ratio, stress));
   };
@@ -215,6 +285,24 @@ const WarningsDashboardScreen = ({navigation}) => {
       );
       setAllLogs(logs);
       setAllLoadHistory([]); // unused — kept for prior code compatibility
+
+      try {
+        const injuriesResponse = await getActiveInjuriesByUser(userId);
+        const injuries = injuriesResponse.data || [];
+        setHasActiveInjury(injuries.length > 0);
+      } catch {
+        setHasActiveInjury(false);
+      }
+
+      try {
+        const recsResponse = await getCoachRecommendationsByUser(userId);
+        const recs = (recsResponse.data || []).slice().sort(
+          (a, b) => new Date(b.date ?? b.Date) - new Date(a.date ?? a.Date),
+        );
+        setCoachRecs(recs);
+      } catch {
+        setCoachRecs([]);
+      }
     } catch (error) {
       console.log('Dashboard load error:', error.message);
     } finally {
@@ -310,6 +398,17 @@ const WarningsDashboardScreen = ({navigation}) => {
                 </View>
                 <View style={styles.metric}>
                   <View style={styles.metricLabelRow}>
+                    <Text style={styles.metricLabel}>Acute Load</Text>
+                    <TouchableOpacity onPress={() => setHelpTopic('acuteLoad')} hitSlop={8}>
+                      <Ionicons name="help-circle-outline" size={14} color={Colors.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={[styles.metricValue, { color: getLevelColor(currentLoadLevel) }]}>
+                    {acuteLoad}
+                  </Text>
+                </View>
+                <View style={styles.metric}>
+                  <View style={styles.metricLabelRow}>
                     <Text style={styles.metricLabel}>Stress</Text>
                     <TouchableOpacity onPress={() => setHelpTopic('stress')} hitSlop={8}>
                       <Ionicons name="help-circle-outline" size={14} color={Colors.textSecondary} />
@@ -366,9 +465,79 @@ const WarningsDashboardScreen = ({navigation}) => {
 
             {/* Recommendation */}
             <Card>
-              <Text style={styles.cardTitle}>Smart Recommendation</Text>
-              <Text style={styles.recommendationText}>{recommendation}</Text>
+              {(() => {
+                const visual = buildRestRecommendation({
+                  acRatio,
+                  loadLevel: currentLoadLevel,
+                  hasActiveInjury,
+                });
+                return (
+                  <>
+                    <View style={styles.recHeader}>
+                      <View
+                        style={[
+                          styles.recIconWrap,
+                          { backgroundColor: `${visual.color}22`, borderColor: visual.color },
+                        ]}
+                      >
+                        <Ionicons name={visual.icon} size={22} color={visual.color} />
+                      </View>
+                      <View style={styles.recTitleWrap}>
+                        <Text style={styles.recEyebrow}>Smart Recommendation</Text>
+                        <Text style={[styles.recTitle, { color: visual.color }]}>
+                          {visual.title}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.recommendationText}>{recommendation}</Text>
+                    {visual.injuryWarning && (
+                      <View style={styles.injuryBox}>
+                        <Ionicons
+                          name="medkit-outline"
+                          size={16}
+                          color={Colors.red}
+                          style={{ marginRight: 6 }}
+                        />
+                        <Text style={styles.injuryText}>{visual.injuryWarning}</Text>
+                      </View>
+                    )}
+                  </>
+                );
+              })()}
             </Card>
+
+            {/* Messages from your coach (foldable). Collapsed shows just the
+                title + an unseen-count red dot; tap to unfold the messages. */}
+            {coachRecs.length > 0 && (
+              <Card>
+                <TouchableOpacity style={styles.coachHeader} activeOpacity={0.7} onPress={toggleCoach}>
+                  <View style={styles.coachHeaderLeft}>
+                    <Ionicons name="person-circle-outline" size={20} color={Colors.primary} />
+                    <Text style={styles.coachHeaderTitle}>From your coach</Text>
+                    {coachUnseen > 0 && (
+                      <View style={styles.coachBadge}>
+                        <Text style={styles.coachBadgeText}>{coachUnseen > 99 ? '99+' : coachUnseen}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Ionicons
+                    name={coachOpen ? 'chevron-up' : 'chevron-down'}
+                    size={20}
+                    color={Colors.primary}
+                  />
+                </TouchableOpacity>
+                {coachOpen &&
+                  coachRecs.map((rec) => (
+                    <View key={rec.recID ?? rec.RecID} style={styles.coachRec}>
+                      <Text style={styles.coachRecTitle}>{rec.title ?? rec.Title}</Text>
+                      <Text style={styles.coachRecText}>{rec.text ?? rec.Text}</Text>
+                      <Text style={styles.coachRecDate}>
+                        {new Date(rec.date ?? rec.Date).toLocaleDateString()}
+                      </Text>
+                    </View>
+                  ))}
+              </Card>
+            )}
           </>
         )}
       </ScrollView>
@@ -402,25 +571,8 @@ const WarningsDashboardScreen = ({navigation}) => {
       </Modal>
 
       <View style={styles.bottomActions}>
-  <PrimaryButton title="Refresh" onPress={handleRefresh} />
-  <View style={styles.secondaryRow}>
-    <TouchableOpacity
-      style={styles.secondaryButton}
-      onPress={() => navigation.navigate('AddWorkout')}>
-      <Text style={styles.secondaryButtonText}>Add Workout</Text>
-    </TouchableOpacity>
-    <TouchableOpacity
-      style={styles.secondaryButton}
-      onPress={() => navigation.navigate('InjuryReport')}>
-      <Text style={styles.secondaryButtonText}>Report Injury</Text>
-    </TouchableOpacity>
-    <TouchableOpacity
-      style={styles.secondaryButton}
-      onPress={() => navigation.navigate('Settings')}>
-      <Text style={styles.secondaryButtonText}>Settings</Text>
-    </TouchableOpacity>
-  </View>
-</View>
+        <PrimaryButton title="Refresh" onPress={handleRefresh} />
+      </View>
     </View>
   );
 };
@@ -481,12 +633,104 @@ const makeStyles = (Colors) => StyleSheet.create({
     fontSize: Fonts.bodySize,
     lineHeight: 22,
   },
+  recHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  recIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  recTitleWrap: {
+    flex: 1,
+  },
+  recEyebrow: {
+    color: Colors.textSecondary,
+    fontSize: Fonts.captionSize,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  recTitle: {
+    fontSize: Fonts.subtitleSize,
+    fontWeight: Fonts.bold,
+  },
+  injuryBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#F4433620',
+    borderRadius: 8,
+    padding: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  injuryText: {
+    flex: 1,
+    color: Colors.red,
+    fontSize: Fonts.captionSize + 1,
+    lineHeight: 18,
+    fontWeight: Fonts.semiBold,
+  },
+  coachHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  coachHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  coachHeaderTitle: {
+    color: Colors.primary,
+    fontSize: Fonts.subtitleSize,
+    fontWeight: Fonts.bold,
+  },
+  coachBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    backgroundColor: Colors.red,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  coachBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  coachRec: {
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.primary,
+    paddingLeft: Spacing.md,
+    marginBottom: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  coachRecTitle: {
+    color: Colors.textPrimary,
+    fontSize: Fonts.bodySize,
+    fontWeight: Fonts.bold,
+    marginBottom: 2,
+  },
+  coachRecText: {
+    color: Colors.textSecondary,
+    fontSize: Fonts.bodySize,
+    lineHeight: 20,
+  },
+  coachRecDate: {
+    color: Colors.textMuted,
+    fontSize: Fonts.captionSize,
+    marginTop: 4,
+  },
   bottomActions: {
     paddingVertical: Spacing.md,
     borderTopWidth: 1,
     borderTopColor: Colors.border,
     backgroundColor: Colors.cardBackground,
-    
+
   },
   secondaryButton: {
     alignItems: 'center',

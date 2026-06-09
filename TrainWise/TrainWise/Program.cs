@@ -23,7 +23,9 @@ namespace TrainWise
                 app.UseSwaggerUI();
             }
 
-            // app.UseHttpsRedirection();  // disabled for HTTP-only phone testing over adb reverse
+            app.UseHttpsRedirection();
+
+                
             app.UseStaticFiles();
             app.UseCors(policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
 

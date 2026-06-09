@@ -10,7 +10,10 @@ import {
 
   putUserDevice,
 } from './api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loadHcTombstones, isTombstoned } from '../constants/hcTombstones';
+import { scopedKey } from '../utils/activeUser';
+import { HC_CONNECTED_BASE } from '../constants/hcKeys';
 
 /**
  * SyncService
@@ -201,9 +204,31 @@ export const syncWorkoutsToBackend = async (
       throw new Error('Permissions were denied. Please grant them in Health Connect settings.');
     }
 
-    // Step 3: Fetch workouts from Health Connect
+    // Step 3: Fetch workouts from Health Connect.
+    // Only import workouts done AFTER this account connected to HC. Health
+    // Connect is device-level, so without this floor every account on the same
+    // phone would import the same historical device workouts (issue #5). The
+    // floor is the per-account connect timestamp stored by HealthSyncContext.
     console.log('Step 3: Fetching workouts from Health Connect...');
-    const { startDate, endDate } = getDateRangeForDays(lookbackDays);
+    const endDate = new Date();
+    let startDate;
+    let connectedAt = null;
+    try {
+      const raw = await AsyncStorage.getItem(scopedKey(HC_CONNECTED_BASE));
+      const t = raw ? Date.parse(raw) : NaN;
+      if (!Number.isNaN(t)) connectedAt = new Date(t);
+    } catch {
+      connectedAt = null;
+    }
+    if (connectedAt) {
+      // Never look back further than the lookback window OR the connect time,
+      // whichever is more recent, so a long-connected account still only
+      // refreshes the recent window.
+      const lookbackFloor = getDateRangeForDays(lookbackDays).startDate;
+      startDate = connectedAt > lookbackFloor ? connectedAt : lookbackFloor;
+    } else {
+      ({ startDate } = getDateRangeForDays(lookbackDays));
+    }
     const healthConnectWorkouts = await getStructuredWorkouts(startDate, endDate);
     
     if (!healthConnectWorkouts || healthConnectWorkouts.length === 0) {

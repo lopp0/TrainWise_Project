@@ -35,7 +35,7 @@ const getWeekStart = () => {
 // ─────────────────────────────────────────────
 // Full-week bar chart (View A)
 // ─────────────────────────────────────────────
-const WeeklyBarChart = ({ weeklyData, maxValue, onBarPress, selectedIndex }) => {
+const WeeklyBarChart = ({ weeklyData, maxValue, onBarPress, selectedIndex, styles }) => {
   const CHART_H = 110;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-end', flex: 1 }}>
@@ -73,7 +73,7 @@ const WeeklyBarChart = ({ weeklyData, maxValue, onBarPress, selectedIndex }) => 
 // ─────────────────────────────────────────────
 // Zoomed bar chart – shows selectedDay ± 1 (View B)
 // ─────────────────────────────────────────────
-const ZoomedBarChart = ({ weeklyData, selectedIndex, onSelect }) => {
+const ZoomedBarChart = ({ weeklyData, selectedIndex, onSelect, styles }) => {
   const CHART_H = 140;
   const indices = [selectedIndex - 1, selectedIndex, selectedIndex + 1].filter(
     (i) => i >= 0 && i < 7
@@ -366,6 +366,7 @@ const StatsScreen = ({ navigation, route }) => {
                 weeklyData={weeklyData}
                 selectedIndex={selectedDayIdx}
                 onSelect={(i) => openDetail(i, weeklyData)}
+                styles={styles}
               />
             </View>
           </View>
@@ -475,6 +476,7 @@ const StatsScreen = ({ navigation, route }) => {
                 maxValue={maxLoad}
                 onBarPress={(i) => openDetail(i, weeklyData)}
                 selectedIndex={selectedDayIdx}
+                styles={styles}
               />
             </View>
           )}

@@ -26,7 +26,8 @@ namespace TrainWise.DAL
                     {"@HealthDeclaration", u.HealthDeclaration},
                     {"@ConfirmTerms", u.ConfirmTerms},
                     {"@TermConfirmationDate", u.TermConfirmationDate ?? (object)DBNull.Value},
-                    {"@IsCoach", u.IsCoach}
+                    {"@IsCoach", u.IsCoach},
+                    {"@IsTrainee", u.IsTrainee}
                 };
 
                 using (SqlCommand cmd = CreateCommandWithStoredProcedure("sp_InsertUser", con, param))
@@ -41,14 +42,9 @@ namespace TrainWise.DAL
         {
             using (SqlConnection con = Connect())
             {
-                // sp_UpdateUser declares UserName, Email, HealthDeclaration,
-                // ConfirmTerms, TermConfirmationDate as NULL-defaulted params.
-                // Omitting them on the UPDATE wipes those columns to NULL on
-                // every save (this is what was deleting the user's email).
-                // Always pass every editable column.
                 var param = new Dictionary<string, object>
                 {
-                    {"@UserID", u.UserID},
+                     {"@UserID", u.UserID},
                     {"@FullName", u.FullName},
                     {"@BirthYear", u.BirthYear},
                     {"@Gender", u.Gender},
@@ -129,6 +125,29 @@ namespace TrainWise.DAL
             }
             return null;
         }
+
+        public User? LoginOrCreateGoogleUser(string googleId, string email, string fullName)
+        {
+            using (SqlConnection con = Connect())
+            {
+                var param = new Dictionary<string, object>
+        {
+            {"@GoogleId", googleId},
+            {"@Email",    email},
+            {"@FullName", fullName}
+        };
+                using (SqlCommand cmd = CreateCommandWithStoredProcedure("sp_LoginOrCreateGoogleUser", con, param))
+                using (SqlDataReader reader = cmd.ExecuteReader())
+                {
+                    if (reader.Read())
+                        return MapUser(reader);
+                }
+            }
+            return null;
+        }
+
+
+
         public void UpdateUserBaseline(int userId, short dailyLoad, short weeklyLoad)
         {
             using (SqlConnection con = Connect())
@@ -187,6 +206,17 @@ namespace TrainWise.DAL
             return null;
         }
 
+        private static bool HasColumn(SqlDataReader reader, string columnName)
+        {
+            for (int i = 0; i < reader.FieldCount; i++)
+            {
+                if (string.Equals(reader.GetName(i), columnName, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
+
         private User MapUser(SqlDataReader reader)
         {
             return new User
@@ -211,8 +241,25 @@ namespace TrainWise.DAL
                 HealthDeclaration = reader["HealthDeclaration"] as bool? ?? false,
                 ConfirmTerms = reader["ConfirmTerms"] as bool? ?? false,
                 TermConfirmationDate = reader["TermConfirmationDate"] as DateTime?,
-                IsCoach = reader["IsCoach"] as bool? ?? false
+                IsCoach = reader["IsCoach"] as bool? ?? false,
+                GoogleId = HasColumn(reader, "GoogleId") ? reader["GoogleId"] as string : null,
+                IsTrainee = SafeReadBool(reader, "IsTrainee", true)
             };
+        }
+
+        private static bool SafeReadBool(SqlDataReader reader, string column, bool fallback)
+        {
+            try
+            {
+                int ord = reader.GetOrdinal(column);
+                return reader.IsDBNull(ord) ? fallback : reader.GetBoolean(ord);
+            }
+            catch (IndexOutOfRangeException)
+            {
+                return fallback;
+            }
         }
     }
 }
+
+

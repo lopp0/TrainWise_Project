@@ -54,6 +54,7 @@ namespace TrainWise.Controllers
                     ConfirmTerms = request.ConfirmTerms,
                     TermConfirmationDate = request.TermConfirmationDate,
                     IsCoach = request.IsCoach,
+                    IsTrainee = request.IsTrainee,
 
                     // System-controlled — client cannot set these
                     IsBaselineEstablished = false,
@@ -139,7 +140,8 @@ namespace TrainWise.Controllers
         }
 
         [HttpPost("{id}/upload")]
-        public async Task<IActionResult> UploadImage(int id, IFormFile file)
+        public async Task<IActionResult> UploadImage(int id, IFormFile file,
+            [FromServices] IWebHostEnvironment env)
         {
             if (file == null || file.Length == 0)
                 return BadRequest("No file uploaded");
@@ -148,11 +150,15 @@ namespace TrainWise.Controllers
             if (user == null)
                 return NotFound("User not found");
 
-            string folder = Path.Combine("wwwroot", "images");
+            string webRoot = env.WebRootPath
+               ?? Path.Combine(env.ContentRootPath, "wwwroot");
+            string folder = Path.Combine(webRoot, "images");
             if (!Directory.Exists(folder))
                 Directory.CreateDirectory(folder);
 
-            string fileName = $"{id}_{file.FileName}";
+            string ext = Path.GetExtension(file.FileName);
+            if (string.IsNullOrWhiteSpace(ext)) ext = ".jpg";
+            string fileName = $"{id}_{DateTime.UtcNow.Ticks}{ext}";
             string fullPath = Path.Combine(folder, fileName);
 
             using (var stream = new FileStream(fullPath, FileMode.Create))
@@ -203,6 +209,27 @@ namespace TrainWise.Controllers
                 return StatusCode(500, ex.Message);
             }
         }
+
+        [HttpPost("google-login")]
+        public IActionResult GoogleLogin([FromBody] GoogleLoginRequest request)
+        {
+            try
+            {
+                var user = _bl.LoginOrCreateGoogleUser(request.GoogleId, request.Email, request.FullName ?? request.Email);
+                if (user == null)
+                    return StatusCode(500, "Google login failed");
+                return Ok(user);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+
     }
 
     public class BaselineRequest
@@ -210,5 +237,13 @@ namespace TrainWise.Controllers
         public short DailyLoad { get; set; }
         public short WeeklyLoad { get; set; }
     }
+
+    public class GoogleLoginRequest
+    {
+        public string GoogleId { get; set; }
+        public string Email { get; set; }
+        public string? FullName { get; set; }
+    }
+
 }
 

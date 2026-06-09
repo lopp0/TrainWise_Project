@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,11 +11,11 @@ import {
   Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useAuth } from './AuthContext';
 import { useHealthSync } from './HealthSyncContext';
 import { getActivityLogs, putActivityLog, deleteActivityLog } from './api';
-import { calculateDailyLoad } from '../services/api';
+import { calculateDailyLoad, getAllActivityTypes } from '../services/api';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { tombstoneWorkout, loadHcTombstones } from '../constants/hcTombstones';
@@ -28,12 +28,17 @@ import { tombstoneWorkout, loadHcTombstones } from '../constants/hcTombstones';
  * This screen shows the resulting workouts and lets the user confirm each
  * one (set exertion level) so it counts toward training load.
  */
+// Activity types that can carry a GPS route (outdoor cardio). Weightlifting
+// (4) and Other/indoor (5) never show the map entry point.
+const ROUTE_ELIGIBLE_TYPES = new Set([1, 2, 3]); // Running, Walking, Cycling
+
 const GoogleFitScreen = () => {
   const { userId } = useAuth();
+  const navigation = useNavigation();
   const styles = useThemedStyles(makeStyles);
   const {
     permissionsGranted,
-    requestHCPermissions,
+    connectThisAccount,
     refreshUnconfirmedCount,
     runAutoSync,
     isSyncing,
@@ -41,6 +46,17 @@ const GoogleFitScreen = () => {
   } = useHealthSync();
 
   const [workouts, setWorkouts] = useState([]);
+  // Activity-type id → name. Seeded with the HC-mapped defaults (1–5) so the
+  // list renders before the backend list loads; replaced by the backend's
+  // full ActivityTypes table (which includes Swimming, CrossFit, Yoga, etc.)
+  // so manual workouts with ids > 5 don't render as "Unknown".
+  const [activityTypeMap, setActivityTypeMap] = useState({
+    1: 'Running',
+    2: 'Walking',
+    3: 'Cycling',
+    4: 'Weightlifting',
+    5: 'Other',
+  });
   const [isLoadingWorkouts, setIsLoadingWorkouts] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [confirmingWorkout, setConfirmingWorkout] = useState(null);
@@ -83,6 +99,27 @@ const GoogleFitScreen = () => {
     }, [loadWorkouts])
   );
 
+  // Load the backend's full activity-type table once so workout rows show the
+  // real name (Swimming, CrossFit, …) instead of "Unknown" for ids the HC
+  // mapping doesn't cover. Falls back to the seeded defaults on failure.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getAllActivityTypes();
+        const list = res?.data || [];
+        if (list.length) {
+          const map = {};
+          list.forEach((t) => {
+            if (t?.activityTypeID != null) map[t.activityTypeID] = t.typeName;
+          });
+          setActivityTypeMap((prev) => ({ ...prev, ...map }));
+        }
+      } catch {
+        // keep the seeded defaults — offline / backend unreachable
+      }
+    })();
+  }, []);
+
   /**
    * Pull-to-refresh fallback: triggers a fresh HC→backend sync, then
    * reloads the list and badge count.
@@ -90,8 +127,11 @@ const GoogleFitScreen = () => {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await runAutoSync();
+      // force=true → bypass the 30s throttle so a just-finished HC workout
+      // imports right now (appears as Pending) instead of being skipped.
+      await runAutoSync(true);
       await loadWorkouts();
+      await refreshUnconfirmedCount();
     } finally {
       setRefreshing(false);
     }
@@ -102,7 +142,7 @@ const GoogleFitScreen = () => {
    * provider's auto-sync will pull the user's workouts in.
    */
   const handleRequestPermissions = async () => {
-    const granted = await requestHCPermissions();
+    const granted = await connectThisAccount();
     if (granted) {
       Alert.alert('Connected', 'Health Connect permissions granted.');
       await runAutoSync();
@@ -238,16 +278,7 @@ const GoogleFitScreen = () => {
    * @param {number} typeId - Activity type ID
    * @returns {string} Activity type name
    */
-  const getActivityTypeName = (typeId) => {
-    const types = {
-      1: 'Running',
-      2: 'Walking',
-      3: 'Cycling',
-      4: 'Weightlifting',
-      5: 'Other',
-    };
-    return types[typeId] || 'Unknown';
-  };
+  const getActivityTypeName = (typeId) => activityTypeMap[typeId] || 'Workout';
 
   /**
    * Render a single workout item.
@@ -257,6 +288,11 @@ const GoogleFitScreen = () => {
     const calories = item.caloriesBurned || 0;
     const distance = item.distanceKM || 0;
     const activityName = getActivityTypeName(item.activityTypeID);
+    // Show the route map entry only for outdoor-cardio workouts that came
+    // from Health Connect (manual logs have no GPS counterpart in HC).
+    const canShowRoute =
+      ROUTE_ELIGIBLE_TYPES.has(item.activityTypeID) &&
+      item.sourceDevice === 'Health Connect';
 
     return (
       <TouchableOpacity
@@ -326,13 +362,24 @@ const GoogleFitScreen = () => {
           <Text style={styles.sourceText}>📲 {item.sourceDevice}</Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.deleteRowBtn}
-          onPress={() => handleDeleteWorkout(item)}
-        >
-          <Ionicons name="trash-outline" size={16} color="#e74c3c" />
-          <Text style={styles.deleteRowBtnText}>Delete</Text>
-        </TouchableOpacity>
+        <View style={styles.rowActions}>
+          {canShowRoute && (
+            <TouchableOpacity
+              style={styles.routeRowBtn}
+              onPress={() => navigation.navigate('WorkoutRoute', { workout: item })}
+            >
+              <Ionicons name="map-outline" size={16} color={Colors.primary} />
+              <Text style={styles.routeRowBtnText}>View route</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.deleteRowBtn}
+            onPress={() => handleDeleteWorkout(item)}
+          >
+            <Ionicons name="trash-outline" size={16} color="#e74c3c" />
+            <Text style={styles.deleteRowBtnText}>Delete</Text>
+          </TouchableOpacity>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -871,14 +918,42 @@ const makeStyles = (Colors) => StyleSheet.create({
     flex: 1,
   },
 
-  deleteRowBtn: {
+  // Action row sits below the footer. Buttons flex equally: when only Delete
+  // is present it fills the width; when "View route" is also shown they split
+  // evenly into two matching pills.
+  rowActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+
+  routeRowBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    marginTop: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    backgroundColor: 'rgba(233, 30, 99, 0.08)',
+  },
+
+  routeRowBtnText: {
+    color: Colors.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  deleteRowBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e74c3c',
     backgroundColor: 'rgba(231, 76, 60, 0.08)',
@@ -887,7 +962,7 @@ const makeStyles = (Colors) => StyleSheet.create({
   deleteRowBtnText: {
     color: '#e74c3c',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });
 

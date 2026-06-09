@@ -1,4 +1,4 @@
-using TrainWise.BL.Models;
+﻿using TrainWise.BL.Models;
 using TrainWise.DAL;
 
 namespace TrainWise.BL
@@ -22,14 +22,16 @@ namespace TrainWise.BL
             if (log.DistanceKM < 0) throw new ArgumentException("DistanceKM must be 0 or greater");
             if (log.ExertionLevel < 1 || log.ExertionLevel > 10)
                 throw new ArgumentException("ExertionLevel must be between 1 and 10");
-            if (log.Duration <= 0)
-                throw new ArgumentException("Duration must be positive");
+            if (log.Duration <= 0 || log.Duration > 480)
+                throw new ArgumentException("Duration must be between 1 and 480 minutes");
 
 
             if (_userDal.GetUserById(log.UserID) == null)
                 throw new ArgumentException("User not found");
 
-            log.CalculatedLoadForSession = (short)(log.Duration * log.ExertionLevel);
+            log.CalculatedLoadForSession = log.Duration * log.ExertionLevel;
+            if (log.CalculatedLoadForSession < 0)
+                throw new ArgumentException("CalculatedLoadForSession cannot be negative");
 
             return _dal.Insert(log);
         }
@@ -62,3 +64,4 @@ namespace TrainWise.BL
         }
     }
 }
+

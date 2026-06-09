@@ -57,7 +57,6 @@ namespace TrainWise.BL
 
             _dal.MarkRecovered(injuryId);
         }
-
     }
 }
 

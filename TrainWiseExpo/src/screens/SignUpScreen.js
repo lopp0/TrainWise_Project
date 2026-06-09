@@ -19,6 +19,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { Colors } from '../theme/colors';
+import { useThemedStyles } from '../theme/useThemedStyles';
+import { useTheme } from '../theme/ThemeContext';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CIRCLE_SIZE = Math.floor((SCREEN_W - 48 - 32) / 3);
@@ -26,6 +29,7 @@ const CIRCLE_SIZE = Math.floor((SCREEN_W - 48 - 32) / 3);
 // ─── Local styled dropdown ────────────────────────────────────────
 const DropDown = ({ items, value, onChange, placeholder }) => {
   const [open, setOpen] = useState(false);
+  const dd = useThemedStyles(makeDd);
   const selected = items.find(i => i.value === value);
 
   return (
@@ -34,7 +38,7 @@ const DropDown = ({ items, value, onChange, placeholder }) => {
         <Text style={[dd.text, !selected && dd.placeholder]} numberOfLines={1}>
           {selected ? selected.label : placeholder}
         </Text>
-        <Ionicons name="chevron-down" size={14} color="#aaa" />
+        <Ionicons name="chevron-down" size={14} color={Colors.textMuted} />
       </TouchableOpacity>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
@@ -53,7 +57,7 @@ const DropDown = ({ items, value, onChange, placeholder }) => {
                     onPress={() => { onChange(item.value); setOpen(false); }}
                   >
                     <Text style={[dd.itemText, isSel && dd.itemTextSel]}>{item.label}</Text>
-                    {isSel && <Ionicons name="checkmark" size={16} color="#ff2c60" />}
+                    {isSel && <Ionicons name="checkmark" size={16} color={Colors.primary} />}
                   </TouchableOpacity>
                 );
               }}
@@ -65,24 +69,24 @@ const DropDown = ({ items, value, onChange, placeholder }) => {
   );
 };
 
-const dd = StyleSheet.create({
+const makeDd = (Colors) => StyleSheet.create({
   field: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#fff',
+    backgroundColor: Colors.inputBackground,
     borderWidth: 2,
-    borderColor: '#87ffd7',
+    borderColor: Colors.inputBorder,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 10,
   },
-  text: { color: '#13173d', fontSize: 12, flex: 1, marginRight: 4 },
-  placeholder: { color: '#bbb' },
+  text: { color: Colors.textPrimary, fontSize: 12, flex: 1, marginRight: 4 },
+  placeholder: { color: Colors.textMuted },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 24 },
-  sheet: { backgroundColor: '#1d2155', borderRadius: 14, padding: 14 },
+  sheet: { backgroundColor: Colors.cardBackground, borderRadius: 14, padding: 14 },
   sheetTitle: {
-    color: '#ff2c60',
+    color: Colors.primary,
     fontSize: 14,
     fontWeight: '800',
     marginBottom: 10,
@@ -96,15 +100,15 @@ const dd = StyleSheet.create({
     paddingVertical: 11,
     paddingHorizontal: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#2a2f6a',
+    borderBottomColor: Colors.border,
   },
-  itemSel: { backgroundColor: '#2a2f6a' },
-  itemText: { color: '#fff', fontSize: 14 },
-  itemTextSel: { color: '#ff2c60', fontWeight: '700' },
+  itemSel: { backgroundColor: Colors.cardBackgroundLight },
+  itemText: { color: Colors.textPrimary, fontSize: 14 },
+  itemTextSel: { color: Colors.primary, fontWeight: '700' },
 });
 
 // ─── Wheel picker data ────────────────────────────────────────────
-const AGE_VALUES    = Array.from({ length: 87  }, (_, i) => i + 13);  // 13–99
+const AGE_VALUES    = Array.from({ length: 58  }, (_, i) => i + 18);  // 18–75
 const WEIGHT_VALUES = Array.from({ length: 271 }, (_, i) => i + 30);  // 30–300
 const HEIGHT_VALUES = Array.from({ length: 131 }, (_, i) => i + 120); // 120–250
 
@@ -115,6 +119,7 @@ const HALF = Math.floor(VISIBLE / 2); // = 2  (padding rows top & bottom)
 
 const WheelPicker = ({ values, selected, onSelect, unit }) => {
   const ref = useRef(null);
+  const wp = useThemedStyles(makeWp);
   const safeIndex = Math.max(0, values.indexOf(selected));
 
   // Scroll to the pre-selected value after the layout pass
@@ -163,7 +168,7 @@ const WheelPicker = ({ values, selected, onSelect, unit }) => {
   );
 };
 
-const wp = StyleSheet.create({
+const makeWp = (Colors) => StyleSheet.create({
   outer: { height: ITEM_H * VISIBLE, overflow: 'hidden' },
   highlight: {
     position: 'absolute',
@@ -171,16 +176,19 @@ const wp = StyleSheet.create({
     left: 0,
     right: 0,
     height: ITEM_H,
-    backgroundColor: 'rgba(135,255,215,0.12)',
+    // Transparent: this band sits ON TOP of the numbers (zIndex 1), so an
+    // opaque fill would hide the centered/selected value. The top+bottom
+    // lines mark the selection slot without covering the text.
+    backgroundColor: 'transparent',
     borderTopWidth: 1.5,
     borderBottomWidth: 1.5,
-    borderColor: '#87ffd7',
+    borderColor: Colors.primary,
     zIndex: 1,
   },
   scroll: { flex: 1 },
   item: { height: ITEM_H, justifyContent: 'center', alignItems: 'center' },
-  text: { color: 'rgba(19,23,61,0.3)', fontSize: 13, fontWeight: '500' },
-  textSel: { color: '#13173d', fontSize: 16, fontWeight: '900' },
+  text: { color: Colors.textMuted, fontSize: 13, fontWeight: '500' },
+  textSel: { color: Colors.textPrimary, fontSize: 16, fontWeight: '900' },
 });
 
 // ─── Dropdown data ────────────────────────────────────────────────
@@ -198,6 +206,8 @@ const WEEKLY_EST_ITEMS = [
 // ─── Screen ───────────────────────────────────────────────────────
 const SignUpScreen = ({ navigation }) => {
   const scrollRef = useRef(null);
+  const s = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
 
   const [name, setName] = useState('');
   const [profileImage, setProfileImage] = useState(null);
@@ -216,7 +226,8 @@ const SignUpScreen = ({ navigation }) => {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      // SDK 54 removed MediaTypeOptions; the array form is required.
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
@@ -240,7 +251,7 @@ const SignUpScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-      <StatusBar style="light" />
+      <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
           ref={scrollRef}
@@ -262,7 +273,7 @@ const SignUpScreen = ({ navigation }) => {
           <TextInput
             style={s.input}
             placeholder="Your name here..."
-            placeholderTextColor="rgba(19,23,61,0.35)"
+            placeholderTextColor={Colors.textMuted}
             value={name}
             onChangeText={setName}
             autoCapitalize="words"
@@ -274,7 +285,7 @@ const SignUpScreen = ({ navigation }) => {
               <Image source={{ uri: profileImage }} style={s.uploadedImage} />
             ) : (
               <>
-                <Ionicons name="cloud-upload-outline" size={34} color="#87ffd7" />
+                <Ionicons name="cloud-upload-outline" size={34} color={Colors.primaryLight} />
                 <Text style={s.uploadText}>Upload your{'\n'}image here</Text>
               </>
             )}
@@ -389,8 +400,8 @@ const SignUpScreen = ({ navigation }) => {
   );
 };
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#13173d' },
+const makeStyles = (Colors) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: Colors.background },
   scroll: {
     alignItems: 'center',
     paddingHorizontal: 24,
@@ -407,13 +418,13 @@ const s = StyleSheet.create({
     letterSpacing: 1,
     transform: [{ rotate: '-3deg' }],
   },
-  titleEcho: { color: '#c524e6', position: 'absolute', top: 5, left: 5 },
-  titleFront: { color: '#ff2c60' },
+  titleEcho: { color: Colors.primaryDark, position: 'absolute', top: 5, left: 5 },
+  titleFront: { color: Colors.primary },
 
   // Section headings & field labels
   sectionHeading: {
     alignSelf: 'flex-start',
-    color: '#ff2c60',
+    color: Colors.primary,
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.4,
@@ -422,7 +433,7 @@ const s = StyleSheet.create({
   },
   fieldLabel: {
     alignSelf: 'flex-start',
-    color: '#ff2c60',
+    color: Colors.primary,
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.3,
@@ -437,21 +448,21 @@ const s = StyleSheet.create({
   // Input
   input: {
     width: '100%',
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.inputBackground,
     borderWidth: 2,
-    borderColor: '#87ffd7',
+    borderColor: Colors.inputBorder,
     borderRadius: 10,
     paddingVertical: 12,
     paddingHorizontal: 16,
     fontSize: 14,
-    color: '#13173d',
+    color: Colors.textPrimary,
   },
 
   // Upload button
   uploadBtn: {
     width: '100%',
     borderWidth: 2,
-    borderColor: '#87ffd7',
+    borderColor: Colors.inputBorder,
     borderStyle: 'dashed',
     borderRadius: 14,
     paddingVertical: 24,
@@ -461,7 +472,7 @@ const s = StyleSheet.create({
     gap: 10,
   },
   uploadText: {
-    color: '#87ffd7',
+    color: Colors.primaryLight,
     fontSize: 16,
     fontWeight: '700',
     textAlign: 'center',
@@ -480,7 +491,7 @@ const s = StyleSheet.create({
     marginVertical: 16,
   },
   sexHeading: {
-    color: '#ff2c60',
+    color: Colors.primary,
     fontSize: 15,
     fontWeight: '900',
     textDecorationLine: 'underline',
@@ -488,7 +499,7 @@ const s = StyleSheet.create({
     marginBottom: 6,
   },
   sexSubLabel: {
-    color: '#a0a0c0',
+    color: Colors.textSecondary,
     fontSize: 12,
     fontWeight: '500',
     marginBottom: 18,
@@ -515,14 +526,14 @@ const s = StyleSheet.create({
   },
   statBox: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.inputBackground,
     borderWidth: 2,
-    borderColor: '#87ffd7',
+    borderColor: Colors.inputBorder,
     borderRadius: 10,
     overflow: 'hidden',
   },
   statLabel: {
-    color: '#ff2c60',
+    color: Colors.primary,
     fontSize: 10,
     fontWeight: '800',
     textAlign: 'center',
@@ -533,7 +544,7 @@ const s = StyleSheet.create({
 
   // Helper note
   helperNote: {
-    color: '#a0a0c0',
+    color: Colors.textSecondary,
     fontSize: 11,
     fontStyle: 'italic',
     marginTop: 6,
@@ -553,15 +564,15 @@ const s = StyleSheet.create({
     width: CIRCLE_SIZE,
     height: CIRCLE_SIZE,
     borderRadius: CIRCLE_SIZE / 2,
-    backgroundColor: '#242749',
+    backgroundColor: Colors.cardBackgroundLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   roleCircleSelected: {
-    backgroundColor: '#59e5c2',
+    backgroundColor: Colors.primary,
   },
   roleText: {
-    color: '#ffffff',
+    color: Colors.textPrimary,
     fontSize: 13,
     fontWeight: '700',
     textAlign: 'center',
@@ -571,9 +582,9 @@ const s = StyleSheet.create({
   nextBtn: {
     marginTop: 26,
     width: '55%',
-    backgroundColor: '#ff2c60',
+    backgroundColor: Colors.primary,
     borderWidth: 5,
-    borderColor: '#c524e6',
+    borderColor: Colors.primaryDark,
     borderRadius: 32,
     paddingVertical: 13,
     alignItems: 'center',

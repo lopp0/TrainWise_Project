@@ -1,4 +1,4 @@
-using Microsoft.Data.SqlClient;
+﻿using Microsoft.Data.SqlClient;
 using TrainWise.BL.Models;
 using System;
 using System.Collections.Generic;
@@ -43,15 +43,18 @@ namespace TrainWise.DAL
                 var param = new Dictionary<string, object>
                 {
                     {"@ActivityID", al.ActivityID},
+                    {"@ActivityTypeID", al.ActivityTypeID},
                     {"@StartTime", al.StartTime},
                     {"@EndTime", al.EndTime},
                     {"@DistanceKM", al.DistanceKM},
                     {"@AvgHeartRate", al.AvgHeartRate ?? (object)DBNull.Value},
                     {"@MaxHeartRate", al.MaxHeartRate ?? (object)DBNull.Value},
                     {"@CaloriesBurned", al.CaloriesBurned ?? (object)DBNull.Value},
+                    {"@SourceDevice", al.SourceDevice},
                     {"@ExertionLevel", al.ExertionLevel},
                     {"@Duration", al.Duration},
-                    {"@CalculatedLoadForSession", al.CalculatedLoadForSession}
+                    {"@CalculatedLoadForSession", al.CalculatedLoadForSession},
+                    {"@IsConfirmed", al.IsConfirmed}
                 };
 
                 using (SqlCommand cmd = CreateCommandWithStoredProcedure("sp_UpdateActivityLog", con, param))
@@ -95,8 +98,8 @@ namespace TrainWise.DAL
                         CaloriesBurned = reader["CaloriesBurned"] as double?,
                         SourceDevice = reader["SourceDevice"].ToString(),
                         ExertionLevel = reader["ExertionLevel"] as byte? ?? 0,
-                        Duration = reader["Duration"] as short? ?? 0,
-                        CalculatedLoadForSession = reader["CalculatedLoadForSession"] as short? ?? 0,
+                        Duration = reader["Duration"] == DBNull.Value ? 0 : Convert.ToInt32(reader["Duration"]),
+                        CalculatedLoadForSession = reader["CalculatedLoadForSession"] == DBNull.Value ? 0 : Convert.ToInt32(reader["CalculatedLoadForSession"]),
                         IsConfirmed = reader["IsConfirmed"] as bool? ?? false
                     });
                 }

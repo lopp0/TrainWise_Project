@@ -19,23 +19,33 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 import { useAuth } from '../api/AuthContext';
 import { registerUser } from '../api/api';
+import { Colors } from '../theme/colors';
+import { useThemedStyles } from '../theme/useThemedStyles';
+import { useTheme } from '../theme/ThemeContext';
 
 // ─── Checkbox ─────────────────────────────────────────────────────
-const Checkbox = ({ checked, onPress, children }) => (
-  <TouchableOpacity style={s.checkRow} onPress={onPress} activeOpacity={0.75}>
-    <View style={[s.checkBox, checked && s.checkBoxChecked]}>
-      {checked && <Ionicons name="checkmark" size={13} color="#fff" />}
-    </View>
-    {children}
-  </TouchableOpacity>
-);
+const Checkbox = ({ checked, onPress, children }) => {
+  const s = useThemedStyles(makeStyles);
+  return (
+    <TouchableOpacity style={s.checkRow} onPress={onPress} activeOpacity={0.75}>
+      <View style={[s.checkBox, checked && s.checkBoxChecked]}>
+        {checked && <Ionicons name="checkmark" size={13} color="#fff" />}
+      </View>
+      {children}
+    </TouchableOpacity>
+  );
+};
 
 // ─── Screen ───────────────────────────────────────────────────────
 const ACTIVITY_LEVEL = { Beginner: 1, Regular: 2, Advanced: 3 };
-const EXPERIENCE_LEVEL = { Low: 1, Medium: 3, High: 5 };
+// Backend validates ExperienceLevel ∈ {1,2,3}. Must NOT use 5 — that 400s
+// signup with "ExperienceLevel must be 1 (Beginner), 2 (Regular), or 3".
+const EXPERIENCE_LEVEL = { Low: 1, Medium: 2, High: 3 };
 
 const SignUpFinal = ({ navigation, route }) => {
   const { login } = useAuth();
+  const s = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
   const {
     name, age, weight, height, sex,
     trainingLevel, weeklyEst, role, profileImage,
@@ -105,6 +115,9 @@ const SignUpFinal = ({ navigation, route }) => {
       isBaselineEstablished:   false,
       baselineEstablishedDate: null,
       isCoach:                 role === 'trainer' || role === 'both',
+      // role 'trainer' means coach-only — they should not see trainee
+      // screens. Both 'trainee' and 'both' get full trainee UI.
+      isTrainee:               role === 'trainee' || role === 'both',
     };
 
     setSubmitting(true);
@@ -120,7 +133,7 @@ const SignUpFinal = ({ navigation, route }) => {
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-      <StatusBar style="light" />
+      <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
           contentContainerStyle={s.scroll}
@@ -130,7 +143,7 @@ const SignUpFinal = ({ navigation, route }) => {
 
           {/* Back arrow */}
           <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7} disabled={submitting}>
-            <Ionicons name="arrow-back" size={24} color="#ff2c60" />
+            <Ionicons name="arrow-back" size={24} color={Colors.primary} />
           </TouchableOpacity>
 
           {/* Title */}
@@ -144,7 +157,7 @@ const SignUpFinal = ({ navigation, route }) => {
           <TextInput
             style={s.input}
             placeholder="Your email here..."
-            placeholderTextColor="rgba(19,23,61,0.35)"
+            placeholderTextColor={Colors.textMuted}
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -157,7 +170,7 @@ const SignUpFinal = ({ navigation, route }) => {
           <TextInput
             style={s.input}
             placeholder="Your password here..."
-            placeholderTextColor="rgba(19,23,61,0.35)"
+            placeholderTextColor={Colors.textMuted}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -277,8 +290,8 @@ What we do NOT collect:
 
 You can delete your account at any time from the Settings page; that removes your profile and activity logs from the backend database.`;
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#13173d' },
+const makeStyles = (Colors) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: Colors.background },
   scroll: {
     alignItems: 'center',
     paddingHorizontal: 24,
@@ -302,13 +315,13 @@ const s = StyleSheet.create({
     letterSpacing: 1,
     transform: [{ rotate: '-3deg' }],
   },
-  titleEcho: { color: '#c524e6', position: 'absolute', top: 5, left: 5 },
-  titleFront: { color: '#ff2c60' },
+  titleEcho: { color: Colors.primaryDark, position: 'absolute', top: 5, left: 5 },
+  titleFront: { color: Colors.primary },
 
   // Field labels
   fieldLabel: {
     alignSelf: 'flex-start',
-    color: '#ff2c60',
+    color: Colors.primary,
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.4,
@@ -319,19 +332,19 @@ const s = StyleSheet.create({
   // Input
   input: {
     width: '100%',
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.inputBackground,
     borderWidth: 2,
-    borderColor: '#87ffd7',
+    borderColor: Colors.inputBorder,
     borderRadius: 10,
     paddingVertical: 12,
     paddingHorizontal: 16,
     fontSize: 14,
-    color: '#13173d',
+    color: Colors.textPrimary,
   },
 
   // Google
   googlePrompt: {
-    color: '#a0a0c0',
+    color: Colors.textSecondary,
     fontSize: 12,
     marginTop: 24,
     marginBottom: 10,
@@ -362,14 +375,14 @@ const s = StyleSheet.create({
     width: 22,
     height: 22,
     borderWidth: 2,
-    borderColor: '#ff2c60',
+    borderColor: Colors.primary,
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkBoxChecked: { backgroundColor: '#ff2c60' },
-  checkLabel: { color: '#ffffff', fontSize: 13, fontWeight: '500', flex: 1 },
-  checkLink: { color: '#ff2c60', fontWeight: '700', textDecorationLine: 'underline' },
+  checkBoxChecked: { backgroundColor: Colors.primary },
+  checkLabel: { color: Colors.textPrimary, fontSize: 13, fontWeight: '500', flex: 1 },
+  checkLink: { color: Colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
 
   btnDisabled: {
     opacity: 0.35,
@@ -379,9 +392,9 @@ const s = StyleSheet.create({
   doneBtn: {
     marginTop: 36,
     width: '65%',
-    backgroundColor: '#ff2c60',
+    backgroundColor: Colors.primary,
     borderWidth: 5,
-    borderColor: '#c524e6',
+    borderColor: Colors.primaryDark,
     borderRadius: 32,
     paddingVertical: 14,
     alignItems: 'center',
@@ -398,7 +411,7 @@ const s = StyleSheet.create({
     fontStyle: 'italic',
   },
   loadingNote: {
-    color: '#a0a0c0',
+    color: Colors.textSecondary,
     fontSize: 11,
     fontStyle: 'italic',
     textAlign: 'center',
@@ -414,13 +427,13 @@ const s = StyleSheet.create({
     paddingHorizontal: 22,
   },
   policyCard: {
-    backgroundColor: '#1d2155',
+    backgroundColor: Colors.cardBackground,
     borderRadius: 14,
     padding: 20,
     maxHeight: '80%',
   },
   policyTitle: {
-    color: '#ff2c60',
+    color: Colors.primary,
     fontSize: 18,
     fontWeight: '900',
     textAlign: 'center',
@@ -431,12 +444,12 @@ const s = StyleSheet.create({
     marginBottom: 14,
   },
   policyBody: {
-    color: '#e6e6f0',
+    color: Colors.textSecondary,
     fontSize: 13,
     lineHeight: 20,
   },
   policyClose: {
-    backgroundColor: '#ff2c60',
+    backgroundColor: Colors.primary,
     borderRadius: 22,
     paddingVertical: 12,
     alignItems: 'center',

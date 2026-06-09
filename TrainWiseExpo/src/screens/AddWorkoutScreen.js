@@ -8,7 +8,9 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  LayoutAnimation,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import {Colors, Fonts, Spacing} from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import ScreenHeader from '../components/ScreenHeader';
@@ -19,9 +21,29 @@ import {
   getAllActivityTypes,
   createActivityLog,
   calculateDailyLoad,
+  getDailyLoadByUser,
 } from '../services/api';
 import { useAuth } from '../api/AuthContext';
+import { sendLoadWarningIfNeeded } from '../api/NotificationService';
+import { getCurrentWeather } from '../api/weatherService';
+import { buildSmartSuggestion } from '../utils/smartWorkout';
 
+const ACTIVITY_FIELDS = {
+  'Running':       ['duration', 'distance', 'exertion'],
+  'Walking':       ['duration', 'distance', 'exertion'],
+  'Cycling':       ['duration', 'distance', 'exertion'],
+  'Swimming':      ['duration', 'distance', 'exertion'],
+  'Weightlifting': ['duration', 'exertion'],
+  'Powerlifting':  ['duration', 'exertion'],
+  'CrossFit':      ['duration', 'exertion'],
+  'Yoga':          ['duration', 'exertion'],
+  'Pilates':       ['duration', 'exertion'],
+  'HIIT':          ['duration', 'exertion'],
+  'Boxing':        ['duration', 'exertion'],
+  'Basketball':    ['duration', 'exertion'],
+  'Football':      ['duration', 'exertion'],
+  'Tennis':        ['duration', 'exertion'],
+};
 
 const AddWorkoutScreen = ({navigation}) => {
   const { userId } = useAuth();
@@ -31,14 +53,56 @@ const AddWorkoutScreen = ({navigation}) => {
   const [duration, setDuration] = useState('');
   const [exertion, setExertion] = useState(5);
   const [distance, setDistance] = useState('');
-  const [avgHeartRate, setAvgHeartRate] = useState('');
-  const [maxHeartRate, setMaxHeartRate] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [weather, setWeather] = useState(null);
+  const [suggestion, setSuggestion] = useState(null);
+  const [smartOpen, setSmartOpen] = useState(true); // collapsible smart card
+
+  const shouldShow = (field) => {
+    const typeName = selectedActivity?.typeName || '';
+    const fields = ACTIVITY_FIELDS[typeName] || ['duration', 'exertion'];
+    return fields.includes(field);
+  };
+
+  // Traffic-light color for a factor/rating status. Green = good conditions,
+  // yellow = caution, red = avoid. Semantic, so it stays fixed across themes.
+  const faceColor = (status) =>
+    status === 'good' ? Colors.success : status === 'warn' ? Colors.warning : Colors.danger;
 
   useEffect(() => {
     loadActivityTypes();
+    loadSmartSuggestion();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Weather + current load → a suggested workout. All best-effort: any failure
+  // (no location permission, Weather API off, offline) just hides the card.
+  const loadSmartSuggestion = async () => {
+    let acRatio = null;
+    try {
+      const res = await getDailyLoadByUser(userId);
+      const rows = Array.isArray(res.data) ? res.data : [];
+      if (rows.length) {
+        const latest = rows.reduce((best, cur) => {
+          const bd = new Date(best.date ?? best.Date ?? 0).getTime();
+          const cd = new Date(cur.date ?? cur.Date ?? 0).getTime();
+          return cd > bd ? cur : best;
+        });
+        acRatio = latest.aC_Ratio ?? latest.AC_Ratio ?? latest.acRatio ?? null;
+      }
+    } catch {
+      // no load history yet — fine
+    }
+    try {
+      const w = await getCurrentWeather();
+      setWeather(w);
+      setSuggestion(buildSmartSuggestion({ weather: w, acRatio }));
+    } catch {
+      // weather unavailable — still offer a load-based suggestion if any
+      setSuggestion(buildSmartSuggestion({ weather: null, acRatio }));
+    }
+  };
 
   const loadActivityTypes = async () => {
     try {
@@ -67,6 +131,13 @@ const AddWorkoutScreen = ({navigation}) => {
       Alert.alert('Missing Info', 'Please enter a valid duration in minutes');
       return;
     }
+    if (parseInt(duration, 10) > 480) {
+      Alert.alert(
+        'Invalid Duration',
+        'Session duration cannot exceed 480 minutes (8 hours).'
+      );
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -80,9 +151,9 @@ const AddWorkoutScreen = ({navigation}) => {
         activityTypeID: selectedActivity.activityTypeID,
         startTime: start.toISOString(),
         endTime: now.toISOString(),
-        distanceKM: parseFloat(distance) || 0,
-        avgHeartRate: parseInt(avgHeartRate, 10) || 0,
-        maxHeartRate: parseInt(maxHeartRate, 10) || 0,
+        distanceKM: shouldShow('distance') ? parseFloat(distance) || 0 : 0,
+        avgHeartRate: 0,
+        maxHeartRate: 0,
         caloriesBurned: 0,
         sourceDevice: 'Manual',
         exertionLevel: exertion,
@@ -94,6 +165,11 @@ const AddWorkoutScreen = ({navigation}) => {
       // Trigger load recalculation
       const calcResponse = await calculateDailyLoad(userId);
       const result = calcResponse.data || {};
+
+      await sendLoadWarningIfNeeded(
+        result.ac_Ratio ?? result.acRatio ?? 0,
+        result.loadLevel ?? 'Green'
+      );
 
       navigation.navigate('WorkoutSummary', {
         summary: {
@@ -112,11 +188,10 @@ const AddWorkoutScreen = ({navigation}) => {
         },
       });
     } catch (error) {
-      console.log('Submit error:', error.message);
-      Alert.alert(
-        'Error',
-        'Could not save workout. Check your connection and try again.',
-      );
+      const serverMsg =
+        error?.response?.data || error?.message || 'unknown error';
+      console.log('Submit error:', serverMsg);
+      Alert.alert('Error', `Could not save workout:\n${serverMsg}`);
     } finally {
       setSubmitting(false);
     }
@@ -131,6 +206,122 @@ const AddWorkoutScreen = ({navigation}) => {
       />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Smart suggestion (multi-factor weather + load aware). Intentionally
+            NOT a plain <Card> — the accent border + glow + rating pill make it
+            read as a distinct, actionable callout above the form fields. */}
+        {suggestion && (
+          <View style={styles.smartCard}>
+            {/* Tappable header collapses the card so it doesn't dominate the screen */}
+            <TouchableOpacity
+              style={styles.smartHeader}
+              activeOpacity={0.8}
+              onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setSmartOpen((o) => !o);
+              }}
+            >
+              <View style={styles.smartHeaderLeft}>
+                <Ionicons name="sparkles" size={15} color={Colors.primary} />
+                <Text style={styles.smartHeaderText}>SMART SUGGESTION</Text>
+              </View>
+              <View style={styles.smartHeaderRight}>
+                {weather?.tempC != null && (
+                  <Text style={styles.smartWeather} numberOfLines={1}>
+                    {Math.round(weather.tempC)}°
+                    {weather.description ? ` · ${weather.description}` : ''}
+                  </Text>
+                )}
+                <Ionicons
+                  name={smartOpen ? 'chevron-up' : 'chevron-down'}
+                  size={18}
+                  color={Colors.primary}
+                />
+              </View>
+            </TouchableOpacity>
+
+            {/* Always-visible gist: emoji + headline + rating */}
+            <View style={styles.smartTop}>
+              <Text style={styles.smartEmoji}>{suggestion.emoji}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.smartTitle}>{suggestion.title}</Text>
+              </View>
+              <View
+                style={[
+                  styles.ratingPill,
+                  { borderColor: faceColor(suggestion.rating.faceColor) },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.ratingPillLabel,
+                    { color: faceColor(suggestion.rating.faceColor) },
+                  ]}
+                >
+                  {suggestion.rating.label}
+                </Text>
+                {suggestion.score != null && (
+                  <Text style={styles.ratingPillScore}>{suggestion.score}/100</Text>
+                )}
+              </View>
+            </View>
+
+            {/* Collapsible detail */}
+            {smartOpen && (
+              <>
+                <Text style={styles.smartReason}>{suggestion.reason}</Text>
+
+                {/* Per-factor breakdown: temp, humidity, UV, wind, air, rain. */}
+                {suggestion.factors.length > 0 && (
+                  <View style={styles.factorRow}>
+                    {suggestion.factors.map((f) => (
+                      <View key={f.key} style={styles.factorTile}>
+                        <View style={styles.factorIconRow}>
+                          <Ionicons name={f.icon} size={15} color={faceColor(f.status)} />
+                          <View style={[styles.factorDot, { backgroundColor: faceColor(f.status) }]} />
+                        </View>
+                        <Text style={styles.factorValue} numberOfLines={1}>{f.value}</Text>
+                        <Text style={styles.factorLabel} numberOfLines={1}>{f.label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                <Text style={styles.smartPick}>
+                  {suggestion.indoorPreferred ? 'Suggested indoor activities' : 'Suggested activities'} · tap to log
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.chipRow}
+                >
+                  {suggestion.activities.map((name) => {
+                    const match = activityTypes.find(
+                      (a) => (a.typeName || '').toLowerCase() === name.toLowerCase()
+                    );
+                    if (!match) return null;
+                    const selected =
+                      selectedActivity?.activityTypeID === match.activityTypeID;
+                    return (
+                      <TouchableOpacity
+                        key={name}
+                        style={[styles.chip, selected && styles.chipSelected]}
+                        onPress={() => {
+                          setSelectedActivity(match);
+                          setDistance('');
+                        }}
+                      >
+                        <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                          {name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            )}
+          </View>
+        )}
+
         {/* Activity Type */}
         <Card>
           <Text style={styles.cardTitle}>Workout Type</Text>
@@ -140,7 +331,10 @@ const AddWorkoutScreen = ({navigation}) => {
             <ComboBox
               items={activityTypes}
               selectedValue={selectedActivity?.activityTypeID}
-              onChange={(item) => setSelectedActivity(item)}
+              onChange={(item) => {
+                setSelectedActivity(item);
+                setDistance('');
+              }}
               labelKey="typeName"
               valueKey="activityTypeID"
               placeholder="Select workout type"
@@ -183,46 +377,19 @@ const AddWorkoutScreen = ({navigation}) => {
         </Card>
 
         {/* Distance */}
-        <Card>
-          <Text style={styles.cardTitle}>Distance (km)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. 5.2"
-            placeholderTextColor={Colors.textMuted}
-            value={distance}
-            onChangeText={setDistance}
-            keyboardType="decimal-pad"
-          />
-        </Card>
-
-        {/* Heart Rate */}
-        <Card>
-          <Text style={styles.cardTitle}>Pulse (bpm)</Text>
-          <View style={styles.row}>
-            <View style={styles.halfCol}>
-              <Text style={styles.label}>Average</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="avg"
-                placeholderTextColor={Colors.textMuted}
-                value={avgHeartRate}
-                onChangeText={setAvgHeartRate}
-                keyboardType="numeric"
-              />
-            </View>
-            <View style={styles.halfCol}>
-              <Text style={styles.label}>Max</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="max"
-                placeholderTextColor={Colors.textMuted}
-                value={maxHeartRate}
-                onChangeText={setMaxHeartRate}
-                keyboardType="numeric"
-              />
-            </View>
-          </View>
-        </Card>
+        {shouldShow('distance') && (
+          <Card>
+            <Text style={styles.cardTitle}>Distance (km)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. 5.2"
+              placeholderTextColor={Colors.textMuted}
+              value={distance}
+              onChangeText={setDistance}
+              keyboardType="decimal-pad"
+            />
+          </Card>
+        )}
       </ScrollView>
 
       <View style={styles.bottomActions}>
@@ -252,6 +419,91 @@ const makeStyles = (Colors) => StyleSheet.create({
   },
   chipRow: {
     paddingVertical: Spacing.sm,
+  },
+  // Smart suggestion — distinct accent card with a rating pill + factor grid.
+  smartCard: {
+    backgroundColor: Colors.cardBackground,
+    borderRadius: 16,
+    padding: Spacing.lg,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    marginTop: Spacing.sm,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    // Primary-tinted glow so the block clearly stands apart from the plain
+    // form cards below it.
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  smartHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.md,
+  },
+  smartHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  smartHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1, marginLeft: 8 },
+  smartHeaderText: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  smartWeather: {
+    color: Colors.textSecondary,
+    fontSize: Fonts.captionSize,
+    flexShrink: 1,
+    textAlign: 'right',
+    marginLeft: 8,
+  },
+  smartTop: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md },
+  smartEmoji: { fontSize: 30, marginTop: 2 },
+  smartTitle: {
+    color: Colors.textPrimary,
+    fontSize: Fonts.subtitleSize,
+    fontWeight: '900',
+  },
+  smartReason: {
+    color: Colors.textSecondary,
+    fontSize: Fonts.bodySize,
+    lineHeight: 19,
+    marginTop: 10,
+  },
+  ratingPill: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    backgroundColor: Colors.cardBackgroundLight,
+    minWidth: 62,
+  },
+  ratingPillLabel: { fontSize: 13, fontWeight: '900' },
+  ratingPillScore: { color: Colors.textMuted, fontSize: 10, marginTop: 1, fontWeight: '700' },
+  factorRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: Spacing.md,
+    backgroundColor: Colors.background,
+    borderRadius: 12,
+    paddingVertical: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  factorTile: { width: '33.33%', alignItems: 'center', paddingVertical: 6 },
+  factorIconRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  factorDot: { width: 6, height: 6, borderRadius: 3 },
+  factorValue: { color: Colors.textPrimary, fontSize: 13, fontWeight: '800', marginTop: 3 },
+  factorLabel: { color: Colors.textMuted, fontSize: 10, marginTop: 1 },
+  smartPick: {
+    color: Colors.textSecondary,
+    fontSize: Fonts.captionSize,
+    fontWeight: '700',
+    marginTop: Spacing.md,
   },
   chip: {
     backgroundColor: Colors.inputBackground,

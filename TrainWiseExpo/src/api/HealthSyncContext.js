@@ -7,13 +7,32 @@ import React, {
   useState,
 } from 'react';
 import { AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
 import useSyncWorkouts from './useSyncWorkouts';
 import { getActivityLogs } from './api';
+import { scopedKey } from '../utils/activeUser';
+import { HC_CONNECTED_BASE } from '../constants/hcKeys';
 
 const HealthSyncContext = createContext(null);
 
 const AUTOSYNC_THROTTLE_MS = 30_000;
+
+// Per-account opt-in. Health Connect permission is device-level (shared by every
+// account on the phone), so without this every account would auto-import the
+// same device workouts. The stored value is the ISO timestamp the account
+// connected — its presence = "connected", and SyncService uses it as the import
+// floor so only workouts done AFTER connecting are pulled in.
+const readAccountConnectedAt = async () => {
+  try {
+    const v = await AsyncStorage.getItem(scopedKey(HC_CONNECTED_BASE));
+    const t = v ? Date.parse(v) : NaN;
+    return Number.isNaN(t) ? null : new Date(t);
+  } catch {
+    return null;
+  }
+};
+const readAccountConnected = async () => (await readAccountConnectedAt()) != null;
 
 export const HealthSyncProvider = ({ children }) => {
   const { userId } = useAuth();
@@ -27,6 +46,9 @@ export const HealthSyncProvider = ({ children }) => {
   } = useSyncWorkouts();
 
   const [unconfirmedCount, setUnconfirmedCount] = useState(0);
+  // Whether THIS account has opted into Health Connect (drives the UI's
+  // Connected/Not-Connected state and the pink Connect button).
+  const [accountConnected, setAccountConnected] = useState(false);
   const lastAutoSyncRef = useRef(0);
 
   const refreshUnconfirmedCount = useCallback(async () => {
@@ -46,15 +68,23 @@ export const HealthSyncProvider = ({ children }) => {
     }
   }, [userId]);
 
-  const runAutoSync = useCallback(async () => {
+  const runAutoSync = useCallback(async (force = false) => {
     if (!userId) return;
+    // Only sync if THIS account opted into HC. Prevents a new account from
+    // silently inheriting the device's HC workouts.
+    if (!(await readAccountConnected())) {
+      await refreshUnconfirmedCount();
+      return;
+    }
     const now = Date.now();
     const stale = now - lastAutoSyncRef.current >= AUTOSYNC_THROTTLE_MS;
     lastAutoSyncRef.current = now;
 
     try {
       const granted = await checkHCPermissions();
-      if (granted && stale) {
+      // `force` (manual pull-to-refresh) bypasses the 30s throttle so a just-
+      // finished HC workout imports immediately instead of waiting it out.
+      if (granted && (stale || force)) {
         const result = await triggerSync(7);
         // If the sync failed because the backend was unreachable, reset
         // the throttle so the NEXT foreground (or the retry below) tries
@@ -79,13 +109,37 @@ export const HealthSyncProvider = ({ children }) => {
     }
   }, [userId, checkHCPermissions, triggerSync, refreshUnconfirmedCount]);
 
-  // Run once when the user becomes known (app open / login).
+  // Opt this account into Health Connect: request the device permission, then
+  // persist the per-account flag and run the first sync. Called by the pink
+  // "Connect Health Connect" button.
+  const connectThisAccount = useCallback(async () => {
+    const granted = await requestHCPermissions();
+    if (granted) {
+      try {
+        // Store the connect moment — also used as the HC import floor.
+        await AsyncStorage.setItem(scopedKey(HC_CONNECTED_BASE), new Date().toISOString());
+      } catch {
+        // non-fatal — worst case the user re-taps Connect next launch
+      }
+      setAccountConnected(true);
+      lastAutoSyncRef.current = 0; // force an immediate sync
+      await runAutoSync();
+    }
+    return granted;
+  }, [requestHCPermissions, runAutoSync]);
+
+  // Run once when the user becomes known (app open / login). Loads the
+  // per-account HC flag first so the UI shows the right Connected state.
   useEffect(() => {
     if (userId) {
       lastAutoSyncRef.current = 0; // force a sync on first run
-      runAutoSync();
+      (async () => {
+        setAccountConnected(await readAccountConnected());
+        runAutoSync();
+      })();
     } else {
       setUnconfirmedCount(0);
+      setAccountConnected(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
@@ -101,13 +155,17 @@ export const HealthSyncProvider = ({ children }) => {
   return (
     <HealthSyncContext.Provider
       value={{
-        permissionsGranted,
+        // Per-account connected state (not the raw device permission), so each
+        // account shows its own Connected / Not-Connected status.
+        permissionsGranted: accountConnected,
+        devicePermissionsGranted: permissionsGranted,
         unconfirmedCount,
         isSyncing,
         lastSyncError: error,
         runAutoSync,
         refreshUnconfirmedCount,
         requestHCPermissions,
+        connectThisAccount,
       }}
     >
       {children}

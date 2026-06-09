@@ -45,6 +45,14 @@ const fetchDistanceForSession = async (_startTime, _endTime) => {
   return 0;
 };
 
+const fetchRouteForWorkout = async (_startTime, _endTime) => {
+  return { points: [], status: 'unavailable' };
+};
+
+const resolveExerciseRoute = async (_session) => {
+  return { points: [], status: 'unavailable' };
+};
+
 const getStructuredWorkouts = async (_startDate, _endDate) => {
   return [];
 };
@@ -59,6 +67,8 @@ module.exports = {
   fetchHeartRateForSession,
   fetchCaloriesForSession,
   fetchDistanceForSession,
+  fetchRouteForWorkout,
+  resolveExerciseRoute,
   getStructuredWorkouts,
   default: {
     initializeHealthConnect,
@@ -70,6 +80,8 @@ module.exports = {
     fetchHeartRateForSession,
     fetchCaloriesForSession,
     fetchDistanceForSession,
+    fetchRouteForWorkout,
+    resolveExerciseRoute,
     getStructuredWorkouts,
   },
 };

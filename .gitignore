@@ -73,3 +73,15 @@ venv/
 
 # =================== Temporary scratch projects ===================
 my-app/
+
+# =================== Runtime-uploaded content (not source) ===================
+# Profile / chat images saved by the API at runtime. Keep the folder, drop files.
+TrainWise/TrainWise/wwwroot/images/*
+!TrainWise/TrainWise/wwwroot/images/.gitkeep
+
+# =================== Azure publish profiles (personal deploy config) ===================
+TrainWise/TrainWise/Properties/PublishProfiles/
+TrainWise/TrainWise/Properties/ServiceDependencies/
+
+# =================== Stray root EAS ignore (EAS uses TrainWiseExpo/.easignore) ===================
+/.easignore

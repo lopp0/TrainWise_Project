@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using TrainWise.BL;
 using TrainWise.BL.Models;
 
@@ -89,12 +89,12 @@ namespace TrainWise.Controllers
         }
 
         [HttpDelete("{id}")]
-        public IActionResult Delete(int id)
+        public IActionResult SoftDelete(int id)
         {
             try
             {
                 _bl.Delete(id);
-                return Ok("Activity deleted");
+                return Ok("Activity hidden");
             }
             catch (Exception ex)
             {
@@ -102,4 +102,6 @@ namespace TrainWise.Controllers
             }
         }
     }
+
 }
+

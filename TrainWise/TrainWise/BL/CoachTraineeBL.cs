@@ -1,4 +1,5 @@
-﻿using TrainWise.DAL;
+﻿using System.Linq;
+using TrainWise.DAL;
 
 namespace TrainWise.BL
 {
@@ -18,6 +19,14 @@ namespace TrainWise.BL
 
             if (_userDal.GetUserById(userId) == null)
                 throw new ArgumentException("User does not exist");
+
+            // Reject re-linking an existing pair so the app can show an
+            // "already connected" message instead of a silent success. Reuses
+            // the existing trainees query to avoid a new stored procedure.
+            bool alreadyLinked = _coachDal.GetTraineesWithLoad(coachId)
+                .Any(t => t.UserID == userId);
+            if (alreadyLinked)
+                throw new InvalidOperationException("You are already connected with this user.");
 
             _dal.ConnectTrainee(coachId, userId);
         }

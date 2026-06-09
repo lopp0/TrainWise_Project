@@ -13,8 +13,8 @@
         public double? CaloriesBurned { get; set; }
         public string SourceDevice { get; set; }
         public byte ExertionLevel { get; set; }        
-        public short Duration { get; set; }               
-        public short CalculatedLoadForSession { get; set; }
+        public int Duration { get; set; }               
+        public int CalculatedLoadForSession { get; set; }
         public bool IsConfirmed { get; set; }
     }
 }

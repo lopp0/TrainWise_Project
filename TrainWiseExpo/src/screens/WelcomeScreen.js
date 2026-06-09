@@ -9,6 +9,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { Colors } from '../theme/colors';
+import { useThemedStyles } from '../theme/useThemedStyles';
+import { useTheme } from '../theme/ThemeContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -17,7 +20,7 @@ const LOGO_SIZE = 160;
 const FONT_SIZE = 14;
 const CONTAINER_SIZE = (CIRCLE_RADIUS + FONT_SIZE + 14) * 2;
 
-function CurvedText({ text, radius, curveUp }) {
+function CurvedText({ text, radius, curveUp, color = '#00e6c3' }) {
   const chars = text.split('');
   const charStep = (FONT_SIZE * 0.62) / radius;
   const totalAngle = charStep * chars.length;
@@ -46,7 +49,7 @@ function CurvedText({ text, radius, curveUp }) {
               left: px - FONT_SIZE * 0.32,
               top: curveUp ? py - FONT_SIZE : py,
               fontSize: FONT_SIZE,
-              color: '#00e6c3',
+              color,
               fontWeight: '700',
               transform: [{ rotate: `${rotDeg}deg` }],
             }}
@@ -60,9 +63,12 @@ function CurvedText({ text, radius, curveUp }) {
 }
 
 const WelcomeScreen = ({ navigation }) => {
+  const styles = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
+  const curveColor = Colors.primaryLight;
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <StatusBar style="light" />
+      <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
 
       <View style={styles.titleWrapper}>
         <Text style={[styles.titleBase, styles.titleEcho]} numberOfLines={1}>
@@ -92,8 +98,8 @@ const WelcomeScreen = ({ navigation }) => {
           ]}
           resizeMode="contain"
         />
-        <CurvedText text="Protect your health" radius={CIRCLE_RADIUS} curveUp={true} />
-        <CurvedText text="and your safety" radius={CIRCLE_RADIUS} curveUp={false} />
+        <CurvedText text="Protect your health" radius={CIRCLE_RADIUS} curveUp={true} color={curveColor} />
+        <CurvedText text="and your safety" radius={CIRCLE_RADIUS} curveUp={false} color={curveColor} />
       </View>
 
       <TouchableOpacity
@@ -114,10 +120,10 @@ const WelcomeScreen = ({ navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (Colors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#13173d',
+    backgroundColor: Colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
@@ -134,13 +140,13 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   titleEcho: {
-    color: '#c524e6',
+    color: Colors.primaryDark,
     position: 'absolute',
     top: 6,
     left: 6,
   },
   titleFront: {
-    color: '#ff2c60',
+    color: Colors.primary,
   },
   circleContainer: {
     position: 'relative',
@@ -150,9 +156,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
   },
   signUpButton: {
-    backgroundColor: '#ff2c60',
+    backgroundColor: Colors.primary,
     borderWidth: 6,
-    borderColor: '#c524e6',
+    borderColor: Colors.primaryDark,
     borderRadius: 32,
     paddingVertical: 14,
     paddingHorizontal: SCREEN_WIDTH * 0.18,
@@ -177,13 +183,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   signInPrompt: {
-    color: '#ff2c60',
+    color: Colors.primary,
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.4,
   },
   signInHere: {
-    color: '#ffffff',
+    color: Colors.textPrimary,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.4,

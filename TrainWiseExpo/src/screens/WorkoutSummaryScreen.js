@@ -1,11 +1,13 @@
 import React from 'react';
 import {View, Text, StyleSheet, ScrollView, TouchableOpacity} from 'react-native';
 import {Colors, Fonts, Spacing} from '../theme/colors';
+import { useThemedStyles } from '../theme/useThemedStyles';
 import ScreenHeader from '../components/ScreenHeader';
 import Card from '../components/Card';
 import PrimaryButton from '../components/PrimaryButton';
 
 const WorkoutSummaryScreen = ({navigation, route}) => {
+  const styles = useThemedStyles(makeStyles);
   const summary = route?.params?.summary || {
     activityName: 'Running',
     duration: 45,
@@ -71,21 +73,21 @@ const WorkoutSummaryScreen = ({navigation, route}) => {
             <View style={styles.metric}>
               <Text style={styles.metricLabel}>Acute Load</Text>
               <Text style={styles.metricValue}>
-                {Math.round(summary.acuteLoad)}
+                {summary.acuteLoad != null ? Math.round(summary.acuteLoad) : '—'}
               </Text>
               <Text style={styles.metricSub}>7-day</Text>
             </View>
             <View style={styles.metric}>
               <Text style={styles.metricLabel}>Chronic Load</Text>
               <Text style={styles.metricValue}>
-                {Math.round(summary.chronicLoad)}
+                {summary.chronicLoad != null ? Math.round(summary.chronicLoad) : '—'}
               </Text>
               <Text style={styles.metricSub}>28-day</Text>
             </View>
             <View style={styles.metric}>
               <Text style={styles.metricLabel}>AC Ratio</Text>
               <Text style={styles.metricValue}>
-                {summary.acRatio.toFixed(2)}
+                {summary.acRatio != null ? Number(summary.acRatio).toFixed(2) : '—'}
               </Text>
               <Text style={styles.metricSub}>acute/chronic</Text>
             </View>
@@ -119,7 +121,7 @@ const WorkoutSummaryScreen = ({navigation, route}) => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (Colors) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,

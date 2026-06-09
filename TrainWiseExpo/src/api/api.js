@@ -6,7 +6,12 @@ import axios from 'axios';
  */
 
 // API Configuration
-const BASE_URL = 'http://127.0.0.1:5249'; // Reaches PC via `adb reverse tcp:5249 tcp:5249` over USB
+// USB / adb-reverse mode: the phone's 127.0.0.1:5249 is forwarded to the PC
+// by `adb reverse tcp:5249 tcp:5249`. Works on ANY network (even school WiFi
+// with client isolation) because traffic goes over the USB cable, not WiFi.
+// Requires the phone plugged in + adb reverse run after each reconnect.
+// For wireless LAN instead, set this to http://<PC-IP>:5249/api (sync both files).
+const BASE_URL = 'http://192.168.1.119:5249/api'; // Home LAN (wireless). For USB-anywhere, use http://127.0.0.1:5249/api + `adb reverse tcp:5249 tcp:5249`. Keep in sync with services/api.js.
 const API_TIMEOUT = 30000; // 30 seconds
 
 // Create axios instance with default config
@@ -31,7 +36,7 @@ const apiClient = axios.create({
  */
 export const login = async (email, password) => {
   try {
-    const response = await apiClient.post('/api/auth/login', {
+    const response = await apiClient.post('/auth/login', {
       email,
       password,
     });
@@ -53,7 +58,7 @@ export const login = async (email, password) => {
  */
 export const registerUser = async (payload) => {
   try {
-    const response = await apiClient.post('/api/Users', payload);
+    const response = await apiClient.post('/Users', payload);
     return response.data;
   } catch (error) {
     // Backend can return either a string ("UserName is required") or an
@@ -94,7 +99,7 @@ export const registerUser = async (payload) => {
  */
 export const getActivityLogs = async (userId) => {
   try {
-    const response = await apiClient.get(`/api/ActivityLog/user/${userId}`);
+    const response = await apiClient.get(`/ActivityLog/user/${userId}`);
     return response.data;
   } catch (error) {
     // Surface the actual cause (network vs HTTP status vs server message).
@@ -122,7 +127,7 @@ export const getActivityLogs = async (userId) => {
  */
 export const postActivityLog = async (activityData) => {
   try {
-    const response = await apiClient.post('/api/ActivityLog', activityData);
+    const response = await apiClient.post('/ActivityLog', activityData);
     return response.data;
   } catch (error) {
     console.error('Error creating activity log:', error);
@@ -137,7 +142,7 @@ export const postActivityLog = async (activityData) => {
  */
 export const putActivityLog = async (activityData) => {
   try {
-    const response = await apiClient.put('/api/ActivityLog', activityData);
+    const response = await apiClient.put('/ActivityLog', activityData);
     return response.data;
   } catch (error) {
     console.error('Error updating activity log:', error);
@@ -152,7 +157,7 @@ export const putActivityLog = async (activityData) => {
  */
 export const deleteActivityLog = async (activityLogId) => {
   try {
-    await apiClient.delete(`/api/ActivityLog/${activityLogId}`);
+    await apiClient.delete(`/ActivityLog/${activityLogId}`);
   } catch (error) {
     console.error('Error deleting activity log:', error);
     throw new Error('Failed to delete activity log');
@@ -170,7 +175,7 @@ export const deleteActivityLog = async (activityLogId) => {
  */
 export const getUserDevices = async (userId) => {
   try {
-    const response = await apiClient.get(`/api/users/${userId}/devices`);
+    const response = await apiClient.get(`/users/${userId}/devices`);
     return response.data;
   } catch (error) {
     console.error('Error fetching user devices:', error);
@@ -187,7 +192,7 @@ export const getUserDevices = async (userId) => {
 export const postUserDevice = async (userId, deviceData) => {
   try {
     const response = await apiClient.post(
-      `/api/users/${userId}/devices`,
+      `/users/${userId}/devices`,
       deviceData
     );
     return response.data;
@@ -207,7 +212,7 @@ export const postUserDevice = async (userId, deviceData) => {
 export const putUserDevice = async (userId, deviceId, deviceData) => {
   try {
     const response = await apiClient.put(
-      `/api/users/${userId}/devices/${deviceId}`,
+      `/users/${userId}/devices/${deviceId}`,
       deviceData
     );
     return response.data;

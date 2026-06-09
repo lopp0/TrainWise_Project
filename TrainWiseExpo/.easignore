@@ -1,3 +1,4 @@
+android/
 node_modules/react-native-reanimated/android/build/
 node_modules/react-native-worklets/android/build/
 node_modules/react-native-health-connect/android/build/

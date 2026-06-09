@@ -4,24 +4,36 @@
     "slug": "TrainWiseExpo",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/images/wowowow.png",
     "scheme": "trainwiseexpo",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "icon": "./assets/images/wowowow.png"
     },
     "android": {
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/wowowow.png",
+        "backgroundColor": "#13173d"
+      },
       "permissions": [
         "android.permission.health.READ_EXERCISE",
         "android.permission.health.READ_HEART_RATE",
         "android.permission.health.READ_DISTANCE",
         "android.permission.health.READ_TOTAL_CALORIES_BURNED",
         "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
-        "android.permission.health.READ_STEPS"
+        "android.permission.health.READ_STEPS",
+        "android.permission.CAMERA"
       ],
-      "package": "com.anonymous.TrainWiseExpo"
+      "package": "com.anonymous.TrainWiseExpo",
+      "config": {
+        "googleMaps": {
+          "apiKey": "***REMOVED***"
+        }
+      }
     },
     "plugins": [
       "react-native-health-connect",
@@ -32,7 +44,22 @@
             "minSdkVersion": 26
           }
         }
-      ]
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/wowowow.png",
+          "color": "#ff2d6f",
+          "sounds": []
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "TrainWise uses the camera to scan a coach/trainee QR code."
+        }
+      ],
+      "expo-maps"
     ],
     "extra": {
       "eas": {

@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { login as apiLogin } from './api';
+import { setActiveUserId } from '../utils/activeUser';
 
 /**
  * AuthContext
@@ -54,6 +55,9 @@ export const AuthProvider = ({ children }) => {
           parsed.deviceId = await getOrCreateDeviceId();
           await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
         }
+        // Scope device-local stores (coins/items/streak) to this account
+        // BEFORE any screen reads them.
+        setActiveUserId(parsed.userId);
         setUser(parsed);
       }
     } catch (error) {
@@ -89,6 +93,10 @@ export const AuthProvider = ({ children }) => {
         email: userData.email,
         userName: userData.userName,
         isCoach: userData.isCoach,
+        // Default true so users created before the IsTrainee column existed
+        // still see the trainee UI. Coach-only is a deliberate opt-in.
+        isTrainee: userData.isTrainee ?? true,
+        profileImagePath: userData.profileImagePath ?? null,
         activityLevel: userData.activityLevel,
         height: userData.height,
         weight: userData.weight,
@@ -105,7 +113,8 @@ export const AuthProvider = ({ children }) => {
 
       // Persist to AsyncStorage
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedUser));
-      
+
+      setActiveUserId(normalizedUser.userId);
       setUser(normalizedUser);
       return normalizedUser;
     } catch (err) {
@@ -125,6 +134,7 @@ export const AuthProvider = ({ children }) => {
     try {
       setIsLoading(true);
       await AsyncStorage.removeItem(STORAGE_KEY);
+      setActiveUserId(null);
       setUser(null);
       setError(null);
     } catch (err) {

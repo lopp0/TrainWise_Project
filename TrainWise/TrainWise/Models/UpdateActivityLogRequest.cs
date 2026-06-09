@@ -1,8 +1,8 @@
 ﻿namespace TrainWise.BL.Models
 {
-    public class CreateActivityLogRequest
+    public class UpdateActivityLogRequest
     {
-        public int UserID { get; set; }
+        public int ActivityID { get; set; }
         public int ActivityTypeID { get; set; }
         public DateTime StartTime { get; set; }
         public DateTime EndTime { get; set; }
@@ -12,7 +12,7 @@
         public double? CaloriesBurned { get; set; }
         public string SourceDevice { get; set; }
         public byte ExertionLevel { get; set; }
-        public short Duration { get; set; }
+        public int Duration { get; set; }
         public bool IsConfirmed { get; set; }
     }
 }

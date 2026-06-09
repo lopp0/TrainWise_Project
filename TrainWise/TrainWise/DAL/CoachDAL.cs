@@ -143,6 +143,37 @@ namespace TrainWise.DAL
             }
             return null;
         }
+
+        // Reverse of GetTraineesWithLoad: the coach(es) a given trainee is linked
+        // to. Used by the trainee-side "message your coach" entry. CoachUserID is
+        // the coach's Users row id (chat is user<->user). Coaches with a NULL
+        // UserID are skipped by the inner join (they can't receive chats).
+        public List<CoachContact> GetCoachesForTrainee(int userId)
+        {
+            var list = new List<CoachContact>();
+            using (SqlConnection con = Connect())
+            {
+                var param = new Dictionary<string, object> { { "@UserID", userId } };
+                using (SqlCommand cmd = CreateCommandWithStoredProcedure("sp_GetCoachesForTrainee", con, param))
+                using (SqlDataReader reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        list.Add(new CoachContact
+                        {
+                            CoachID = (int)reader["CoachID"],
+                            CoachUserID = (int)reader["CoachUserID"],
+                            FullName = reader["FullName"].ToString(),
+                            Email = reader["Email"].ToString(),
+                            ProfileImagePath = reader["ProfileImagePath"] == DBNull.Value
+                                ? null
+                                : reader["ProfileImagePath"].ToString()
+                        });
+                    }
+                }
+            }
+            return list;
+        }
     }
 }
 

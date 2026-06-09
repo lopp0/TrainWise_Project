@@ -50,6 +50,7 @@ if (_hc === null) {
     initialize,
     requestPermission,
     readRecords,
+    requestExerciseRoute,
     getSdkStatus,
     getGrantedPermissions,
     SdkAvailabilityStatus,
@@ -293,6 +294,121 @@ if (_hc === null) {
     }
   };
 
+  /**
+   * Resolve the GPS route for a single exercise session.
+   *
+   * Routes are NOT gated by any declared manifest permission. There is no
+   * `READ_EXERCISE_ROUTE` health permission in Android (the only route
+   * permission is the privileged plural `READ_EXERCISE_ROUTES`, which this
+   * library doesn't support). Instead, reading another app's route uses a
+   * per-record CONSENT flow via `requestExerciseRoute(recordId)`. Declaring a
+   * bogus `READ_EXERCISE_ROUTE` permission makes Health Connect drop the app
+   * from its permissions list on Android 14+/16 — do NOT add it back.
+   * When reading a session, `exerciseRoute.type` tells us the state:
+   *   - DATA            -> the route is inline on the session, use it directly
+   *   - CONSENT_REQUIRED -> call requestExerciseRoute(recordId) to prompt the
+   *                         user and fetch it
+   *   - NO_DATA / absent -> the source app didn't record GPS (manual log,
+   *                         indoor workout, gym session) -> no route
+   *
+   * @param {object} session - an ExerciseSession record from readRecords
+   * @returns {Promise<{ points: Array<{latitude:number,longitude:number}>, status: string }>}
+   *   status is one of 'data' | 'consent_required' | 'no_data' | 'unavailable'
+   */
+  const resolveExerciseRoute = async (session) => {
+    try {
+      const inline = session?.exerciseRoute;
+      const ROUTE_DATA = 0;       // ExerciseRouteResultType.DATA
+      const ROUTE_NO_DATA = 1;    // ExerciseRouteResultType.NO_DATA
+      const ROUTE_CONSENT = 2;    // ExerciseRouteResultType.CONSENT_REQUIRED
+
+      const normalize = (route) =>
+        (route || [])
+          .filter((p) => typeof p?.latitude === 'number' && typeof p?.longitude === 'number')
+          .map((p) => ({ latitude: p.latitude, longitude: p.longitude }));
+
+      // Case 1: route is inline on the session.
+      if (inline?.type === ROUTE_DATA && Array.isArray(inline.route)) {
+        return { points: normalize(inline.route), status: 'data' };
+      }
+
+      // Case 2: source recorded GPS but Android requires per-read consent.
+      if (inline?.type === ROUTE_CONSENT) {
+        const recordId = session?.metadata?.id;
+        if (!recordId || typeof requestExerciseRoute !== 'function') {
+          return { points: [], status: 'consent_required' };
+        }
+        try {
+          const fetched = await requestExerciseRoute(recordId);
+          const points = normalize(fetched?.route);
+          return { points, status: points.length > 0 ? 'data' : 'no_data' };
+        } catch (consentErr) {
+          // User denied the consent prompt, or the route was deleted.
+          console.log('[HC] requestExerciseRoute denied/failed:', consentErr?.message || consentErr);
+          return { points: [], status: 'consent_required' };
+        }
+      }
+
+      // Case 3: explicit NO_DATA, or no route field at all (manual / indoor).
+      if (inline?.type === ROUTE_NO_DATA || inline == null) {
+        return { points: [], status: 'no_data' };
+      }
+
+      // Defensive: some sources populate `route` without a `type`.
+      if (Array.isArray(inline?.route)) {
+        return { points: normalize(inline.route), status: 'data' };
+      }
+      return { points: [], status: 'no_data' };
+    } catch (error) {
+      console.log('[HC] resolveExerciseRoute failed:', error?.message || error);
+      return { points: [], status: 'unavailable' };
+    }
+  };
+
+  /**
+   * Fetch the GPS route for a workout identified by its time range.
+   *
+   * Used by WorkoutRouteScreen with the "pull-from-HC-on-view" strategy:
+   * backend ActivityLog rows don't carry the HC record id, so we re-query
+   * HC for the session matching the workout's startTime, then resolve its
+   * route. Only HC-sourced workouts can match; manual logs return no_data.
+   *
+   * @param {Date|string} startTime
+   * @param {Date|string} endTime
+   * @returns {Promise<{ points: Array<{latitude:number,longitude:number}>, status: string }>}
+   */
+  const fetchRouteForWorkout = async (startTime, endTime) => {
+    try {
+      const ready = await initializeHealthConnect();
+      if (!ready) return { points: [], status: 'unavailable' };
+
+      const start = new Date(startTime);
+      const end = new Date(endTime);
+      // Widen the window slightly so minute-rounded backend times still match
+      // the HC session (which may carry seconds).
+      const windowStart = new Date(start.getTime() - 5 * 60 * 1000);
+      const windowEnd = new Date(end.getTime() + 5 * 60 * 1000);
+
+      const sessions = await fetchWorkoutSessions(windowStart, windowEnd);
+      if (!sessions || sessions.length === 0) {
+        return { points: [], status: 'no_data' };
+      }
+
+      // Pick the session whose startTime is closest to the requested one.
+      const target = sessions.reduce((best, s) => {
+        const diff = Math.abs(new Date(s.startTime) - start);
+        if (!best || diff < best.diff) return { session: s, diff };
+        return best;
+      }, null);
+
+      if (!target?.session) return { points: [], status: 'no_data' };
+      return await resolveExerciseRoute(target.session);
+    } catch (error) {
+      console.log('[HC] fetchRouteForWorkout failed:', error?.message || error);
+      return { points: [], status: 'unavailable' };
+    }
+  };
+
   const mapExerciseType = (exerciseType) =>
     EXERCISE_TYPE_MAPPING[exerciseType] || DEFAULT_ACTIVITY_TYPE_ID;
 
@@ -376,6 +492,8 @@ if (_hc === null) {
     fetchHeartRateForSession,
     fetchCaloriesForSession,
     fetchDistanceForSession,
+    fetchRouteForWorkout,
+    resolveExerciseRoute,
     getStructuredWorkouts,
     default: {
       initializeHealthConnect,
@@ -387,6 +505,8 @@ if (_hc === null) {
       fetchHeartRateForSession,
       fetchCaloriesForSession,
       fetchDistanceForSession,
+      fetchRouteForWorkout,
+      resolveExerciseRoute,
       getStructuredWorkouts,
     },
   };
