@@ -31,7 +31,7 @@
       "package": "com.anonymous.TrainWiseExpo",
       "config": {
         "googleMaps": {
-          "apiKey": "***REMOVED***"
+          "apiKey": ""
         }
       }
     },

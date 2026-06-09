@@ -17,9 +17,13 @@ import Constants from 'expo-constants';
  * engine simply skips that factor. Cached ~1h so usage stays tiny.
  */
 
+// Key comes from the resolved app config (injected by app.config.js from the
+// GOOGLE_MAPS_API_KEY env var), falling back to an EXPO_PUBLIC env var. NEVER
+// hardcode the key here — it gets committed and leaked (see .env / app.config.js).
 const API_KEY =
   Constants?.expoConfig?.android?.config?.googleMaps?.apiKey ||
-  '***REMOVED***';
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
+  '';
 
 const CACHE_KEY = '@trainwise_weather_cache';
 const CACHE_MS = 60 * 60 * 1000; // 1 hour
