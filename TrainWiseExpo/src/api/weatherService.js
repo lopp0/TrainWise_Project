@@ -19,7 +19,7 @@ import Constants from 'expo-constants';
 
 const API_KEY =
   Constants?.expoConfig?.android?.config?.googleMaps?.apiKey ||
-  '***REMOVED***';
+  '';
 
 const CACHE_KEY = '@trainwise_weather_cache';
 const CACHE_MS = 60 * 60 * 1000; // 1 hour
