@@ -294,6 +294,42 @@ The backend stores times exactly as sent (no timezone conversion). The frontend 
 
 Chat history is currently in-memory only (`useState` in [AIChatScreen.js](TrainWiseExpo/src/screens/AIChatScreen.js)) — leaving the screen wipes the conversation. Persisting it (AsyncStorage or backend) is a known open item.
 
+## API keys / secrets (do NOT hardcode)
+
+Updated 2026-06-09 after a Google key was leaked via a push (see `tasks/lessons.md` +
+`tasks/conversation_resume_2026_06_12.md`). Rules:
+
+- **No API key may be a literal in committed source.** Before every commit, grep staged
+  content for `AIza` (Google), `sk-` (OpenAI), `AKIA`, `ghp_`, `xox`, `-----BEGIN`,
+  `Password=<value>`. A key leaked to history can only be removed with `git filter-repo
+  --replace-text` + force-push, and must be **rotated regardless** (public history).
+- **Google key** (Maps SDK + Weather + Air Quality + Places) lives only in
+  `TrainWiseExpo/.env` as `GOOGLE_MAPS_API_KEY` (native, injected by `app.config.js`)
+  AND `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` (the JS-runtime fetch calls — only
+  `EXPO_PUBLIC_`-prefixed vars are inlined into the bundle). `app.json`'s
+  `android.config.googleMaps.apiKey` is an EMPTY placeholder; `app.config.js` overrides
+  it from the env var at build time. `weatherService.js` reads from
+  `Constants.expoConfig...googleMaps.apiKey` / `process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY`,
+  never a literal. **Restrict the key by API only, not "Android apps"** (an Android-app
+  restriction 403s the REST calls). `.env.example` documents the vars; `.env` is gitignored.
+- **OpenAI key**: `EXPO_PUBLIC_OPENAI_API_KEY` in `.env` (baked into the APK in plaintext
+  like all `EXPO_PUBLIC_` vars; don't distribute the APK publicly).
+
+## Building & distributing the APK
+
+- Build the file: `cd TrainWiseExpo/android && ./gradlew assembleRelease` (or
+  `npx expo run:android --variant release`, which ALSO re-runs prebuild + installs).
+  Output is ALWAYS `TrainWiseExpo/android/app/build/outputs/apk/release/app-release.apk`
+  (never a manually-copied location like the Desktop).
+- `gradlew assembleRelease` can print BUILD SUCCESSFUL but **skip repackaging** when it
+  thinks the JS bundle is up-to-date — verify the APK's timestamp/size CHANGED. Force a
+  fresh APK with `./gradlew clean assembleRelease`. Plain gradlew does NOT re-prebuild,
+  so a rotated native Maps key only reaches the manifest via `expo run:android`/prebuild.
+- **Local-LAN distribution:** the APK has the PC's IP (`192.168.1.119`) baked in, so a
+  sent APK only works on devices on the SAME WiFi, with the backend + SQL running. The
+  Azure "Error 403 - web app is stopped" page means the APK still points at the dead
+  Azure URL (an old build). Remote testers need a public backend (Azure or a tunnel).
+
 ## HC tombstones
 
 Health Connect itself is read-only for third-party apps (TrainWise can't delete records that Samsung Fit wrote). Without intervention, every auto-sync re-imports any HC workout the user just deleted from the backend. [src/constants/hcTombstones.js](TrainWiseExpo/src/constants/hcTombstones.js) keeps a persistent set of normalized HC startTime keys (minute-granular, matching `SyncService.areWorkoutsDuplicate`). When the user deletes an HC-source workout in [GoogleFitScreen.js](TrainWiseExpo/src/api/GoogleFitScreen.js), its key is added to the set; `SyncService.deduplicateWorkouts` filters tombstoned keys before posting. Manual logs bypass tombstoning since they have no HC counterpart.

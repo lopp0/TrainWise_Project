@@ -85,3 +85,6 @@ TrainWise/TrainWise/Properties/ServiceDependencies/
 
 # =================== Stray root EAS ignore (EAS uses TrainWiseExpo/.easignore) ===================
 /.easignore
+
+# =================== Archives / project zips (not source) ===================
+*.zip
