@@ -6,8 +6,7 @@ import axios from 'axios';
  * אין JWT — מבוסס session עם userId.
  */
 
-// כתובת הבסיס — הטלפון מגיע ל-PC דרך 'adb reverse tcp:5249 tcp:5249'
-const BASE_URL = 'http://127.0.0.1:5249';
+const BASE_URL = 'https://trainwise01-api-djcfcvcedth8hjgp.israelcentral-01.azurewebsites.net/api';
 // timeout של 30 שניות לכל בקשה
 const API_TIMEOUT = 30000;
 

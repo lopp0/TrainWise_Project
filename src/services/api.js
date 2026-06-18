@@ -1,11 +1,7 @@
 // שכבת API של השירותים — axios instance ופונקציות לכל ה-endpoints
 import axios from 'axios';
 
-// כתובת הבסיס של השרת.
-// הטלפון מתחבר ל-PC דרך USB עם 'adb reverse tcp:5249 tcp:5249'.
-// הטלפון מתייחס ל-127.0.0.1:5249 כאל עצמו; adb מפנה זאת ל-PC.
-// אמין יותר מ-WiFi כי עובד דרך כבל USB. לחיבור אלחוטי — שנה ל-IP של ה-PC.
-const API_BASE_URL = 'http://127.0.0.1:5249/api';
+const API_BASE_URL = 'https://trainwise01-api-djcfcvcedth8hjgp.israelcentral-01.azurewebsites.net/api';
 
 // יצירת axios instance עם הגדרות ברירת מחדל
 const api = axios.create({

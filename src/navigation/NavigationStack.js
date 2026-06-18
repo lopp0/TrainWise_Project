@@ -31,6 +31,7 @@ import ActiveInjuriesScreen from '../screens/ActiveInjuriesScreen';
 import WorkoutSummaryScreen from '../screens/WorkoutSummaryScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import ConnectQRScreen from '../screens/ConnectQRScreen';
+import AIChatScreen from '../screens/AIChatScreen';
 
 
 
@@ -73,6 +74,7 @@ const HomeStack = () => {
       <Stack.Screen name="WorkoutSummary" component={WorkoutSummaryScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="ConnectQR" component={ConnectQRScreen} />
+      <Stack.Screen name="AIChat" component={AIChatScreen} />
     </Stack.Navigator>
   );
 };

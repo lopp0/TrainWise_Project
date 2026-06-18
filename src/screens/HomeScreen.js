@@ -363,6 +363,15 @@ const HomeScreen = ({ navigation }) => {
           )}
         </View>
       </ScrollView>
+
+      {/* Floating AI chat bubble */}
+      <TouchableOpacity
+        style={styles.chatBubble}
+        onPress={() => navigation.navigate('AIChat')}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="chatbubble-ellipses" size={26} color="#fff" />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 };
@@ -501,6 +510,24 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 14,
     paddingVertical: 30,
+  },
+
+  // כפתור צ'אט AI צף — פינה ימנית תחתית
+  chatBubble: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: '#ff2d6f',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#ff2d6f',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.45,
+    shadowRadius: 8,
   },
 
   // באנר אזהרות — ורוד כהה

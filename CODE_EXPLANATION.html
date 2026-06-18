@@ -1,0 +1,1993 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TrainWise — הסבר קוד מלא בעברית</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #263347;
+    --border: #334155;
+    --primary: #38bdf8;
+    --accent: #f472b6;
+    --green: #4ade80;
+    --yellow: #facc15;
+    --red: #f87171;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --code-bg: #0d1b2a;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+    direction: rtl;
+  }
+  header {
+    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+    padding: 40px 24px 32px;
+    text-align: center;
+    border-bottom: 2px solid var(--primary);
+  }
+  header h1 { font-size: 2.4rem; color: var(--primary); margin-bottom: 8px; }
+  header p { color: var(--muted); font-size: 1.05rem; }
+  nav {
+    background: var(--surface);
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  nav h2 { color: var(--accent); font-size: 1rem; margin-bottom: 10px; }
+  nav ul { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
+  nav ul li a {
+    color: var(--primary);
+    text-decoration: none;
+    background: var(--surface2);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    border: 1px solid var(--border);
+    transition: background 0.2s;
+  }
+  nav ul li a:hover { background: var(--primary); color: #000; }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 20px 80px; }
+  .category {
+    margin-bottom: 60px;
+  }
+  .category-title {
+    font-size: 1.6rem;
+    color: var(--accent);
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 8px;
+    margin-bottom: 24px;
+  }
+  .file-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+  .file-header {
+    background: var(--surface2);
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .file-header .file-icon { font-size: 1.3rem; }
+  .file-header h3 { font-size: 1.1rem; color: var(--primary); font-family: monospace; }
+  .file-header .file-desc { color: var(--muted); font-size: 0.88rem; margin-right: auto; }
+  .file-body { padding: 20px; }
+  .block {
+    margin-bottom: 18px;
+    border-right: 3px solid var(--border);
+    padding-right: 14px;
+  }
+  .block:last-child { margin-bottom: 0; }
+  .block .lines {
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: var(--yellow);
+    margin-bottom: 6px;
+    display: inline-block;
+    background: rgba(250,204,21,0.08);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .block pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 0.8rem;
+    overflow-x: auto;
+    color: #7dd3fc;
+    margin-bottom: 8px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .block .explanation {
+    color: var(--text);
+    font-size: 0.93rem;
+    line-height: 1.75;
+  }
+  .block .explanation strong { color: var(--green); }
+  .block .explanation em { color: var(--accent); font-style: normal; }
+  .note {
+    background: rgba(56,189,248,0.07);
+    border: 1px solid var(--primary);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-top: 8px;
+    font-size: 0.88rem;
+    color: var(--primary);
+  }
+  .tag {
+    display: inline-block;
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-right: 4px;
+    font-weight: 600;
+  }
+  .tag.hook { background: rgba(248,113,113,0.15); color: var(--red); }
+  .tag.context { background: rgba(74,222,128,0.12); color: var(--green); }
+  .tag.api { background: rgba(56,189,248,0.12); color: var(--primary); }
+  .tag.nav { background: rgba(244,114,182,0.12); color: var(--accent); }
+  footer {
+    text-align: center;
+    color: var(--muted);
+    padding: 24px;
+    border-top: 1px solid var(--border);
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>📋 TrainWise — תיעוד קוד מלא</h1>
+  <p>הסבר שורה-בשורה (או בקבוצות) לכל 34 קבצי ה-JavaScript/JSX של הפרויקט — בעברית</p>
+</header>
+
+<nav>
+  <h2>ניווט מהיר:</h2>
+  <ul>
+    <li><a href="#api">📡 API</a></li>
+    <li><a href="#components">🧩 Components</a></li>
+    <li><a href="#constants">📌 Constants</a></li>
+    <li><a href="#navigation">🗺️ Navigation</a></li>
+    <li><a href="#screens">📱 Screens</a></li>
+    <li><a href="#services">⚙️ Services</a></li>
+    <li><a href="#theme">🎨 Theme</a></li>
+  </ul>
+</nav>
+
+<main>
+
+<!-- ======================== API ======================== -->
+<section class="category" id="api">
+  <h2 class="category-title">📡 src/api — שירותי API והקשרים</h2>
+
+  <!-- AuthContext.js -->
+  <div class="file-section" id="AuthContext">
+    <div class="file-header">
+      <span class="file-icon">🔐</span>
+      <h3>src/api/AuthContext.js</h3>
+      <span class="file-desc">ניהול סשן התחברות גלובלי</span>
+      <span class="tag context">Context</span>
+    </div>
+    <div class="file-body">
+
+      <div class="block">
+        <span class="lines">שורות 1–6 — ייבוא ספריות</span>
+        <pre>import React, { createContext, useContext, useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as api from './api';</pre>
+        <div class="explanation">
+          מייבאים את <strong>React</strong> וארבעה Hooks מרכזיים:
+          <em>createContext</em> ליצירת הקשר גלובלי, <em>useContext</em> לגישה אליו, <em>useEffect</em> לפעולות לאחר render, ו-<em>useState</em> לניהול state מקומי.
+          <br><strong>AsyncStorage</strong> — אחסון מפתח-ערך מקומי (כמו localStorage בדפדפן, אבל א-סינכרוני).
+          <br><strong>api</strong> — כל פונקציות ה-HTTP (login, register...) מתוך הקובץ api.js שבאותה תיקייה.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 8–11 — מפתחות AsyncStorage</span>
+        <pre>const KEYS = {
+  USER:      'auth.user',
+  DEVICE_ID: 'auth.deviceId',
+};</pre>
+        <div class="explanation">
+          <strong>KEYS</strong> הוא אובייקט קבוע שמרכז את שמות המפתחות לאחסון מקומי.
+          כך אם רוצים לשנות שם מפתח, משנים במקום אחד בלבד.
+          <em>auth.user</em> ישמור את אובייקט המשתמש כ-JSON; <em>auth.deviceId</em> ישמור מזהה מכשיר ייחודי.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 13–23 — יצירת Context</span>
+        <pre>const AuthContext = createContext({
+  user: null,
+  userId: null,
+  deviceId: null,
+  isLoggedIn: false,
+  login: async () => {},
+  logout: async () => {},
+  updateUser: () => {},
+});</pre>
+        <div class="explanation">
+          <strong>createContext</strong> מגדיר ערכי ברירת מחדל לקונטקסט.
+          ערכים אלו משמשים רק כאשר קומפוננט מנסה לגשת לקונטקסט מחוץ ל-<em>AuthProvider</em>.
+          בתרגול — לעולם לא אמורים להגיע למצב זה אם העטיפה נכונה.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 25–35 — AuthProvider: state ראשוני</span>
+        <pre>export const AuthProvider = ({ children }) => {
+  const [user,     setUser]     = useState(null);
+  const [userId,   setUserId]   = useState(null);
+  const [deviceId, setDeviceId] = useState(null);
+  const [ready,    setReady]    = useState(false);</pre>
+        <div class="explanation">
+          <strong>AuthProvider</strong> הוא רכיב עטיפה (wrapper) שמספק ערכי Auth לכל הצאצאים.
+          <em>user</em> — אובייקט מלא של המשתמש; <em>userId</em> — מזהה מספרי; <em>deviceId</em> — מזהה המכשיר.
+          <em>ready</em> — <strong>false</strong> עד שסיימנו לטעון מ-AsyncStorage; מונע הצגת מסכים לפני שיודעים אם המשתמש מחובר.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 37–60 — טעינת session שמור</span>
+        <pre>useEffect(() => {
+  (async () => {
+    try {
+      const [userJson, storedDeviceId] = await Promise.all([
+        AsyncStorage.getItem(KEYS.USER),
+        AsyncStorage.getItem(KEYS.DEVICE_ID),
+      ]);
+      if (userJson) {
+        const parsed = JSON.parse(userJson);
+        setUser(parsed);
+        setUserId(parsed.userId ?? parsed.id ?? null);
+      }
+      if (storedDeviceId) setDeviceId(storedDeviceId);
+    } catch {}
+    finally { setReady(true); }
+  })();
+}, []);</pre>
+        <div class="explanation">
+          ה-<strong>useEffect</strong> רץ פעם אחת בלבד (מערך תלויות ריק <em>[]</em>) מיד אחרי ה-render הראשון.
+          <em>Promise.all</em> קורא את שני המפתחות במקביל — יעיל יותר מ-await אחד אחרי השני.
+          אם יש JSON שמור — מפענחים ומעדכנים state.
+          <em>finally</em> מבטיח ש-<strong>ready=true</strong> תמיד, גם אם הייתה שגיאה (try/catch ריק בולע אותה).
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 62–90 — פונקציית login</span>
+        <pre>const login = async (email, password) => {
+  const res = await api.login(email, password);
+  const userData = res.data;
+  let dId = deviceId;
+  if (!dId) {
+    dId = 'device-' + Date.now();
+    await AsyncStorage.setItem(KEYS.DEVICE_ID, dId);
+    setDeviceId(dId);
+  }
+  await AsyncStorage.setItem(KEYS.USER, JSON.stringify(userData));
+  setUser(userData);
+  setUserId(userData.userId ?? userData.id ?? null);
+};</pre>
+        <div class="explanation">
+          <strong>login</strong> שולחת בקשת HTTP POST לשרת דרך <em>api.login</em>.
+          אם עדיין אין <em>deviceId</em> — יוצרת אחד חדש בפורמט <em>device-timestamp</em> ושומרת אותו לצמיתות.
+          לאחר מכן שומרת את פרטי המשתמש ב-AsyncStorage ומעדכנת את ה-state.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 92–102 — פונקציית logout</span>
+        <pre>const logout = async () => {
+  await AsyncStorage.removeItem(KEYS.USER);
+  setUser(null);
+  setUserId(null);
+};</pre>
+        <div class="explanation">
+          <strong>logout</strong> מוחקת רק את פרטי המשתמש — לא את ה-deviceId.
+          כך בהתחברות הבאה המכשיר עדיין מזוהה. ה-state מתאפס ל-null, מה שיגרום לניווט חזרה למסך ההתחברות.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 104–110 — updateUser</span>
+        <pre>const updateUser = (patch) => {
+  const merged = { ...user, ...patch };
+  setUser(merged);
+  AsyncStorage.setItem(KEYS.USER, JSON.stringify(merged));
+};</pre>
+        <div class="explanation">
+          <strong>updateUser</strong> מאפשרת לעדכן שדות ספציפיים במשתמש מבלי לרענן מהשרת.
+          Spread operator <em>{ ...user, ...patch }</em> ממזג — ערכי <em>patch</em> מדרסים ערכים קיימים.
+          השמירה ב-AsyncStorage מבטיחה שהעדכון יישמר גם אחרי סגירת האפליקציה.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 112–125 — Provider ו-Hook</span>
+        <pre>if (!ready) return null;
+return (
+  &lt;AuthContext.Provider value={{ user, userId, deviceId,
+    isLoggedIn: !!user, login, logout, updateUser }}&gt;
+    {children}
+  &lt;/AuthContext.Provider&gt;
+);
+export const useAuth = () => useContext(AuthContext);</pre>
+        <div class="explanation">
+          כל עוד <em>ready=false</em> — מחזירים <strong>null</strong> (מסך ריק) כדי שה-splash screen לא יראה תוכן לא נכון.
+          <em>isLoggedIn: !!user</em> — המרה ל-boolean: אם user אינו null — המשתמש מחובר.
+          <strong>useAuth</strong> הוא Custom Hook שמפשט גישה לקונטקסט: <em>const {'{'}login, user{'}'} = useAuth()</em>.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- api/api.js -->
+  <div class="file-section" id="api-api">
+    <div class="file-header">
+      <span class="file-icon">📡</span>
+      <h3>src/api/api.js</h3>
+      <span class="file-desc">axios instance ופונקציות HTTP בסיסיות</span>
+      <span class="tag api">API</span>
+    </div>
+    <div class="file-body">
+
+      <div class="block">
+        <span class="lines">שורות 1–15 — יצירת axios instance</span>
+        <pre>import axios from 'axios';
+let _baseURL = 'http://127.0.0.1:5249';
+const api = axios.create({
+  baseURL: _baseURL,
+  timeout: 15000,
+  headers: { 'Content-Type': 'application/json' },
+});</pre>
+        <div class="explanation">
+          <strong>axios</strong> — ספריית HTTP לשליחת בקשות לשרת.
+          <em>_baseURL</em> — כתובת השרת. <em>127.0.0.1:5249</em> עובד דרך <strong>adb reverse</strong> (כבל USB), שמפנה את פורט הטלפון לפורט המחשב.
+          <em>timeout: 15000</em> — אם השרת לא עונה תוך 15 שניות — הבקשה נכשלת.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 17–22 — setBaseURL / getBaseURL</span>
+        <pre>export const setBaseURL = (url) => {
+  _baseURL = url;
+  api.defaults.baseURL = url;
+};
+export const getBaseURL = () => _baseURL;</pre>
+        <div class="explanation">
+          מאפשרות לשנות את כתובת השרת בזמן ריצה (לדוגמה: כשמחברים דרך WiFi במקום USB).
+          <em>api.defaults.baseURL</em> — שינוי ישיר בהגדרות ה-instance.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 24–35 — login ו-registerUser</span>
+        <pre>export const login = (email, password) =>
+  api.post('/api/auth/login', { email, password });
+
+export const registerUser = (data) =>
+  api.post('/api/auth/register', data);</pre>
+        <div class="explanation">
+          <strong>login</strong> — POST לנתיב <em>/api/auth/login</em> עם email וסיסמה.
+          <strong>registerUser</strong> — POST לנתיב <em>/api/auth/register</em> עם כל נתוני ההרשמה.
+          שתי הפונקציות מחזירות Promise — ה-caller צריך <em>await</em> או <em>.then()</em>.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 37–65 — ניהול Activity Logs</span>
+        <pre>export const getActivityLogs  = (userId) =>
+  api.get(`/api/activitylog/user/${userId}`);
+export const postActivityLog  = (data) =>
+  api.post('/api/activitylog', data);
+export const putActivityLog   = (id, data) =>
+  api.put(`/api/activitylog/${id}`, data);
+export const deleteActivityLog = (id) =>
+  api.delete(`/api/activitylog/${id}`);</pre>
+        <div class="explanation">
+          ארבע פעולות CRUD על לוגי פעילות:
+          <strong>Get</strong> — שליפת כל הלוגים של משתמש מסוים.
+          <strong>Post</strong> — יצירת לוג חדש.
+          <strong>Put</strong> — עדכון לוג קיים לפי ID.
+          <strong>Delete</strong> — מחיקת לוג לפי ID.
+          Template literals (<em>`...${'{'}id{'}'}`</em>) מכניסות את ה-ID לנתיב ה-URL.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 67–85 — ניהול מכשירים</span>
+        <pre>export const getUserDevices  = (userId) =>
+  api.get(`/api/userdevice/user/${userId}`);
+export const postUserDevice  = (data) =>
+  api.post('/api/userdevice', data);
+export const putUserDevice   = (id, data) =>
+  api.put(`/api/userdevice/${id}`, data);</pre>
+        <div class="explanation">
+          ניהול מכשירים (Health Connect, שעונים חכמים וכו') המשויכים למשתמש.
+          כל מכשיר מקבל שורה ב-DB עם userId + שם מכשיר + מתי נוסף.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- SyncService.js -->
+  <div class="file-section" id="SyncService">
+    <div class="file-header">
+      <span class="file-icon">🔄</span>
+      <h3>src/api/SyncService.js</h3>
+      <span class="file-desc">מנגנון סנכרון אוטומטי עם Health Connect</span>
+      <span class="tag api">API</span>
+    </div>
+    <div class="file-body">
+
+      <div class="block">
+        <span class="lines">שורות 1–10 — ייבוא</span>
+        <pre>import { getActivityLogs, postActivityLog, getUserDevices,
+         postUserDevice } from './api';
+import * as HCS from './HealthConnectService';
+import { isTombstoned } from '../constants/hcTombstones';</pre>
+        <div class="explanation">
+          מייבאים פונקציות API לניהול לוגים ומכשירים.
+          <strong>HCS</strong> — HealthConnectService שקורא נתוני בריאות ממכשיר Android.
+          <strong>isTombstoned</strong> — בדיקה האם אימון נמחק ידנית (tombstone = אבן מצבה, לא לייבא שוב).
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 12–30 — syncWorkoutsToBackend</span>
+        <pre>export const syncWorkoutsToBackend = async (userId, deviceId, lookbackDays = 30) => {
+  // שלב 1: אתחול Health Connect
+  const initialized = await HCS.initHealthConnect();
+  if (!initialized) return { success: false, reason: 'HC not available' };
+
+  // שלב 2: בדיקת הרשאות
+  const granted = await HCS.checkPermissions();
+  if (!granted) return { success: false, reason: 'permissions not granted' };</pre>
+        <div class="explanation">
+          <strong>syncWorkoutsToBackend</strong> — הפונקציה הראשית. מקבלת userId, deviceId ומספר ימים לאחור.
+          <em>lookbackDays=30</em> — ברירת מחדל: משכה 30 ימים אחורה.
+          שני שלבים ראשונים הם בדיקות תקינות — אם HC לא זמין או אין הרשאות, מחזירים כישלון מוקדם (<strong>early return</strong>).
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 32–55 — שלבים 3–5: שליפה ודה-דופליקציה</span>
+        <pre>  // שלב 3: שליפת אימונים מ-HC
+  const hcWorkouts = await HCS.fetchWorkouts(lookbackDays);
+
+  // שלב 4: שליפת לוגים קיימים מהשרת
+  const existingRes = await getActivityLogs(userId);
+  const existing = existingRes.data || [];
+
+  // שלב 5: סינון כפולות וtombstones
+  const existingKeys = new Set(existing.map(l =>
+    l.startTime?.slice(0,16)));
+  const newWorkouts = hcWorkouts.filter(w =>
+    !existingKeys.has(w.startTime?.slice(0,16)) &&
+    !isTombstoned(w.startTime));</pre>
+        <div class="explanation">
+          <strong>שלב 3</strong>: קורא מ-Health Connect אימונים מ-N ימים אחרונים.
+          <strong>שלב 4</strong>: מושך מהשרת את כל הלוגים הקיימים של אותו משתמש.
+          <strong>שלב 5</strong>: <em>existingKeys</em> הוא Set של מפתחות זמן (YYYY-MM-DDTHH:MM).
+          כל אימון מ-HC שמפתחו כבר קיים (או שהוא tombstoned) — מסוננים. נשארים רק אימונים חדשים.
+          <em>slice(0,16)</em> — חיתוך לדיוק של דקה, מתעלם מ-seconds/milliseconds.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 57–80 — שלבים 6–7: שמירה ועדכון</span>
+        <pre>  // שלב 6: שמירת אימונים חדשים
+  const posted = [];
+  for (const w of newWorkouts) {
+    try {
+      const res = await postActivityLog({ ...w, userId, deviceId,
+        confirmed: false, exertionLevel: null });
+      posted.push(res.data);
+    } catch {}
+  }
+
+  // שלב 7: עדכון lastSync
+  // ...
+  return { success: true, added: posted.length };</pre>
+        <div class="explanation">
+          <strong>שלב 6</strong>: לולאת for...of (ולא Promise.all) — שולח אימון אחד בכל פעם.
+          זה מונע עומס על השרת. <em>confirmed: false</em> — האימון ממתין לאישור ידני ע"י המשתמש.
+          <em>exertionLevel: null</em> — רמת המאמץ לא מולאה עדיין.
+          <strong>שלב 7</strong>: עדכון lastSync מאפשר לסנכרון הבא לדעת מאיזה נקודה להתחיל.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 82–100 — getNewWorkoutsPreview ו-clearOldLogs</span>
+        <pre>export const getNewWorkoutsPreview = async (userId, lookbackDays = 7) => {
+  // ... אותם שלבים 1-5 אבל רק מחזיר את הרשימה, לא שומר
+  return newWorkouts;
+};
+
+export const clearOldLogs = async (userId, olderThanDays = 90) => {
+  // מוחק לוגים ישנים מהשרת
+};</pre>
+        <div class="explanation">
+          <strong>getNewWorkoutsPreview</strong> — גרסת preview: מראה כמה אימונים חדשים יהיו בסנכרון הבא, בלי לשמור.
+          שימושי לתצוגת badge (ספירת אימונים לאישור).
+          <strong>clearOldLogs</strong> — ניקוי לוגים ישנים לחיסכון במקום.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- HealthConnectService.js -->
+  <div class="file-section" id="HealthConnectService">
+    <div class="file-header">
+      <span class="file-icon">🏃</span>
+      <h3>src/api/HealthConnectService.js</h3>
+      <span class="file-desc">קריאת נתוני בריאות מ-Android Health Connect</span>
+      <span class="tag api">API</span>
+    </div>
+    <div class="file-body">
+
+      <div class="block">
+        <span class="lines">שורות 1–15 — guard לייבוא חכם</span>
+        <pre>let HC = null;
+try {
+  HC = require('react-native-health-connect');
+} catch {
+  HC = require('./HealthConnectService.mock');
+}
+const { initialize, requestPermission,
+        readRecords, getSdkStatus } = HC;</pre>
+        <div class="explanation">
+          <strong>Pattern חכם</strong>: משתמשים ב-<em>require()</em> (CommonJS) ולא <em>import</em> (ES Modules) כי import לא יכול להיות בתוך try/catch.
+          אם הספרייה <em>react-native-health-connect</em> לא מותקנת (simulator, iOS), נופלים למוק.
+          כך הקוד עובד בכל סביבה בלי לקרוס.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 17–35 — מיפוי סוגי תרגיל</span>
+        <pre>const EXERCISE_TYPE_MAP = {
+  56: 'Running',
+  79: 'Walking',
+  8:  'Biking',
+  80: 'Weightlifting',
+  // ...
+};</pre>
+        <div class="explanation">
+          HC מחזיר <em>exerciseType</em> כמספר שלם. מפה זו ממירה לשם קריא.
+          המספרים הם קבועים מוגדרים בתקן של Google Health Connect API.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 37–60 — initHealthConnect</span>
+        <pre>export const initHealthConnect = async () => {
+  try {
+    const status = await getSdkStatus();
+    if (status !== 3) return false; // 3 = SDK_AVAILABLE
+    await initialize();
+    return true;
+  } catch { return false; }
+};</pre>
+        <div class="explanation">
+          <strong>getSdkStatus()</strong> — מחזיר קוד סטטוס. <em>3</em> פירושו SDK זמין ומותקן.
+          ערכים אחרים: 1=לא זמין, 2=מעודכן למינימום אבל ישן, 3=מוכן לשימוש.
+          אם הסטטוס לא 3 — מחזירים false בלי לנסות.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 62–85 — fetchWorkouts</span>
+        <pre>export const fetchWorkouts = async (lookbackDays = 30) => {
+  const startTime = new Date();
+  startTime.setDate(startTime.getDate() - lookbackDays);
+  const sessions = await readRecords('ExerciseSession', {
+    timeRangeFilter: {
+      operator: 'between',
+      startTime: startTime.toISOString(),
+      endTime:   new Date().toISOString(),
+    },
+  });
+  // ...מיפוי לאובייקטים מובנים
+};</pre>
+        <div class="explanation">
+          <strong>readRecords('ExerciseSession', ...)</strong> — קריאת כל סשני האימון מ-HC.
+          <em>lookbackDays</em> קובע את חלון הזמן. מחשבים startTime ע"י הפחתת ימים מהתאריך הנוכחי.
+          HC מחזיר מערך של records, כל אחד עם startTime, endTime, exerciseType ועוד.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 87–120 — קריאת מדדים נוספים</span>
+        <pre>  // לכל סשן — קריאה של HeartRate, Distance, Calories
+  for (const session of sessions) {
+    const hrData = await readRecords('HeartRate', { ... });
+    const distData = await readRecords('Distance', { ... });
+    const calData = await readRecords('TotalCaloriesBurned', { ... });
+    // חישוב ממוצע דופק, סכום מרחק, סכום קלוריות
+  }</pre>
+        <div class="explanation">
+          לכל סשן אימון קוראים מדדים נוספים מ-HC:
+          <em>HeartRate</em> — דגימות דופק, ממוצע מחושב.
+          <em>Distance</em> — מרחק בק"מ.
+          <em>TotalCaloriesBurned</em> — קלוריות שנשרפו.
+          כל קריאה מוגבלת לחלון הזמן של אותו סשן ספציפי.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- HealthConnectService.mock.js -->
+  <div class="file-section" id="HCMock">
+    <div class="file-header">
+      <span class="file-icon">🎭</span>
+      <h3>src/api/HealthConnectService.mock.js</h3>
+      <span class="file-desc">מוק לסביבות ללא Health Connect</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">כל הקובץ</span>
+        <pre>module.exports = {
+  initialize:       async () => false,
+  getSdkStatus:     async () => 1,
+  checkPermissions: async () => false,
+  requestPermission:async () => false,
+  readRecords:      async () => [],
+};</pre>
+        <div class="explanation">
+          <strong>מוק (Mock)</strong> — מימוש מדומה שמחזיר ערכי ברירת מחדל ריקים.
+          <em>getSdkStatus → 1</em> — SDK לא זמין → initHealthConnect יחזיר false → כל הסנכרון יעצר בשלב הראשון.
+          <em>readRecords → []</em> — אין אימונים → לא יוסף כלום לשרת.
+          <strong>module.exports</strong> (CommonJS) — חייב להתאים ל-require() שמשמש לייבוא.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HealthSyncContext.js -->
+  <div class="file-section" id="HealthSyncContext">
+    <div class="file-header">
+      <span class="file-icon">⚡</span>
+      <h3>src/api/HealthSyncContext.js</h3>
+      <span class="file-desc">סנכרון אוטומטי וניהול badge אימונים לא מאושרים</span>
+      <span class="tag context">Context</span>
+    </div>
+    <div class="file-body">
+
+      <div class="block">
+        <span class="lines">שורות 1–15 — ייבוא ו-throttle</span>
+        <pre>import { AppState } from 'react-native';
+import { syncWorkoutsToBackend, getNewWorkoutsPreview }
+  from './SyncService';
+const THROTTLE_MS = 30_000; // 30 שניות</pre>
+        <div class="explanation">
+          <strong>AppState</strong> — API של React Native לניטור מצב האפליקציה (foreground/background).
+          <em>THROTTLE_MS = 30,000</em> — מגן מפני סנכרון כפול תוך 30 שניות. מספר עם קו תחתי (30_000) — תחביר JavaScript לקריאות.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 17–45 — HealthSyncProvider</span>
+        <pre>export const HealthSyncProvider = ({ children }) => {
+  const { userId, deviceId } = useAuth();
+  const [permissionsGranted, setPermissionsGranted] = useState(false);
+  const [unconfirmedCount, setUnconfirmedCount]     = useState(0);
+  const [isSyncing, setIsSyncing]   = useState(false);
+  const [lastSyncError, setError]   = useState(null);
+  const lastSyncRef = useRef(0);</pre>
+        <div class="explanation">
+          <strong>permissionsGranted</strong> — האם ניתנו הרשאות Health Connect.
+          <strong>unconfirmedCount</strong> — ספירת אימונים שסונכרנו אבל עדיין לא אושרו (מוצגת כ-badge על טאב Health).
+          <strong>lastSyncRef</strong> — timestamp של סנכרון אחרון, <em>useRef</em> כי לא גורם לre-render.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 47–70 — runAutoSync</span>
+        <pre>const runAutoSync = async () => {
+  const now = Date.now();
+  if (now - lastSyncRef.current &lt; THROTTLE_MS) return;
+  if (!userId) return;
+  setIsSyncing(true);
+  lastSyncRef.current = now;
+  try {
+    await syncWorkoutsToBackend(userId, deviceId);
+    await refreshUnconfirmedCount();
+  } catch (e) { setError(e.message); }
+  finally { setIsSyncing(false); }
+};</pre>
+        <div class="explanation">
+          <strong>Throttle</strong>: אם עברו פחות מ-30 שניות מהסנכרון האחרון — מדלגים.
+          <em>lastSyncRef.current</em> מעודכן לפני await — גם אם שני קריאות רצות "יחד" (race condition), השנייה תמצא את הזמן מעודכן ותחזור מוקדם.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">שורות 72–90 — AppState listener</span>
+        <pre>useEffect(() => {
+  const sub = AppState.addEventListener('change', (state) => {
+    if (state === 'active') runAutoSync();
+  });
+  return () => sub.remove();
+}, []);</pre>
+        <div class="explanation">
+          <strong>AppState</strong> מאזין לשינויי מצב. כשהאפליקציה חוזרת ל-<em>active</em> (המשתמש פתח אותה שוב) — מפעיל סנכרון אוטומטי.
+          ה-cleanup <em>sub.remove()</em> מסיר את ה-listener כשה-Provider מפורק, מונע memory leak.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- GoogleFitScreen.js -->
+  <div class="file-section" id="GoogleFitScreen">
+    <div class="file-header">
+      <span class="file-icon">💚</span>
+      <h3>src/api/GoogleFitScreen.js</h3>
+      <span class="file-desc">מסך ניהול אימונים מ-Health Connect</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">מבנה כללי</span>
+        <div class="explanation">
+          המסך מציג רשימת אימונים שסונכרנו מ-Health Connect. כל אימון מסומן כ-<strong>Confirmed</strong> (ירוק) או <strong>Pending</strong> (צהוב).
+          משתמש יכול ללחוץ על אימון ממתין — נפתח Modal עם סולם 1-10 לקביעת <em>exertion level</em>.
+          לאחר אישור — הלוג מתעדכן בשרת ו-unconfirmedCount יורד.
+          כפתור Delete מוחק עם tombstone — מונע סנכרון חוזר.
+          <em>Pull-to-refresh</em> (RefreshControl) מפעיל runAutoSync.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">Modal אישור מאמץ</span>
+        <pre>const [confirmingId, setConfirmingId] = useState(null);
+const [exertion, setExertion]         = useState(5);
+// ...
+const handleConfirm = async () => {
+  await putActivityLog(confirmingId,
+    { exertionLevel: exertion, confirmed: true });
+  // ...רענון
+};</pre>
+        <div class="explanation">
+          <em>confirmingId</em> — ה-ID של הלוג שנמצא בתהליך אישור. null = Modal סגור.
+          לאחר אישור — הלוג מסומן כ-confirmed בשרת ומוסר מרשימת ה-badge.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- useSyncWorkouts.js -->
+  <div class="file-section" id="useSyncWorkouts">
+    <div class="file-header">
+      <span class="file-icon">🪝</span>
+      <h3>src/api/useSyncWorkouts.js</h3>
+      <span class="file-desc">Custom Hook לניהול סנכרון</span>
+      <span class="tag hook">Hook</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">כל הקובץ</span>
+        <div class="explanation">
+          <strong>useSyncWorkouts</strong> הוא Custom Hook שמנהל state מקומי:
+          <em>isSyncing</em>, <em>lastSyncTime</em>, <em>syncResult</em>, <em>error</em>, <em>permissionsGranted</em>.
+          מפרסם פונקציות: <strong>triggerSync</strong> (סנכרון ידני), <strong>requestHCPermissions</strong>, <strong>checkHCPermissions</strong>, <strong>clearSyncState</strong>, <strong>resetSync</strong>.
+          מאפשר לקומפוננטים להפעיל סנכרון ולראות תוצאות בלי לדעת על הלוגיקה הפנימית.
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ======================== COMPONENTS ======================== -->
+<section class="category" id="components">
+  <h2 class="category-title">🧩 src/components — קומפוננטים משותפים</h2>
+
+  <div class="file-section" id="Card">
+    <div class="file-header">
+      <span class="file-icon">🃏</span>
+      <h3>src/components/Card.js</h3>
+      <span class="file-desc">כרטיסייה עם צל ופינות מעוגלות</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">כל הקובץ</span>
+        <pre>const Card = ({ children, style }) => (
+  &lt;View style={[styles.card, style]}&gt;{children}&lt;/View&gt;
+);
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: Colors.cardBackground,
+    borderRadius: 16,
+    padding: Spacing.md,
+    marginHorizontal: Spacing.md,
+    marginVertical: Spacing.sm,
+    shadowColor: Colors.shadow,
+    elevation: 3,
+  },
+});</pre>
+        <div class="explanation">
+          <strong>Card</strong> הוא קומפוננט "wrapper" — עוטף תוכן בקופסה מעוצבת.
+          <em>style</em> prop מאפשר לקורא להוסיף/לדרוס סגנונות ספציפיים.
+          <em>elevation: 3</em> — צל אנדרואידי (ב-iOS משתמשים ב-shadowColor/shadowOffset).
+          <em>Spacing.md</em> — padding בינוני (16px) מהקבועים.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="file-section" id="ComboBox">
+    <div class="file-header">
+      <span class="file-icon">📋</span>
+      <h3>src/components/ComboBox.js</h3>
+      <span class="file-desc">Dropdown עם חיפוש וסימן וי על הנבחר</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">State ו-Modal</span>
+        <pre>const [open, setOpen]       = useState(false);
+const [query, setQuery]     = useState('');
+const filtered = items.filter(i =>
+  i.label.toLowerCase().includes(query.toLowerCase()));</pre>
+        <div class="explanation">
+          <em>open</em> — האם ה-Dropdown פתוח. <em>query</em> — טקסט החיפוש.
+          <em>filtered</em> — מחושב ב-render מה-query הנוכחי (לא state נפרד).
+          <em>toLowerCase()</em> לשני הצדדים — חיפוש case-insensitive.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">FlatList בתוך Modal</span>
+        <pre>&lt;Modal visible={open} transparent animationType="fade"&gt;
+  &lt;FlatList
+    data={filtered}
+    keyExtractor={i => String(i.value)}
+    renderItem={({ item }) =&gt; (
+      &lt;TouchableOpacity onPress={() =&gt; {
+        onSelect(item); setOpen(false);
+      }}&gt;
+        &lt;Text&gt;{item.label}&lt;/Text&gt;
+        {selectedValue === item.value &amp;&amp; &lt;Text&gt;✓&lt;/Text&gt;}
+      &lt;/TouchableOpacity&gt;
+    )}
+  /&gt;
+&lt;/Modal&gt;</pre>
+        <div class="explanation">
+          <strong>Modal transparent</strong> — הרקע נראה מבעד (מאפשר overlay כהה).
+          <strong>FlatList</strong> — רינדור מיטבי רק לפריטים הנראים (lazy rendering).
+          <em>selectedValue === item.value</em> — ✓ מוצג רק על הפריט הנוכחי.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="file-section" id="PrimaryButton">
+    <div class="file-header">
+      <span class="file-icon">🔘</span>
+      <h3>src/components/PrimaryButton.js</h3>
+      <span class="file-desc">כפתור ראשי עם מצב טעינה</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">כל הקובץ</span>
+        <pre>const PrimaryButton = ({ title, onPress, loading, disabled }) => (
+  &lt;TouchableOpacity
+    onPress={onPress}
+    disabled={disabled || loading}
+    style={[styles.btn, (disabled||loading) &amp;&amp; {opacity:0.5}]}&gt;
+    {loading
+      ? &lt;ActivityIndicator color="#fff" /&gt;
+      : &lt;Text style={styles.text}&gt;{title}&lt;/Text&gt;}
+  &lt;/TouchableOpacity&gt;
+);</pre>
+        <div class="explanation">
+          <strong>loading</strong> — כשהוא true, מוסתר הכיתוב ומוצג <em>ActivityIndicator</em> (spinner).
+          <em>disabled || loading</em> — גם כשטוען, הכפתור מנוטרל (לא ניתן ללחוץ פעמיים).
+          <em>opacity: 0.5</em> — ויזואלית מראה שהכפתור מנוטרל.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="file-section" id="ScreenHeader">
+    <div class="file-header">
+      <span class="file-icon">🔝</span>
+      <h3>src/components/ScreenHeader.js</h3>
+      <span class="file-desc">כותרת מסך עם כפתור חזרה אופציונלי</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">כל הקובץ</span>
+        <pre>const ScreenHeader = ({ title, subtitle, onBack }) => (
+  &lt;View style={styles.header}&gt;
+    {onBack &amp;&amp;
+      &lt;TouchableOpacity onPress={onBack}&gt;
+        &lt;Text style={styles.back}&gt;&lt;&lt;/Text&gt;
+      &lt;/TouchableOpacity&gt;}
+    &lt;View&gt;
+      &lt;Text style={styles.title}&gt;{title}&lt;/Text&gt;
+      {subtitle &amp;&amp; &lt;Text style={styles.sub}&gt;{subtitle}&lt;/Text&gt;}
+    &lt;/View&gt;
+  &lt;/View&gt;
+);</pre>
+        <div class="explanation">
+          <em>onBack &&</em> — short-circuit evaluation: כפתור "<" מוצג רק אם <em>onBack</em> הוגדר.
+          <em>subtitle &&</em> — כותרת משנה אופציונלית.
+          זה pattern נפוץ ב-JSX לרינדור מותנה.
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ======================== CONSTANTS ======================== -->
+<section class="category" id="constants">
+  <h2 class="category-title">📌 src/constants — קבועים ומנגנוני שמירה</h2>
+
+  <div class="file-section" id="google">
+    <div class="file-header">
+      <span class="file-icon">🔑</span>
+      <h3>src/constants/google.js</h3>
+      <span class="file-desc">מזהה לקוח Google OAuth</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">כל הקובץ</span>
+        <pre>export const GOOGLE_WEB_CLIENT_ID =
+  '...apps.googleusercontent.com';</pre>
+        <div class="explanation">
+          Client ID ל-Google Sign-In. מייצא קבוע אחד.
+          הערך הזה מגיע מ-Google Cloud Console ומשמש לאימות OAuth 2.0.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="file-section" id="hcTombstones">
+    <div class="file-header">
+      <span class="file-icon">🪦</span>
+      <h3>src/constants/hcTombstones.js</h3>
+      <span class="file-desc">מנגנון tombstone למניעת ייבוא חוזר של אימונים שנמחקו</span>
+    </div>
+    <div class="file-body">
+
+      <div class="block">
+        <span class="lines">שורות 1–8 — מפתח ו-Set</span>
+        <pre>const STORAGE_KEY = 'hc.tombstones';
+let _tombstones = new Set();</pre>
+        <div class="explanation">
+          <strong>Tombstone Pattern</strong>: כאשר משתמש מוחק אימון שהגיע מ-HC, מוסיפים את מפתח הזמן שלו ל-"טומבסטון" — כך הסנכרון הבא לא ייבא אותו שוב.
+          <em>Set</em> — אוסף ייחודי (ללא כפולות), בדיקת <em>has()</em> ב-O(1).
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">tombstoneKeyFor, loadHcTombstones</span>
+        <pre>export const tombstoneKeyFor = (startTime) =>
+  startTime?.slice(0, 16); // YYYY-MM-DDTHH:MM
+
+export const loadHcTombstones = async () => {
+  const raw = await AsyncStorage.getItem(STORAGE_KEY);
+  if (raw) _tombstones = new Set(JSON.parse(raw));
+};</pre>
+        <div class="explanation">
+          <em>tombstoneKeyFor</em> — חותך את הזמן לדיוק של דקה (מתעלם מ-seconds).
+          <em>loadHcTombstones</em> — טוענת מ-AsyncStorage את רשימת ה-tombstones בעת עלייה ראשונה. JSON.parse מחזיר מערך, Set() ממיר למבנה נתונים יעיל.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">isTombstoned, tombstoneWorkout</span>
+        <pre>export const isTombstoned = (startTime) =>
+  _tombstones.has(tombstoneKeyFor(startTime));
+
+export const tombstoneWorkout = async (startTime) => {
+  _tombstones.add(tombstoneKeyFor(startTime));
+  await AsyncStorage.setItem(STORAGE_KEY,
+    JSON.stringify([..._tombstones]));
+};</pre>
+        <div class="explanation">
+          <em>isTombstoned</em> — בדיקה בזמן O(1) האם מפתח קיים ב-Set.
+          <em>tombstoneWorkout</em> — מוסיף מפתח ושומר לצמיתות.
+          <em>[..._tombstones]</em> — Spread פורשים Set למערך (JSON.stringify לא יודע לסדר Set ישירות).
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="file-section" id="weekStart">
+    <div class="file-header">
+      <span class="file-icon">📅</span>
+      <h3>src/constants/weekStart.js</h3>
+      <span class="file-desc">ניהול יום תחילת שבוע + תאריכים</span>
+    </div>
+    <div class="file-body">
+
+      <div class="block">
+        <span class="lines">מבנה כללי</span>
+        <pre>let _weekStart = 0; // 0=ראשון, 1=שני...6=שבת
+const _listeners = new Set();
+
+export const initWeekStart = async () => { ... }
+export const getWeekStartDay = () => _weekStart;
+export const setWeekStartDay = async (day) => { ... }
+export const subscribeWeekStart = (fn) => { ... }
+export const getWeekStartDate  = (offset = 0) => { ... }
+export const getWeekDayLabels  = () => { ... }</pre>
+        <div class="explanation">
+          מנגנון Singleton + Observer:
+          <em>_weekStart</em> — ה-state הגלובלי (0-6).
+          <em>_listeners</em> — קומפוננטים שרשמו עצמם לעדכונים.
+          <em>subscribeWeekStart</em> — מחזיר פונקציית unsubscribe (כמו EventEmitter).
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">getWeekStartDate</span>
+        <pre>export const getWeekStartDate = (offset = 0) => {
+  const today = new Date();
+  const day   = today.getDay(); // 0=Sun
+  const diff  = (day - _weekStart + 7) % 7;
+  const start = new Date(today);
+  start.setDate(today.getDate() - diff + offset * 7);
+  start.setHours(0, 0, 0, 0);
+  return start;
+};</pre>
+        <div class="explanation">
+          מחשבת תאריך תחילת השבוע הנוכחי (+ offset שבועות).
+          <em>(day - _weekStart + 7) % 7</em> — פורמולה לחישוב כמה ימים לאחור אנחנו מיום תחילת השבוע.
+          <em>+7</em> ו-<em>% 7</em> מבטיחות תוצאה חיובית (0-6) גם כשהיום לפני יום התחלה.
+          <em>setHours(0,0,0,0)</em> — מאפס שעות/דקות/שניות לתחילת היום.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</section>
+
+<!-- ======================== NAVIGATION ======================== -->
+<section class="category" id="navigation">
+  <h2 class="category-title">🗺️ src/navigation — ניהול ניווט</h2>
+
+  <div class="file-section" id="NavigationStack">
+    <div class="file-header">
+      <span class="file-icon">🗺️</span>
+      <h3>src/navigation/NavigationStack.js</h3>
+      <span class="file-desc">מבנה ניווט מלא של האפליקציה</span>
+      <span class="tag nav">Nav</span>
+    </div>
+    <div class="file-body">
+
+      <div class="block">
+        <span class="lines">AuthStack — מסכי התחברות</span>
+        <pre>const AuthStack = () => (
+  &lt;Stack.Navigator screenOptions={{ headerShown: false }}&gt;
+    &lt;Stack.Screen name="Welcome"  component={WelcomeScreen} /&gt;
+    &lt;Stack.Screen name="Login"    component={LoginScreen} /&gt;
+    &lt;Stack.Screen name="SignUp"   component={SignUpScreen} /&gt;
+    &lt;Stack.Screen name="SignUpFinal" component={SignUpFinalScreen} /&gt;
+  &lt;/Stack.Navigator&gt;
+);</pre>
+        <div class="explanation">
+          <strong>AuthStack</strong> — Stack Navigator (ניווט מחסנית) עם 4 מסכי התחברות/הרשמה.
+          <em>headerShown: false</em> — מסתיר את סרגל הניווט המובנה (כותרות מותאמות אישית).
+          ב-Stack Navigator — מסך חדש נדחף על "ערמה"; כפתור חזרה "מוציא" מסך מהערמה.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">HomeStack — כל המסכים הפנימיים</span>
+        <pre>const HomeStack = () => (
+  &lt;Stack.Navigator&gt;
+    &lt;Stack.Screen name="Home"          component={HomeScreen} /&gt;
+    &lt;Stack.Screen name="Stats"         component={StatsScreen} /&gt;
+    &lt;Stack.Screen name="Warnings"      component={WarningsScreen} /&gt;
+    &lt;Stack.Screen name="AddWorkout"    component={AddWorkoutScreen} /&gt;
+    &lt;Stack.Screen name="InjuryReport"  component={InjuryReportScreen} /&gt;
+    &lt;Stack.Screen name="ActiveInjuries"component={ActiveInjuriesScreen}/&gt;
+    &lt;Stack.Screen name="WorkoutSummary"component={WorkoutSummaryScreen}/&gt;
+    &lt;Stack.Screen name="Settings"      component={SettingsScreen} /&gt;
+    &lt;Stack.Screen name="ConnectQR"     component={ConnectQRScreen} /&gt;
+  &lt;/Stack.Navigator&gt;
+);</pre>
+        <div class="explanation">
+          כל מסך פנימי של האפליקציה. ה-<em>name</em> הוא המזהה לניווט — <em>navigation.navigate('Stats')</em>.
+          מסכים אלו נגישים רק כשהמשתמש מחובר.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">AppTabs — Tab Navigator</span>
+        <pre>const AppTabs = () => (
+  &lt;Tab.Navigator&gt;
+    &lt;Tab.Screen name="HomeTab"    component={HomeStack} /&gt;
+    &lt;Tab.Screen name="HealthTab"  component={HealthStack}
+      options={{ tabBarBadge: unconfirmedCount || undefined }} /&gt;
+    &lt;Tab.Screen name="ProfileTab" component={ProfileStack} /&gt;
+  &lt;/Tab.Navigator&gt;
+);</pre>
+        <div class="explanation">
+          <strong>Tab Navigator</strong> — הסרגל התחתון עם 3 טאבים.
+          <em>tabBarBadge</em> — ספרה אדומה על הטאב. <em>|| undefined</em> — לא מציג badge כשאין אימונים לאישור (0 הוא falsy).
+          <em>unconfirmedCount</em> מגיע מ-HealthSyncContext.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">AppNavigator — הבורר הראשי</span>
+        <pre>export const AppNavigator = () => {
+  const { isLoggedIn } = useAuth();
+  return isLoggedIn ? &lt;AppStack /&gt; : &lt;AuthStack /&gt;;
+};</pre>
+        <div class="explanation">
+          <strong>AppNavigator</strong> — בוחר בין שני "עולמות" לפי מצב התחברות.
+          כשהמשתמש מתחבר — <em>isLoggedIn</em> משתנה ל-true → React מרנדר AppStack → ניווט אוטומטי למסכים הפנימיים.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</section>
+
+<!-- ======================== SCREENS ======================== -->
+<section class="category" id="screens">
+  <h2 class="category-title">📱 src/screens — מסכי האפליקציה</h2>
+
+  <!-- HomeScreen -->
+  <div class="file-section" id="HomeScreen">
+    <div class="file-header">
+      <span class="file-icon">🏠</span>
+      <h3>src/screens/HomeScreen.js</h3>
+      <span class="file-desc">מסך הבית עם גרף שבועי וקיצורי דרך</span>
+    </div>
+    <div class="file-body">
+
+      <div class="block">
+        <span class="lines">buildWeeklyData</span>
+        <pre>export const buildWeeklyData = (logs, weekStart) => {
+  const days = Array.from({length:7}, (_,i) => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    return d;
+  });
+  return days.map(d => {
+    const key = d.toISOString().slice(0,10);
+    const load = logs
+      .filter(l => l.date?.slice(0,10) === key)
+      .reduce((s,l) => s + (l.sessionLoad||0), 0);
+    return { label: ..., load };
+  });
+};</pre>
+        <div class="explanation">
+          <strong>buildWeeklyData</strong> — בונה מערך של 7 ימים לגרף.
+          <em>Array.from({'{'}length:7{'}'},callback)</em> — יוצר מערך בן 7 אלמנטים ומיד ממלא אותו.
+          לכל יום: מחפש לוגים שתאריכם תואם ומסכם את עומסי הסשן.
+          <em>slice(0,10)</em> — לוקח רק YYYY-MM-DD (מתעלם משעה).
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">getBarColor</span>
+        <pre>export const getBarColor = (load) => {
+  if (load &gt; 800) return Colors.red;
+  if (load &gt; 400) return Colors.yellow;
+  return Colors.green;
+};</pre>
+        <div class="explanation">
+          פונקציה פשוטה לצביעת עמודות הגרף:
+          <strong>אדום</strong> מעל 800 — עומס גבוה מדי.
+          <strong>צהוב</strong> 400-800 — עומס בינוני.
+          <strong>ירוק</strong> מתחת 400 — עומס בטוח.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">מסך HomeScreen</span>
+        <div class="explanation">
+          <strong>Greeting</strong>: "Good morning, [שם]" עם שעה נוכחית.
+          <strong>כפתורי קיצור</strong>: Add Workout → AddWorkout, See Warnings → Warnings, Report Injury → InjuryReport.
+          <strong>גרף שבועי</strong>: BarChart עם 7 עמודות צבעוניות.
+          <strong>Warnings banner</strong>: אם יש אזהרות שלא נקראו — מוצגת רצועה כתומה.
+          <strong>Settings icon</strong>: גלגל שיניים בפינה פותח Settings.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- LoginScreen -->
+  <div class="file-section" id="LoginScreen">
+    <div class="file-header">
+      <span class="file-icon">🔑</span>
+      <h3>src/screens/LoginScreen.js</h3>
+      <span class="file-desc">מסך התחברות</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">echo title effect</span>
+        <pre>&lt;Text style={[styles.title, styles.titleShadow]}&gt;TrainWise&lt;/Text&gt;
+&lt;Text style={styles.title}&gt;TrainWise&lt;/Text&gt;</pre>
+        <div class="explanation">
+          אפקט "הד": שני Text אחד על השני — הראשון עם offset קטן ו-opacity נמוך, השני עם הצבע הרגיל.
+          יוצר אפקט צל/זוהר וויזואלי מרשים בלי להשתמש ב-shadow.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">KeyboardAvoidingView</span>
+        <pre>&lt;KeyboardAvoidingView
+  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}&gt;</pre>
+        <div class="explanation">
+          <strong>KeyboardAvoidingView</strong> — דוחף את התוכן כלפי מעלה כשהמקלדת עולה.
+          ב-iOS: מוסיף padding. ב-Android: מכווץ גובה.
+          חיוני לטפסים כדי שהשדות לא יוסתרו מאחורי המקלדת.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SignUpScreen -->
+  <div class="file-section" id="SignUpScreen">
+    <div class="file-header">
+      <span class="file-icon">📝</span>
+      <h3>src/screens/SignUpScreen.js</h3>
+      <span class="file-desc">שלב 1 הרשמה — פרטים אישיים</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">WheelPicker גיל/משקל/גובה</span>
+        <pre>const scrollRef = useRef(null);
+// ...
+&lt;ScrollView
+  ref={scrollRef}
+  horizontal pagingEnabled
+  onMomentumScrollEnd={e =&gt; {
+    const page = Math.round(
+      e.nativeEvent.contentOffset.x / ITEM_WIDTH);
+    setAge(AGE_OPTIONS[page]);
+  }}&gt;</pre>
+        <div class="explanation">
+          <strong>WheelPicker מיוצר ידנית</strong>: ScrollView אופקי עם <em>pagingEnabled</em>.
+          <em>pagingEnabled</em> — ה-scroll "מתייצב" תמיד על פריט שלם (כמו swipe של עמוד).
+          <em>onMomentumScrollEnd</em> — נקרא כשה-scroll הסתיים. מחשבים את מיקום הגלילה ומחלקים ברוחב פריט לקבלת מספר הפריט.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">בחירת מגדר עם תמונות</span>
+        <pre>['male','female'].map(g =&gt; (
+  &lt;TouchableOpacity
+    key={g}
+    onPress={() =&gt; setGender(g)}
+    style={gender===g ? styles.selected : styles.unselected}&gt;
+    &lt;Image source={GENDER_IMAGES[g]} /&gt;
+    &lt;Text&gt;{g}&lt;/Text&gt;
+  &lt;/TouchableOpacity&gt;
+))</pre>
+        <div class="explanation">
+          שתי תמונות לחיצות לבחירת מגדר. הנבחרת מקבלת border/background מודגש.
+          <em>GENDER_IMAGES</em> — אובייקט שממפה 'male'/'female' ל-require('./assets/...').
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SignUpFinal -->
+  <div class="file-section" id="SignUpFinal">
+    <div class="file-header">
+      <span class="file-icon">✅</span>
+      <h3>src/screens/SignUpFinal.js</h3>
+      <span class="file-desc">שלב 2 הרשמה — אימייל, סיסמה ותנאים</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">מיפוי ערכי SignUp</span>
+        <pre>const activityLevelMap = {
+  'Beginner': 1, 'Intermediate': 2,
+  'Advanced': 3, 'Elite': 4
+};
+const experienceLevelMap = {
+  '1-2': 1, '3-4': 2, '5-6': 3, '7+': 4
+};
+const isCoach = role === 'Trainer' || role === 'Both';</pre>
+        <div class="explanation">
+          ממירים ערכים מהמסך הקודם למספרים שהשרת מצפה להם.
+          <em>isCoach</em> — boolean: True אם הבחירה היא Trainer או Both.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">Pulse animation</span>
+        <pre>const pulse = useRef(new Animated.Value(1)).current;
+Animated.loop(
+  Animated.sequence([
+    Animated.timing(pulse, {toValue:1.1, duration:600, ...}),
+    Animated.timing(pulse, {toValue:1,   duration:600, ...}),
+  ])
+).start();</pre>
+        <div class="explanation">
+          אנימציית פעימה: הלוגו גדל ל-1.1x ואז חוזר ל-1x, בלולאה אינסופית.
+          <em>Animated.Value(1)</em> — ערך אנימציה מתחיל מ-1 (גודל מלא).
+          <em>Animated.loop</em> — חוזר ללא הפסקה. מופעלת בזמן שליחת הטופס.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ProfileScreen -->
+  <div class="file-section" id="ProfileScreen">
+    <div class="file-header">
+      <span class="file-icon">👤</span>
+      <h3>src/screens/ProfileScreen.js</h3>
+      <span class="file-desc">מסך פרופיל — תצוגה בלבד + התנתקות</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">כל הקובץ</span>
+        <div class="explanation">
+          מציג כרטיס עם: fullName, email, userName, activityLevel, experienceLevel ועוד.
+          כפתור <strong>Logout</strong> קורא ל-<em>logout()</em> מ-AuthContext, מה שמנקה state ומחזיר למסך ההתחברות.
+          <strong>display-only</strong>: לא ניתן לערוך כאן — לשינויים יש להכנס להגדרות.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- StatsScreen -->
+  <div class="file-section" id="StatsScreen">
+    <div class="file-header">
+      <span class="file-icon">📊</span>
+      <h3>src/screens/StatsScreen.js</h3>
+      <span class="file-desc">מסך סטטיסטיקות עם עריכת אימונים</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">שני מצבי תצוגה</span>
+        <pre>const [viewMode, setViewMode] = useState('overview'); // 'detail'</pre>
+        <div class="explanation">
+          <em>overview</em>: גרף שבועי מלא (7 עמודות), ניווט בין שבועות.
+          <em>detail</em>: 3 ימים ממוקדים + טופס עריכה לאימון נבחר.
+          המשתמש עובר ל-detail בלחיצה על עמודה בגרף.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">שמירת עריכה</span>
+        <pre>const handleSave = async () => {
+  if (editingLog.id) {
+    await putActivityLog(editingLog.id, updatedData);
+  } else {
+    await postActivityLog({ ...updatedData, userId });
+  }
+  await calculateDailyLoad(userId);
+  // רענון נתונים
+};</pre>
+        <div class="explanation">
+          אם יש <em>id</em> — עדכון לוג קיים (PUT). אם לא — יצירת לוג חדש (POST).
+          לאחר שמירה, קוראים מחדש ל-<em>calculateDailyLoad</em> כדי שהשרת יחשב מחדש את ה-ACWR ואת העומס.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SettingsScreen -->
+  <div class="file-section" id="SettingsScreen">
+    <div class="file-header">
+      <span class="file-icon">⚙️</span>
+      <h3>src/screens/SettingsScreen.js</h3>
+      <span class="file-desc">הגדרות — תמה, פרופיל, שבוע, חיבורים</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">החלפת תמה</span>
+        <pre>const { theme, setTheme } = useTheme();
+// ...
+&lt;SegmentedControl
+  values={['Dark', 'Light']}
+  selectedIndex={theme === 'light' ? 1 : 0}
+  onChange={i =&gt; setTheme(i === 1 ? 'light' : 'dark')}
+/&gt;</pre>
+        <div class="explanation">
+          <strong>SegmentedControl</strong> — בחירה בין שני ערכים (כמו toggle).
+          setTheme מגיע מ-ThemeContext — מחיל את התמה, שומר ב-AsyncStorage, ומפעיל re-mount מלא.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">יום תחילת שבוע</span>
+        <pre>const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+{days.map((d,i) =&gt; (
+  &lt;TouchableOpacity
+    key={d}
+    onPress={() =&gt; setWeekStartDay(i)}
+    style={weekStart===i ? styles.active : styles.inactive}&gt;
+    &lt;Text&gt;{d}&lt;/Text&gt;
+  &lt;/TouchableOpacity&gt;
+))}</pre>
+        <div class="explanation">
+          7 כפתורים לבחירת יום תחילת שבוע. הנבחר מוצג עם רקע מודגש.
+          <em>setWeekStartDay(i)</em> — שומר ב-AsyncStorage ומודיע לכל המנויים.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WelcomeScreen -->
+  <div class="file-section" id="WelcomeScreen">
+    <div class="file-header">
+      <span class="file-icon">👋</span>
+      <h3>src/screens/WelcomeScreen.js</h3>
+      <span class="file-desc">מסך פתיחה עם טקסט מעגלי</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">CurvedText — טקסט על מעגל</span>
+        <pre>const CurvedText = ({ text, radius }) => {
+  const chars = text.split('');
+  const angleStep = 360 / chars.length;
+  return chars.map((ch, i) => {
+    const angle = (i * angleStep - 90) * (Math.PI / 180);
+    const x = radius * Math.cos(angle);
+    const y = radius * Math.sin(angle);
+    return (
+      &lt;Text key={i} style={{
+        position:'absolute',
+        left: x + radius,
+        top:  y + radius,
+        transform:[{ rotate: `${i * angleStep}deg` }],
+      }}&gt;{ch}&lt;/Text&gt;
+    );
+  });
+};</pre>
+        <div class="explanation">
+          <strong>CurvedText</strong> — טכניקה גאומטרית לפיזור תווים על מעגל.
+          <em>angleStep</em> = 360 חלקי מספר תווים — זווית בין כל תו.
+          <em>-90</em> — מתחיל מלמעלה (12 בשעון) ולא מימין (3 בשעון).
+          <em>Math.PI/180</em> — המרת דרגות לרדיאנים (JavaScript עובד ברדיאנים).
+          <em>Math.cos / Math.sin</em> — חישוב x,y על המעגל.
+          כל תו ממוקם בposition absolute ומסובב כדי "לפנות" החוצה מהמעגל.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AddWorkoutScreen -->
+  <div class="file-section" id="AddWorkoutScreen">
+    <div class="file-header">
+      <span class="file-icon">➕</span>
+      <h3>src/screens/AddWorkoutScreen.js</h3>
+      <span class="file-desc">הוספת אימון ידנית</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">חישוב Session Load</span>
+        <pre>const sessionLoad = duration * exertion;</pre>
+        <div class="explanation">
+          <strong>Session Load</strong> = משך אימון (דקות) × רמת מאמץ (1-10).
+          מדד זה נגזר מ-RPE (Rate of Perceived Exertion) × duration — שיטה נפוצה בספורט מדעי.
+          Session Load הוא הבסיס לחישוב ACWR.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">Exertion Dots</span>
+        <pre>{Array.from({length:10},(_,i) =&gt; i+1).map(n =&gt; (
+  &lt;TouchableOpacity
+    key={n}
+    onPress={() =&gt; setExertion(n)}
+    style={[styles.dot, n &lt;= exertion &amp;&amp; {backgroundColor: dotColor(n)}]}
+  /&gt;
+))}</pre>
+        <div class="explanation">
+          10 עיגולים שממלאים בצבע (ירוק → צהוב → אדום) לפי מאמץ.
+          <em>n {'<='} exertion</em> — עיגולים "עד" הנבחר צבועים; השאר ריקים.
+          <em>dotColor(n)</em> — ירוק לנמוך, צהוב לבינוני, אדום לגבוה.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- InjuryReportScreen -->
+  <div class="file-section" id="InjuryReportScreen">
+    <div class="file-header">
+      <span class="file-icon">🩹</span>
+      <h3>src/screens/InjuryReportScreen.js</h3>
+      <span class="file-desc">דיווח פציעה חדשה</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">מבנה המסך</span>
+        <div class="explanation">
+          <strong>ComboBox</strong> לבחירת סוג פציעה (נטען מ-getAllInjuryTypes).
+          <strong>Severity Dots</strong> — כמו Exertion Dots: 1-10 עיגולים לחיצים.
+          <strong>TextArea</strong> — שדה פתוח להערות.
+          כפתור Submit — שולח ל-createInjuryReport, מנווט חזרה.
+          <strong>Active Injuries Banner</strong>: אם יש פציעות פעילות — רצועה עם קישור ל-ActiveInjuries.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ActiveInjuriesScreen -->
+  <div class="file-section" id="ActiveInjuriesScreen">
+    <div class="file-header">
+      <span class="file-icon">🏥</span>
+      <h3>src/screens/ActiveInjuriesScreen.js</h3>
+      <span class="file-desc">רשימת פציעות פעילות</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">injuryNameById</span>
+        <pre>const injuryNameById = (id) =>
+  injuryTypes.find(t => t.id === id)?.name ?? 'Unknown';</pre>
+        <div class="explanation">
+          <em>?.name</em> — Optional Chaining: אם find מחזיר undefined, לא קורסים.
+          <em>?? 'Unknown'</em> — Nullish Coalescing: אם התוצאה null/undefined — מחזיר 'Unknown'.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">Mark Recovered</span>
+        <pre>const [recoveringId, setRecoveringId] = useState(null);
+// ...
+&lt;PrimaryButton
+  loading={recoveringId === injury.id}
+  onPress={() =&gt; handleRecover(injury.id)}
+/&gt;</pre>
+        <div class="explanation">
+          <em>recoveringId</em> — מאפשר spinner רק על הכפתור הספציפי שנלחץ (לא על כולם).
+          לאחר הצלחה — מסיר את הפציעה מהרשימה המקומית ללא רענון מחדש מהשרת.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WarningsDashboardScreen -->
+  <div class="file-section" id="WarningsScreen">
+    <div class="file-header">
+      <span class="file-icon">⚠️</span>
+      <h3>src/screens/WarningsDashboardScreen.js</h3>
+      <span class="file-desc">לוח אזהרות ACWR וניתוח עומס</span>
+    </div>
+    <div class="file-body">
+
+      <div class="block">
+        <span class="lines">חישוב ACWR</span>
+        <pre>const acute   = last7DaysLoad;           // סכום 7 ימים
+const chronic = last28DaysLoad / 4;      // ממוצע שבועי על 28 יום
+const acRatio = chronic > 0
+  ? acute / chronic : 0;</pre>
+        <div class="explanation">
+          <strong>ACWR</strong> — Acute-to-Chronic Workload Ratio. מדד מחקרי (Gabbett, 2016) לסיכון פציעה.
+          <em>Acute</em> = עומס שבוע אחרון (7 ימים).
+          <em>Chronic</em> = ממוצע שבועי של 28 ימים אחרונים.
+          <em>AC Ratio</em> = Acute / Chronic.
+          <strong>Zone בטוחה: 0.8–1.3</strong>. מתחת ל-0.8: undertraining. מעל 1.5: סיכון גבוה לפציעה.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">ניווט שבועי</span>
+        <pre>const [weekOffset, setWeekOffset] = useState(0);
+// offset=0: שבוע נוכחי, offset=-1: שבוע קודם
+const weekStart = getWeekStartDate(weekOffset);</pre>
+        <div class="explanation">
+          <em>weekOffset</em> — כמה שבועות אחורה להציג. לחיצת "◀" מוסיפה -1, "▶" מוסיפה 1.
+          <em>getWeekStartDate(offset)</em> — מחשבת את תאריך תחילת השבוע המבוקש.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">Help Modal</span>
+        <pre>const [helpFor, setHelpFor] = useState(null);
+// ...
+{helpFor === 'acRatio' &amp;&amp; (
+  &lt;Modal visible transparent&gt;
+    &lt;Text&gt;AC Ratio מסביר...&lt;/Text&gt;
+  &lt;/Modal&gt;
+)}</pre>
+        <div class="explanation">
+          כל מדד מלווה בכפתור "?" שפותח Modal עם הסבר.
+          <em>helpFor</em> — מחרוזת שמזהה איזה Modal פתוח. null = סגור.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- WorkoutSummaryScreen -->
+  <div class="file-section" id="WorkoutSummaryScreen">
+    <div class="file-header">
+      <span class="file-icon">🏆</span>
+      <h3>src/screens/WorkoutSummaryScreen.js</h3>
+      <span class="file-desc">סיכום אימון שנרשם</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">קבלת נתונים מRoute</span>
+        <pre>const summary = route?.params?.summary || {
+  activityName: 'Running', duration: 45, ...
+};</pre>
+        <div class="explanation">
+          <em>route?.params?.summary</em> — Optional Chaining: אם אין params — לא קורסים.
+          <em>||</em> — אם summary לא הועבר (דמו) — משתמשים בנתוני ברירת מחדל לבדיקה.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">getLevelColor</span>
+        <pre>const getLevelColor = (level) => {
+  if (level === 'Red')    return Colors.red;
+  if (level === 'Yellow') return Colors.yellow;
+  return Colors.green;
+};</pre>
+        <div class="explanation">
+          פונקציית עזר לצביעת ה-badge (הסמן) של רמת העומס.
+          Badge הוא View עגול גדול שצבועו מציין את הרמה.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">כפתורי bottom</span>
+        <pre>&lt;PrimaryButton title="Back to Dashboard"
+  onPress={() =&gt; navigation.navigate('Warnings')} /&gt;
+&lt;TouchableOpacity
+  onPress={() =&gt; navigation.navigate('AddWorkout')}&gt;
+  Log Another Workout
+&lt;/TouchableOpacity&gt;</pre>
+        <div class="explanation">
+          שני כפתורי פעולה: אחד ראשי (ל-Warnings Dashboard) ואחד משני (חזרה לAdd Workout לרישום נוסף).
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ConnectQRScreen -->
+  <div class="file-section" id="ConnectQRScreen">
+    <div class="file-header">
+      <span class="file-icon">📱</span>
+      <h3>src/screens/ConnectQRScreen.js</h3>
+      <span class="file-desc">חיבור מאמן-מתאמן דרך QR</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">יצירת QR</span>
+        <pre>const payload = JSON.stringify({
+  app: 'TrainWise',
+  type: 'coach-connect',
+  userId,
+  timestamp: Date.now(),
+});
+&lt;QRCode value={payload} size={200} /&gt;</pre>
+        <div class="explanation">
+          <strong>Payload</strong> מכיל: שם האפליקציה, סוג הפעולה, ID משתמש, timestamp.
+          המאמן סורק → מקבל את ה-userId → יכול לבקש חיבור.
+          <em>timestamp</em> — לאפשר פג תוקף (expiry) בעתיד.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">מצב סריקה</span>
+        <div class="explanation">
+          מצב סריקה מציג שדה טקסט לקוד ידני + כפתור מצלמה (לא מומש עדיין — TODO).
+          שני מצבים: <em>show</em> (הצגת QR שלי) ו-<em>scan</em> (סריקת QR של מישהו אחר).
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ======================== SERVICES ======================== -->
+<section class="category" id="services">
+  <h2 class="category-title">⚙️ src/services — שירותי API מלא</h2>
+
+  <div class="file-section" id="services-api">
+    <div class="file-header">
+      <span class="file-icon">🔌</span>
+      <h3>src/services/api.js</h3>
+      <span class="file-desc">כל ה-endpoints — axios instance שני</span>
+      <span class="tag api">API</span>
+    </div>
+    <div class="file-body">
+
+      <div class="block">
+        <span class="lines">שורות 1–17 — axios instance</span>
+        <pre>const API_BASE_URL = 'http://127.0.0.1:5249/api';
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 15000,
+  headers: { 'Content-Type': 'application/json' },
+});</pre>
+        <div class="explanation">
+          שני axios instance בפרויקט — זה ב-<em>services/api.js</em> הוא המלא יותר עם כל ה-endpoints.
+          הראשון (<em>api/api.js</em>) קיים מהתחלה; זה הועשר עם endpoints נוספים.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">Users — ניהול משתמשים</span>
+        <pre>export const getUserById       = (userId) => api.get(`/users/${userId}`);
+export const updateUser        = (userId, data) => api.put(`/users/${userId}`, data);
+export const updateProfileImage = (userId, imagePath) =>
+  api.put(`/users/${userId}/profile-image`, { profileImagePath: imagePath });</pre>
+        <div class="explanation">
+          שלושה endpoints למשתמשים:
+          <strong>GET</strong> שליפה לפי ID.
+          <strong>PUT</strong> עדכון פרטים.
+          <strong>PUT profile-image</strong> — נתיב נפרד לתמונת פרופיל.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">Activity Logs + Daily Load</span>
+        <pre>export const createActivityLog    = (data) => api.post('/activitylog', data);
+export const getActivityLogsByUser = (userId) => api.get(`/activitylog/user/${userId}`);
+export const deleteActivityLog    = (id) => api.delete(`/activitylog/${id}`);
+export const getDailyLoadByUser   = (userId) => api.get(`/dailyload/user/${userId}`);
+export const calculateDailyLoad   = (userId, date = new Date()) =>
+  api.post(`/dailyload/user/${userId}/calculate`, {
+    date: date instanceof Date ? date.toISOString() : date,
+  });</pre>
+        <div class="explanation">
+          <strong>createActivityLog</strong> — שמירת אימון חדש.
+          <strong>getDailyLoadByUser</strong> — שליפת עומס יומי מחושב.
+          <strong>calculateDailyLoad</strong> — מבקש מהשרת לחשב מחדש עומס לתאריך מסוים.
+          <em>date instanceof Date</em> — בדיקת טיפוס; אם כבר ISO string — לא ממיר.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">Recommendations — המלצות</span>
+        <pre>export const getRecommendationsByUser =
+  (userId) => api.get(`/recommendation/user/${userId}`);
+export const getCoachRecommendationsByUser =
+  (userId) => api.get(`/coachrecommendations/user/${userId}`);</pre>
+        <div class="explanation">
+          שני מקורות המלצה:
+          <strong>אוטומטיות</strong> — מחושבות ע"י אלגוריתם.
+          <strong>מאמן</strong> — הוזנו ידנית ע"י מאמן.
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">Injuries — פציעות</span>
+        <pre>export const getAllInjuryTypes      = () => api.get('/injurytypes');
+export const createInjuryReport    = (data) => api.post('/injuryreport', data);
+export const getInjuriesByUser     = (userId) => api.get(`/injuryreport/user/${userId}`);
+export const getActiveInjuriesByUser = (userId) => api.get(`/injuryreport/user/${userId}/active`);
+export const markInjuryRecovered   = (injuryId) => api.put(`/injuryreport/${injuryId}/recover`);</pre>
+        <div class="explanation">
+          חמישה endpoints לניהול פציעות:
+          <strong>getAllInjuryTypes</strong> — רשימת סוגי פציעות לComboBox.
+          <strong>createInjuryReport</strong> — שמירת פציעה חדשה.
+          <strong>getActiveInjuriesByUser</strong> — רק פציעות שטרם החלימו.
+          <strong>markInjuryRecovered</strong> — סימון ריפוי (PUT).
+        </div>
+      </div>
+
+      <div class="block">
+        <span class="lines">Coach, Goals, Devices</span>
+        <pre>export const getCoachById          = (coachId) => api.get(`/coach/${coachId}`);
+export const getTraineesByCoach    = (coachId) => api.get(`/coach/${coachId}/trainees`);
+export const getAllTrainingGoals    = () => api.get('/traininggoals');
+export const addUserTrainingGoal   = (userId, goalId) =>
+  api.post('/usertraininggoals', { userId, goalId });
+export const removeUserTrainingGoal = (userId, goalId) =>
+  api.delete(`/usertraininggoals/${userId}/${goalId}`);
+export const getUserDevices        = (userId) => api.get(`/userdevice/user/${userId}`);
+export const registerDevice        = (data) => api.post('/userdevice', data);</pre>
+        <div class="explanation">
+          <strong>Coach</strong>: שליפת מאמן ורשימת מתאמניו.
+          <strong>Training Goals</strong>: מטרות אימון (ירידה במשקל, שיפור קצב...) — ניתן להוסיף ולהסיר.
+          <strong>Devices</strong>: רישום מכשיר (שעון/טלפון) כדי לקשר סנכרוני HC למכשיר ספציפי.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</section>
+
+<!-- ======================== THEME ======================== -->
+<section class="category" id="theme">
+  <h2 class="category-title">🎨 src/theme — מנגנון תמות</h2>
+
+  <div class="file-section" id="palettes">
+    <div class="file-header">
+      <span class="file-icon">🎨</span>
+      <h3>src/theme/palettes.js</h3>
+      <span class="file-desc">הגדרת פלטות צבעים כהה ובהיר</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">darkPalette</span>
+        <pre>export const darkPalette = {
+  background:      '#0A1628',  // כחול כהה עמוק
+  cardBackground:  '#132036',
+  primary:         '#E91E63',  // ורוד מותג
+  textPrimary:     '#FFFFFF',
+  textSecondary:   '#B0BEC5',
+  success:         '#4CAF50',
+  warning:         '#FFC107',
+  danger:          '#F44336',
+  // ...
+};</pre>
+        <div class="explanation">
+          פלטת <strong>Dark Mode</strong>: רקע כחול כהה עם ורוד (#E91E63) כצבע מותג ראשי.
+          כל צבע מתועד ומה תפקידו:
+          <em>background</em> — צבע הרקע הכללי.
+          <em>cardBackground</em> — כרטיסיות.
+          <em>primary</em> — כפתורים, כותרות בולטות.
+          <em>success/warning/danger</em> — צבעי סטטוס (ירוק/צהוב/אדום).
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">lightPalette</span>
+        <pre>export const lightPalette = {
+  background: '#F5FBF9',       // לבן ירקרק
+  primary:    '#3A8AA3',       // טיל מהלוגו
+  accent:     '#E91E63',       // ורוד כהדגשה
+  // ...
+};</pre>
+        <div class="explanation">
+          פלטת <strong>Light Mode</strong>: רקע לבן-ירקרק עם טיל/ציאן (#3A8AA3) כצבע ראשי.
+          הורוד (#E91E63) שומר עמדתו כ-<em>accent</em> (הדגשה) גם בתמה הבהירה.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">PALETTES</span>
+        <pre>export const PALETTES = {
+  dark:  darkPalette,
+  light: lightPalette,
+};</pre>
+        <div class="explanation">
+          מפה שמאפשרת בחירה לפי שם: <em>PALETTES['dark']</em> / <em>PALETTES['light']</em>.
+          משמשת ב-applyTheme().
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="file-section" id="colors">
+    <div class="file-header">
+      <span class="file-icon">🖌️</span>
+      <h3>src/theme/colors.js</h3>
+      <span class="file-desc">Singleton ניתן-לשינוי + Fonts + Spacing</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">Colors Singleton</span>
+        <pre>export const Colors = { ...darkPalette };
+let _activeTheme = 'dark';
+const _listeners = new Set();</pre>
+        <div class="explanation">
+          <strong>Singleton</strong> — אובייקט יחיד בכל הזיכרון. כל קובץ שמייבא <em>Colors</em> מקבל הפניה לאותו אובייקט.
+          Spread (<em>{ ...darkPalette }</em>) — יוצר עותק של ה-darkPalette ב-Colors.
+          <em>_listeners</em> — Set של callback functions שיקבלו הודעה בשינוי תמה.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">applyTheme</span>
+        <pre>export const applyTheme = (themeName) => {
+  const palette = PALETTES[themeName] || darkPalette;
+  Object.keys(Colors).forEach(k => delete Colors[k]);
+  Object.assign(Colors, palette);
+  _activeTheme = palette === lightPalette ? 'light' : 'dark';
+  _listeners.forEach(fn => fn(_activeTheme));
+};</pre>
+        <div class="explanation">
+          <strong>מנגנון חכם</strong>: במקום ליצור אובייקט חדש (שישבור import references), אנחנו:
+          1. מוחקים את כל המפתחות הישנים.
+          2. מכניסים את המפתחות החדשים.
+          כך כל קובץ שייבא <em>Colors</em> בעבר עדיין מצביע לאותו אובייקט — אבל עם ערכים חדשים!
+          לאחר העדכון — מודיע לכל המאזינים.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">Fonts ו-Spacing</span>
+        <pre>export const Fonts = {
+  titleSize: 28, subtitleSize: 18,
+  bodySize: 15, captionSize: 12,
+  bold: '700', semiBold: '600', regular: '400',
+};
+export const Spacing = {
+  xs: 4, sm: 8, md: 16,
+  lg: 24, xl: 32, xxl: 48,
+};</pre>
+        <div class="explanation">
+          <strong>Fonts</strong> — גדלי גופן וmשקלים. <em>bold: '700'</em> הוא string (כך React Native מצפה לfontWeight).
+          <strong>Spacing</strong> — ריווחים בpx. שמות xs/sm/md/lg/xl/xxl מאפשרים קוד קריא:
+          <em>paddingHorizontal: Spacing.md</em> ברור יותר מ-<em>paddingHorizontal: 16</em>.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="file-section" id="ThemeContext">
+    <div class="file-header">
+      <span class="file-icon">🌓</span>
+      <h3>src/theme/ThemeContext.js</h3>
+      <span class="file-desc">Context לניהול תמה עם שמירה קבועה</span>
+      <span class="tag context">Context</span>
+    </div>
+    <div class="file-body">
+      <div class="block">
+        <span class="lines">ThemeProvider</span>
+        <pre>export const ThemeProvider = ({ children }) => {
+  const [theme, setThemeState] = useState(getActiveTheme());
+
+  useEffect(() => {
+    (async () => {
+      const saved = await AsyncStorage.getItem(STORAGE_KEY);
+      if (saved === 'light' || saved === 'dark') {
+        applyTheme(saved);
+        setThemeState(saved);
+      }
+    })();
+  }, []);</pre>
+        <div class="explanation">
+          בעת עלייה — קורא את התמה השמורה מ-AsyncStorage.
+          <em>getActiveTheme()</em> נותן את הערך ה-in-memory הנוכחי (dark כברירת מחדל).
+          <em>async IIFE</em> (Immediately Invoked Function Expression) — פונקציה שקוראת לעצמה מיד, מאפשרת async בתוך useEffect.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">setTheme + שמירה</span>
+        <pre>const setTheme = useCallback(async (next) => {
+  const safe = next === 'light' ? 'light' : 'dark';
+  applyTheme(safe);
+  setThemeState(safe);
+  await AsyncStorage.setItem(STORAGE_KEY, safe);
+}, []);</pre>
+        <div class="explanation">
+          <em>useCallback</em> עם מערך תלויות ריק — פונקציה נוצרת פעם אחת בלבד.
+          <em>safe</em> — ולידציה: רק 'light' מקובל; כל שאר הערכים הופכים ל-'dark'.
+          3 פעולות: עדכון Colors singleton + עדכון state + שמירה קבועה.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">React.Fragment key trick</span>
+        <pre>&lt;React.Fragment key={theme}&gt;{children}&lt;/React.Fragment&gt;</pre>
+        <div class="explanation">
+          <strong>טריק מתוחכם</strong>: כש-<em>key</em> משתנה, React מפרק ומרכיב מחדש את כל הצאצאים.
+          זה מבטיח שמסכים שקראו Colors.background בזמן render (ולא דרך Context) יקבלו את הצבעים החדשים.
+          עלות: re-mount מלא — מקובל כי קורה רק בלחיצת המשתמש, לא אוטומטית.
+        </div>
+      </div>
+      <div class="block">
+        <span class="lines">useTheme Hook</span>
+        <pre>export const useTheme = () => useContext(ThemeContext);</pre>
+        <div class="explanation">
+          שורה אחת שמפשטת גישה: <em>const {'{'}theme, setTheme{'}'} = useTheme()</em> בכל קומפוננט.
+          ללא ה-Hook, כל קומפוננט היה צריך: <em>import ThemeContext; useContext(ThemeContext)</em>.
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+</main>
+
+<footer>
+  <p>TrainWise — תיעוד קוד מלא | נוצר אוטומטית | כל 34 קבצי JS/JSX | עברית</p>
+</footer>
+</body>
+</html>
