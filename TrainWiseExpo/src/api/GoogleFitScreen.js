@@ -11,6 +11,7 @@ import {
   Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useAuth } from './AuthContext';
 import { useHealthSync } from './HealthSyncContext';
@@ -19,6 +20,7 @@ import { calculateDailyLoad, getAllActivityTypes } from '../services/api';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { tombstoneWorkout, loadHcTombstones } from '../constants/hcTombstones';
+import { parseServerDate } from '../utils/serverDate';
 
 /**
  * GoogleFitScreen
@@ -242,7 +244,7 @@ const GoogleFitScreen = () => {
    */
   const formatTime = (isoString) => {
     try {
-      const date = new Date(isoString);
+      const date = parseServerDate(isoString);
       return date.toLocaleTimeString('en-US', {
         hour: 'numeric',
         minute: '2-digit',
@@ -261,7 +263,7 @@ const GoogleFitScreen = () => {
    */
   const formatDate = (isoString) => {
     try {
-      const date = new Date(isoString);
+      const date = parseServerDate(isoString);
       return date.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
@@ -470,7 +472,7 @@ const GoogleFitScreen = () => {
   );
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header Section */}
       <View style={styles.header}>
         <Text style={styles.title}>Health Connect</Text>
@@ -550,7 +552,7 @@ const GoogleFitScreen = () => {
         contentContainerStyle={styles.listContent}
         style={styles.list}
       />
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -567,8 +569,8 @@ const makeStyles = (Colors) => StyleSheet.create({
   header: {
     backgroundColor: Colors.cardBackground,
     paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
+    paddingTop: 8,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },

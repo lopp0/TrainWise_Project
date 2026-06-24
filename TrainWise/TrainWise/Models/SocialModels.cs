@@ -37,6 +37,7 @@ namespace TrainWise.BL.Models
         public double Longitude { get; set; }
         public DateTime? LastSeen { get; set; }
         public bool IsOnline { get; set; }
+        public bool ShareLiveLocation { get; set; }   // A-2: lat/lng are only non-null when this is true
         public double DistanceKm { get; set; }
     }
 
@@ -123,5 +124,11 @@ namespace TrainWise.BL.Models
     {
         public double Latitude { get; set; }
         public double Longitude { get; set; }
+    }
+
+    // A-2
+    public class ShareLocationRequest
+    {
+        public bool Share { get; set; }
     }
 }

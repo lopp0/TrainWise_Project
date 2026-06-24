@@ -73,7 +73,8 @@ namespace TrainWise.Controllers
                     InjuryTypeID = request.InjuryTypeID,
                     Date = request.Date,
                     Severity = request.Severity,
-                    Notes = request.Notes
+                    Notes = request.Notes,
+                    LinkedActivityLogID = request.LinkedActivityLogID
                 };
                 var id = _bl.Create(report);
                 report.InjuryID = id;

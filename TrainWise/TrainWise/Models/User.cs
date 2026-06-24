@@ -30,6 +30,20 @@
         public bool HealthDeclaration { get; set; }
         public bool ConfirmTerms { get; set; }
         public DateTime? TermConfirmationDate { get; set; }
+
+        // A-1: equipped cosmetics (client SHOP_ITEMS string ids), visible to others.
+        public string? EquippedBadge { get; set; }
+        public string? EquippedTitle { get; set; }
+        public string? EquippedFrame { get; set; }
+    }
+
+    // A-1: lightweight cosmetics projection for batch lookups in Connect.
+    public class UserCosmetics
+    {
+        public int UserID { get; set; }
+        public string? EquippedBadge { get; set; }
+        public string? EquippedTitle { get; set; }
+        public string? EquippedFrame { get; set; }
     }
 }
 

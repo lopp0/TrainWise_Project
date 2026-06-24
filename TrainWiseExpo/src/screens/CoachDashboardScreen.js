@@ -13,11 +13,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../api/AuthContext';
+import { useMessages } from '../api/MessagesContext';
 import {
   getCoachByUserId,
   getTraineesByCoach,
   disconnectCoachTrainee,
+  getActivityLogsByUser,
 } from '../services/api';
+import HomeHeader from '../components/HomeHeader';
+import { processCheckIn } from '../utils/checkInManager';
+import { computeACWR } from '../utils/acwr';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 
@@ -55,9 +60,11 @@ const ageFromBirthYear = (birthYear) => {
 
 const CoachDashboardScreen = ({ navigation }) => {
   const { userId, user } = useAuth();
+  const { unreadCount } = useMessages();
   const styles = useThemedStyles(makeStyles);
 
   const [coachId, setCoachId] = useState(null);
+  const [checkInState, setCheckInState] = useState({ streak: 0, coins: 0 });
   const [trainees, setTrainees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -76,7 +83,22 @@ const CoachDashboardScreen = ({ navigation }) => {
       setCoachId(cid);
 
       const res = await getTraineesByCoach(cid);
-      setTrainees(Array.isArray(res.data) ? res.data : []);
+      const base = Array.isArray(res.data) ? res.data : [];
+      // Recompute each trainee's AC ratio from their confirmed ActivityLogs with
+      // the same client-side formula the trainee sees, so the coach number
+      // matches the trainee's (the stored DailyLoad lacks the cold-start floor).
+      const withRatio = await Promise.all(
+        base.map(async (t) => {
+          try {
+            const logsRes = await getActivityLogsByUser(t.userID ?? t.UserID);
+            const acwr = computeACWR(logsRes.data, t.experienceLevel ?? t.ExperienceLevel);
+            return { ...t, aC_Ratio: acwr.ratio, AC_Ratio: acwr.ratio, loadLevel: acwr.level, LoadLevel: acwr.level };
+          } catch {
+            return t; // fall back to the server value on failure
+          }
+        })
+      );
+      setTrainees(withRatio);
     } catch (e) {
       const status = e.response?.status;
       if (status === 404) {
@@ -94,6 +116,9 @@ const CoachDashboardScreen = ({ navigation }) => {
   useFocusEffect(
     useCallback(() => {
       loadDashboard();
+      processCheckIn()
+        .then((r) => setCheckInState({ streak: r.streak, coins: r.coins }))
+        .catch(() => {});
     }, [loadDashboard])
   );
 
@@ -135,21 +160,23 @@ const CoachDashboardScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.safe}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Coach Dashboard</Text>
-          <Text style={styles.headerSubtitle}>
-            {user?.fullName ? `Coach ${user.fullName}` : 'Your trainees'}
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={styles.settingsBtn}
-          onPress={() => navigation.navigate('Settings')}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="settings-outline" size={24} color={Colors.primary} />
-        </TouchableOpacity>
+      {/* B-1 parity: same top bar as the trainee side so coaches can reach
+          Profile (and Log out), Settings, Shop, My Network, etc. */}
+      <HomeHeader
+        navigation={navigation}
+        selfId={userId}
+        profileImagePath={user?.profileImagePath}
+        fullName={user?.fullName}
+        streak={checkInState.streak}
+        coins={checkInState.coins}
+        unreadCount={unreadCount}
+        coachOnly
+      />
+      <View style={styles.titleRow}>
+        <Text style={styles.headerTitle}>Coach Dashboard</Text>
+        <Text style={styles.headerSubtitle}>
+          {user?.fullName ? `Coach ${user.fullName}` : 'Your trainees'}
+        </Text>
       </View>
 
       <ScrollView
@@ -284,6 +311,11 @@ const makeStyles = (C) =>
       paddingHorizontal: 16,
       paddingTop: 8,
       paddingBottom: 12,
+    },
+    titleRow: {
+      paddingHorizontal: 16,
+      paddingTop: 4,
+      paddingBottom: 10,
     },
     headerTitle: {
       color: C.primary,

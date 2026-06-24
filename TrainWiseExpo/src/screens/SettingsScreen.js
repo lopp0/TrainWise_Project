@@ -9,13 +9,16 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  Switch,
 } from 'react-native';
+import * as Location from 'expo-location';
 import {Colors, Fonts, Spacing} from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import ScreenHeader from '../components/ScreenHeader';
 import Card from '../components/Card';
 import PrimaryButton from '../components/PrimaryButton';
-import {getUserById, updateUser as updateUserApi, deleteUser as deleteUserApi} from '../services/api';
+import {getUserById, updateUser as updateUserApi, deleteUser as deleteUserApi, setShareLiveLocation} from '../services/api';
+import { getShareLocation, setShareLocationLocal } from '../utils/locationSharing';
 import { useAuth } from '../api/AuthContext';
 import { useTheme } from '../theme/ThemeContext';
 import {
@@ -23,6 +26,7 @@ import {
   getWeekStartDay,
   setWeekStartDay,
 } from '../constants/weekStart';
+import { resetOnboarding } from '../utils/onboardingManager';
 
 const SettingsScreen = ({navigation}) => {
   const { userId, updateUser: updateAuthUser, logout } = useAuth();
@@ -44,6 +48,7 @@ const SettingsScreen = ({navigation}) => {
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
   const [weekStart, setWeekStart] = useState(getWeekStartDay());
+  const [shareLocation, setShareLocation] = useState(false); // A-2
   // Server-managed fields the BL requires on update — kept hidden but echoed back.
   const [serverFields, setServerFields] = useState({
     activityLevel: 1,
@@ -54,7 +59,34 @@ const SettingsScreen = ({navigation}) => {
 
   useEffect(() => {
     loadUser();
+    getShareLocation().then(setShareLocation);
   }, []);
+
+  // A-2: toggle live-location sharing (double opt-in with an explainer).
+  const toggleShareLocation = (value) => {
+    if (value) {
+      Alert.alert(
+        'Share live location?',
+        'Other TrainWise users on the Connect map will see your pin while you have the app open. You can turn this off anytime.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Share',
+            onPress: async () => {
+              try { await Location.requestForegroundPermissionsAsync(); } catch {}
+              setShareLocation(true);
+              await setShareLocationLocal(true);
+              setShareLiveLocation(userId, true).catch(() => {});
+            },
+          },
+        ]
+      );
+    } else {
+      setShareLocation(false);
+      setShareLocationLocal(false);
+      setShareLiveLocation(userId, false).catch(() => {});
+    }
+  };
 
   const loadUser = async () => {
     setLoading(true);
@@ -81,6 +113,25 @@ const SettingsScreen = ({navigation}) => {
   };
 
   const handleSave = async () => {
+    // Validate personal info the same way signup does, so impossible values
+    // (e.g. 400 cm / 500 kg) can't be saved (item 8).
+    const h = parseInt(height, 10);
+    const w = parseInt(weight, 10);
+    const by = parseInt(birthYear, 10);
+    const age = by ? new Date().getFullYear() - by : null;
+    if (height && (isNaN(h) || h < 120 || h > 250)) {
+      Alert.alert('Invalid height', 'Height must be between 120 and 250 cm.');
+      return;
+    }
+    if (weight && (isNaN(w) || w < 30 || w > 300)) {
+      Alert.alert('Invalid weight', 'Weight must be between 30 and 300 kg.');
+      return;
+    }
+    if (birthYear && (isNaN(by) || age == null || age < 13 || age > 100)) {
+      Alert.alert('Invalid birth year', 'Please enter a realistic birth year (age 13–100).');
+      return;
+    }
+
     setSaving(true);
     try {
       // Backend Update validates the full DTO (ActivityLevel/ExperienceLevel
@@ -221,6 +272,7 @@ const SettingsScreen = ({navigation}) => {
             value={birthYear}
             onChangeText={setBirthYear}
             keyboardType="numeric"
+            maxLength={4}
             placeholderTextColor={Colors.textMuted}
           />
           <Text style={styles.label}>Gender</Text>
@@ -243,6 +295,7 @@ const SettingsScreen = ({navigation}) => {
                 value={height}
                 onChangeText={setHeight}
                 keyboardType="numeric"
+                maxLength={3}
                 placeholderTextColor={Colors.textMuted}
               />
             </View>
@@ -253,6 +306,7 @@ const SettingsScreen = ({navigation}) => {
                 value={weight}
                 onChangeText={setWeight}
                 keyboardType="numeric"
+                maxLength={3}
                 placeholderTextColor={Colors.textMuted}
               />
             </View>
@@ -308,6 +362,25 @@ const SettingsScreen = ({navigation}) => {
           </Text>
         </Card>
 
+        {/* Privacy — live location sharing (A-2) */}
+        <Card>
+          <Text style={styles.cardTitle}>Privacy</Text>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={styles.switchLabel}>Share my live location</Text>
+              <Text style={styles.hint}>
+                Show my pin on the Connect map while the app is open. Default off.
+              </Text>
+            </View>
+            <Switch
+              value={shareLocation}
+              onValueChange={toggleShareLocation}
+              trackColor={{ false: Colors.border, true: Colors.primary }}
+              thumbColor="#fff"
+            />
+          </View>
+        </Card>
+
         {/* Privacy + Terms */}
         <Card>
           <Text style={styles.cardTitle}>Legal</Text>
@@ -345,6 +418,17 @@ const SettingsScreen = ({navigation}) => {
             <Text style={styles.linkArrow}>{'>'}</Text>
           </TouchableOpacity>
         </Card>
+
+        {/* Replay the first-launch tutorial without reinstalling. */}
+        <TouchableOpacity
+          style={styles.resetOnboardingBtn}
+          onPress={async () => {
+            await resetOnboarding();
+            Alert.alert('Done', 'Onboarding will show again on next app open.');
+          }}
+        >
+          <Text style={styles.resetOnboardingText}>🔄 Reset Tutorial</Text>
+        </TouchableOpacity>
 
         {/* Danger zone — separated visually so a stray tap on Save Changes
             can never land on the destructive action. Confirmation lives
@@ -576,6 +660,15 @@ const makeStyles = (Colors) => StyleSheet.create({
     color: Colors.textPrimary,
     fontSize: Fonts.bodySize,
     fontWeight: Fonts.semiBold,
+  },
+  resetOnboardingBtn: {
+    marginTop: 32,
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  resetOnboardingText: {
+    color: Colors.textMuted,
+    fontSize: 13,
   },
   bottomActions: {
     paddingVertical: Spacing.md,

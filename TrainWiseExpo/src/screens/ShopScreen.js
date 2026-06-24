@@ -22,6 +22,8 @@ import {
   unequipItem,
 } from '../utils/shopManager';
 import { getCheckInState, grantCoins } from '../utils/checkInManager';
+import { useAuth } from '../api/AuthContext';
+import { updateEquipped } from '../services/api';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 
@@ -44,6 +46,7 @@ const TYPE_LABEL = {
 
 const ShopScreen = ({ navigation }) => {
   const styles = useThemedStyles(makeStyles);
+  const { userId } = useAuth();
   const [tab, setTab] = useState('shop');
   const [coins, setCoins] = useState(0);
   const [owned, setOwned] = useState([]);
@@ -67,6 +70,26 @@ const ShopScreen = ({ navigation }) => {
     setOwned(ownedList);
     setEquipped({ badge, title, chart_theme: theme, avatar_frame: frame });
   }, []);
+
+  // A-1: push the equipped badge/title/frame to the server so OTHER users see
+  // them in Connect. (chart_theme is local-only and not synced.)
+  const syncCosmetics = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const [badge, title, frame] = await Promise.all([
+        getEquippedBadge(),
+        getEquippedTitle(),
+        getEquippedAvatarFrame(),
+      ]);
+      await updateEquipped(userId, {
+        equippedBadge: badge,
+        equippedTitle: title,
+        equippedFrame: frame,
+      });
+    } catch {
+      // best-effort; the local equip still applies
+    }
+  }, [userId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -98,11 +121,13 @@ const ShopScreen = ({ navigation }) => {
   const handleEquip = async (item) => {
     await equipItem(item.id);
     await refresh();
+    syncCosmetics();
   };
 
   const handleUnequip = async (item) => {
     await unequipItem(item.id);
     await refresh();
+    syncCosmetics();
   };
 
   const isItemOwned = (id) => owned.includes(id);

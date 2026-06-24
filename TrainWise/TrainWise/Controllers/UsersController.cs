@@ -172,6 +172,58 @@ namespace TrainWise.Controllers
             return Ok(new { path = "/" + relativePath });
         }
 
+        // A-1: set the user's equipped cosmetics (badge / title / frame).
+        [HttpPut("{id}/equip")]
+        public IActionResult Equip(int id, [FromBody] EquipRequest request)
+        {
+            try
+            {
+                _bl.UpdateEquipped(id, request.EquippedBadge, request.EquippedTitle, request.EquippedFrame);
+                return Ok("Equipped");
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+
+        // A-1: batch cosmetics lookup. e.g. /api/users/cosmetics?ids=1,2,3
+        [HttpGet("cosmetics")]
+        public IActionResult GetCosmetics([FromQuery] string ids)
+        {
+            try
+            {
+                return Ok(_bl.GetCosmetics(ids));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+
+        // Item 12 — register/clear this user's Expo push token for remote push.
+        [HttpPut("{id}/pushtoken")]
+        public IActionResult SetPushToken(int id, [FromBody] PushTokenRequest request)
+        {
+            try
+            {
+                _bl.SetPushToken(id, request?.Token);
+                return Ok(new { ok = true });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+
         [HttpGet("{id}/summary")]
         public IActionResult GetSummary(int id)
         {
@@ -243,6 +295,18 @@ namespace TrainWise.Controllers
         public string GoogleId { get; set; }
         public string Email { get; set; }
         public string? FullName { get; set; }
+    }
+
+    public class EquipRequest
+    {
+        public string? EquippedBadge { get; set; }
+        public string? EquippedTitle { get; set; }
+        public string? EquippedFrame { get; set; }
+    }
+
+    public class PushTokenRequest
+    {
+        public string? Token { get; set; }
     }
 
 }

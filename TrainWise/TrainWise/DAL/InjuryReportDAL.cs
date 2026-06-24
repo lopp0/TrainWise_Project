@@ -17,7 +17,8 @@ namespace TrainWise.DAL
                     {"@Date", ir.Date},
                     {"@Severity", ir.Severity},
                     {"@Notes", ir.Notes},
-                    {"@IsActiveInjury", ir.IsActiveInjury}
+                    {"@IsActiveInjury", ir.IsActiveInjury},
+                    {"@LinkedActivityLogID", (object?)ir.LinkedActivityLogID ?? DBNull.Value}
                 };
 
                 using (SqlCommand cmd = CreateCommandWithStoredProcedure("sp_InsertInjuryReport", con, param))
@@ -80,8 +81,22 @@ namespace TrainWise.DAL
                 Date = (DateTime)reader["Date"],
                 Severity = (int)reader["Severity"],
                 Notes = reader["Notes"].ToString(),
-                IsActiveInjury = reader["IsActiveInjury"] as bool? ?? false
+                IsActiveInjury = reader["IsActiveInjury"] as bool? ?? false,
+                // Defensive: the Get procs may not SELECT this column yet.
+                LinkedActivityLogID = HasColumn(reader, "LinkedActivityLogID") && reader["LinkedActivityLogID"] != DBNull.Value
+                    ? Convert.ToInt32(reader["LinkedActivityLogID"])
+                    : (int?)null
             };
+        }
+
+        private static bool HasColumn(SqlDataReader reader, string columnName)
+        {
+            for (int i = 0; i < reader.FieldCount; i++)
+            {
+                if (string.Equals(reader.GetName(i), columnName, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
         }
     }
 }

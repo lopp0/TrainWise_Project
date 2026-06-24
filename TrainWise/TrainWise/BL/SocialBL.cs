@@ -24,6 +24,13 @@ namespace TrainWise.BL
             _dal.UpdateLocation(userId, lat, lng);
         }
 
+        // A-2: set live-location sharing opt-in.
+        public void SetShareLiveLocation(int userId, bool share)
+        {
+            if (userId <= 0) throw new ArgumentException("UserID must be positive");
+            _dal.SetShareLiveLocation(userId, share);
+        }
+
         // ── nearby / profile ─────────────────────────────────────────────
         public List<NearbyUser> GetNearbyUsers(int userId, double lat, double lng, double radiusKm)
         {

@@ -130,6 +130,25 @@ namespace TrainWise.BL
         }
 
 
+        // A-1: persist equipped cosmetics; GetCosmetics for a batch of users.
+        public void UpdateEquipped(int userId, string? badge, string? title, string? frame)
+        {
+            if (userId <= 0) throw new ArgumentException("UserID must be positive");
+            _dal.UpdateEquippedItems(userId, badge, title, frame);
+        }
+
+        // Item 12 — save the device's Expo push token (for remote push).
+        public void SetPushToken(int userId, string? token)
+        {
+            if (userId <= 0) throw new ArgumentException("UserID must be positive");
+            _dal.SetPushToken(userId, token);
+        }
+
+        public List<UserCosmetics> GetCosmetics(string idsCsv)
+        {
+            return _dal.GetCosmeticsForUsers(idsCsv);
+        }
+
         public void UpdateBaseline(int userId, short dailyLoad, short weeklyLoad)
         {
             if (userId <= 0)

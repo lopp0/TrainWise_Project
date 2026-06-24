@@ -1,14 +1,13 @@
 import axios from 'axios';
 
-// Local backend on the PC LAN IP. MUST stay in sync with src/api/api.js —
+// Azure-hosted backend (C# API + SQL). MUST stay in sync with src/api/api.js —
 // if these two differ, half the app (login/profile) works while the other
 // half (coach, QR connect, upload, chat) fails with "Network Error".
-// The PC's DHCP lease can shift this IP; verify with `ipconfig | findstr IPv4`.
-// USB / adb-reverse mode — MUST match src/api/api.js. The phone's
-// 127.0.0.1:5249 is forwarded to the PC via `adb reverse tcp:5249 tcp:5249`,
-// so this works on any network (incl. school WiFi that blocks device-to-device
-// traffic). Requires USB + adb reverse re-run after each reconnect.
-const API_BASE_URL = 'http://192.168.1.119:5249/api'; // Home LAN (wireless) — MUST match src/api/api.js. USB-anywhere alt: http://127.0.0.1:5249/api + adb reverse.
+// Reachable from anywhere over HTTPS, so no LAN IP / adb-reverse is needed.
+// NOTE: the Python ML service (mlApi.js, port 8000) is separate and still local.
+// Local alternatives if running the backend on the PC again:
+//   LAN: http://<PC-IP>:5249/api    USB: http://127.0.0.1:5249/api (+ adb reverse tcp:5249 tcp:5249)
+const API_BASE_URL = 'https://trainwise01-api-djcfcvcedth8hjgp.israelcentral-01.azurewebsites.net/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -139,6 +138,51 @@ export const getActiveInjuriesByUser = (userId) =>
 export const markInjuryRecovered = (injuryId) =>
   api.put(`/injuryreport/${injuryId}/recover`);
 
+// ==================== RECORDS / BADGES (A-5) ====================
+export const getRecords = (userId) => api.get(`/records/${userId}`);
+// Re-evaluates records/badges after a workout; returns { records, badges, newBadges }.
+export const checkRecords = (userId) => api.post(`/records/check/${userId}`);
+
+// ==================== COSMETICS (A-1) ====================
+// Persist the user's equipped cosmetics so others see them in Connect.
+export const updateEquipped = (
+  userId,
+  { equippedBadge = null, equippedTitle = null, equippedFrame = null } = {}
+) => api.put(`/users/${userId}/equip`, { equippedBadge, equippedTitle, equippedFrame });
+
+// Batch cosmetics for a list/CSV of user ids.
+export const getCosmeticsForUsers = (ids) =>
+  api.get('/users/cosmetics', { params: { ids: Array.isArray(ids) ? ids.join(',') : ids } });
+
+// ==================== PUSH (item 12) ====================
+// Register the device's Expo push token so the server can notify even when the
+// app is closed (chat messages, coach-planned workouts).
+export const savePushToken = (userId, token) =>
+  api.put(`/users/${userId}/pushtoken`, { token });
+
+// ==================== WORKOUT BOARD + LEADERBOARD (A-3) ====================
+export const getBoardFeed = (viewerId, { country = 'IL', page = 0, limit = 20 } = {}) =>
+  api.get('/board', { params: { viewerId, country, page, limit } });
+export const createBoardPost = (data) => api.post('/board', data);
+export const deleteBoardPost = (postId, userId) =>
+  api.delete(`/board/${postId}`, { params: { userId } });
+export const toggleBoardLike = (postId, userId) =>
+  api.post(`/board/${postId}/like/${userId}`, {});
+export const getLeaderboard = ({ country = 'IL', metric = 'load_weekly', limit = 50 } = {}) =>
+  api.get('/board/leaderboard', { params: { country, metric, limit } });
+export const setLeaderboardOptIn = (userId, on) =>
+  api.put(`/board/leaderboard/optin/${userId}`, null, { params: { on } });
+
+// ==================== TRAINING CALENDAR (A-4) ====================
+// from/to are 'YYYY-MM-DD' strings.
+export const getCalendar = (userId, from, to) =>
+  api.get(`/calendar/${userId}`, { params: { from, to } });
+export const createPlannedWorkout = (userId, data) => api.post(`/calendar/${userId}`, data);
+export const updatePlannedWorkout = (planId, data) => api.put(`/calendar/${planId}`, data);
+export const deletePlannedWorkout = (planId) => api.delete(`/calendar/${planId}`);
+export const completePlannedWorkout = (planId, linkedLogId) =>
+  api.put(`/calendar/${planId}/complete`, null, { params: linkedLogId ? { linkedLogId } : {} });
+
 // ==================== COACH ====================
 // Resolve the logged-in user's coach profile (CoachID != UserID).
 export const getCoachByUserId = (userId) =>
@@ -260,6 +304,10 @@ export const heartbeat = (userId) =>
 // Push the user's current GPS so they appear on others' Connect maps.
 export const updateMyLocation = (userId, latitude, longitude) =>
   api.put(`/social/location/${userId}`, { latitude, longitude });
+
+// A-2: opt in/out of sharing live location on the Connect map.
+export const setShareLiveLocation = (userId, share) =>
+  api.put(`/social/sharelocation/${userId}`, { share });
 
 // Users near a point (gyms + people are anchored to real coords). Excludes self.
 export const getNearbyUsers = (userId, lat, lng, radiusKm = 25) =>

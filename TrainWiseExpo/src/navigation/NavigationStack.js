@@ -3,6 +3,7 @@ import { View, ActivityIndicator } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../api/AuthContext';
 import { HealthSyncProvider, useHealthSync } from '../api/HealthSyncContext';
 import { MessagesProvider } from '../api/MessagesContext';
@@ -17,6 +18,7 @@ import SignUpScreen from '../screens/SignUpScreen';
 import SignUpFinal from '../screens/SignUpFinal';
 import HomeRouter from '../screens/HomeRouter';
 import CoachTraineeDetailScreen from '../screens/CoachTraineeDetailScreen';
+import CoachTraineeAnalyticsScreen from '../screens/CoachTraineeAnalyticsScreen';
 import StatsScreen from '../screens/StatsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import WarningsDashboardScreen from '../screens/WarningsDashboardScreen';
@@ -33,6 +35,10 @@ import ChatScreen from '../screens/ChatScreen';
 import MyCoachScreen from '../screens/MyCoachScreen';
 import ConnectScreen from '../screens/ConnectScreen';
 import RequestsScreen from '../screens/RequestsScreen';
+import PersonalRecordsScreen from '../screens/PersonalRecordsScreen';
+import WorkoutBoardScreen from '../screens/WorkoutBoardScreen';
+import LeaderboardScreen from '../screens/LeaderboardScreen';
+import TrainingCalendarScreen from '../screens/TrainingCalendarScreen';
 
 
 
@@ -64,6 +70,7 @@ const HomeStack = () => {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="HomeMain" component={HomeRouter} />
       <Stack.Screen name="CoachTraineeDetail" component={CoachTraineeDetailScreen} />
+      <Stack.Screen name="CoachTraineeAnalytics" component={CoachTraineeAnalyticsScreen} />
       <Stack.Screen name="Stats" component={StatsScreen} />
       <Stack.Screen name="Warnings" component={WarningsDashboardScreen} />
       <Stack.Screen name="AddWorkout" component={AddWorkoutScreen} />
@@ -77,6 +84,11 @@ const HomeStack = () => {
       <Stack.Screen name="AIChat" component={AIChatScreen} />
       <Stack.Screen name="Chat" component={ChatScreen} />
       <Stack.Screen name="MyNetwork" component={MyCoachScreen} />
+      {/* B-1: Profile tab was removed; Profile is now reached by tapping the
+          avatar in HomeHeader, pushed onto the Home stack. */}
+      <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="PersonalRecords" component={PersonalRecordsScreen} />
+      <Stack.Screen name="TrainingCalendar" component={TrainingCalendarScreen} />
     </Stack.Navigator>
   );
 };
@@ -90,14 +102,8 @@ const ConnectStack = () => {
       <Stack.Screen name="Requests" component={RequestsScreen} />
       <Stack.Screen name="MyNetwork" component={MyCoachScreen} />
       <Stack.Screen name="Chat" component={ChatScreen} />
-    </Stack.Navigator>
-  );
-};
-
-const ProfileStack = () => {
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="ProfileMain" component={ProfileScreen} />
+      <Stack.Screen name="WorkoutBoard" component={WorkoutBoardScreen} />
+      <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
     </Stack.Navigator>
   );
 };
@@ -105,6 +111,11 @@ const ProfileStack = () => {
 const AppTabs = () => {
   const { unconfirmedCount } = useHealthSync();
   const { pendingTotal } = useSocial();
+  // Bottom inset for the system navigation bar. In 3-button ("Touches") mode
+  // the system bar is tall and would otherwise sit ON TOP of the tab buttons,
+  // stealing taps; gesture mode reports a small inset. Either way we lift the
+  // tab bar above it.
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   // Coach-only users (isCoach && !isTrainee) don't track their own
   // workouts — they observe trainees. Hide the Health tab so it can't
@@ -120,12 +131,12 @@ const AppTabs = () => {
           let iconName;
           if (route.name === 'HomeTab') {
             iconName = focused ? 'home' : 'home-outline';
+          } else if (route.name === 'LoadTab') {
+            iconName = focused ? 'bar-chart' : 'bar-chart-outline';
           } else if (route.name === 'HealthTab') {
             iconName = focused ? 'fitness' : 'fitness-outline';
           } else if (route.name === 'ConnectTab') {
             iconName = focused ? 'people' : 'people-outline';
-          } else if (route.name === 'ProfileTab') {
-            iconName = focused ? 'person' : 'person-outline';
           }
           return <Ionicons name={iconName} size={size} color={color} />;
         },
@@ -135,12 +146,23 @@ const AppTabs = () => {
           backgroundColor: Colors.cardBackground,
           borderTopWidth: 1,
           borderTopColor: Colors.border,
-          paddingBottom: 5,
+          // Add the system nav-bar inset so the tabs clear the Android
+          // back/home/recents buttons (3-button mode) and the gesture pill.
+          paddingBottom: insets.bottom + 5,
           paddingTop: 5,
-          height: 60,
+          height: 60 + insets.bottom,
         },
       })}>
       <Tab.Screen name="HomeTab" component={HomeStack} options={{ title: 'Home' }} />
+      {/* B-1: second tab is the training-load (Warnings) screen, labeled "Load".
+          Hidden for coach-only users (they don't track their own load). */}
+      {!isCoachOnly && (
+        <Tab.Screen
+          name="LoadTab"
+          component={WarningsDashboardScreen}
+          options={{ title: 'Load' }}
+        />
+      )}
       {!isCoachOnly && (
         <Tab.Screen
           name="HealthTab"
@@ -179,7 +201,6 @@ const AppTabs = () => {
           },
         }}
       />
-      <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Profile' }} />
     </Tab.Navigator>
   );
 };

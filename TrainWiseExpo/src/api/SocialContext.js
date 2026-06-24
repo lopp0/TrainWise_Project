@@ -1,9 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { AppState } from 'react-native';
+import * as Location from 'expo-location';
 import { useAuth } from './AuthContext';
 import { sendLocalNotification } from './NotificationService';
+import { getShareLocation } from '../utils/locationSharing';
 import {
   heartbeat,
+  updateMyLocation,
   getFriends,
   getFriendRequests,
   getCoachOffersForTrainee,
@@ -107,8 +110,19 @@ export const SocialProvider = ({ children }) => {
     if (!userId) return;
     let alive = true;
 
-    const ping = () => {
-      if (AppState.currentState === 'active') heartbeat(userId).catch(() => {});
+    const ping = async () => {
+      if (AppState.currentState !== 'active') return;
+      heartbeat(userId).catch(() => {});
+      // A-2: when the user opted in, push live GPS so they appear on the map.
+      try {
+        if (await getShareLocation()) {
+          let pos = await Location.getLastKnownPositionAsync();
+          if (!pos) pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          if (pos?.coords) {
+            updateMyLocation(userId, pos.coords.latitude, pos.coords.longitude).catch(() => {});
+          }
+        }
+      } catch {}
     };
 
     ping();

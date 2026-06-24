@@ -6,12 +6,13 @@ import axios from 'axios';
  */
 
 // API Configuration
-// USB / adb-reverse mode: the phone's 127.0.0.1:5249 is forwarded to the PC
-// by `adb reverse tcp:5249 tcp:5249`. Works on ANY network (even school WiFi
-// with client isolation) because traffic goes over the USB cable, not WiFi.
-// Requires the phone plugged in + adb reverse run after each reconnect.
-// For wireless LAN instead, set this to http://<PC-IP>:5249/api (sync both files).
-const BASE_URL = 'http://192.168.1.119:5249/api'; // Home LAN (wireless). For USB-anywhere, use http://127.0.0.1:5249/api + `adb reverse tcp:5249 tcp:5249`. Keep in sync with services/api.js.
+// Azure-hosted backend (C# API + SQL). Works from anywhere over HTTPS, so no
+// LAN IP / adb-reverse juggling is needed for the API any more. Keep in sync
+// with services/api.js. NOTE: the Python ML service (services/mlApi.js, port
+// 8000) is NOT on Azure; it still runs locally.
+// Local alternatives if you ever run the backend on the PC again:
+//   LAN:  http://<PC-IP>:5249/api      USB:  http://127.0.0.1:5249/api (+ adb reverse tcp:5249 tcp:5249)
+const BASE_URL = 'https://trainwise01-api-djcfcvcedth8hjgp.israelcentral-01.azurewebsites.net/api';
 const API_TIMEOUT = 30000; // 30 seconds
 
 // Create axios instance with default config
@@ -159,8 +160,15 @@ export const deleteActivityLog = async (activityLogId) => {
   try {
     await apiClient.delete(`/ActivityLog/${activityLogId}`);
   } catch (error) {
-    console.error('Error deleting activity log:', error);
-    throw new Error('Failed to delete activity log');
+    console.error('Error deleting activity log:', error?.response?.data || error.message);
+    // Surface the REAL backend reason (e.g. a SQL/constraint message) instead of
+    // a generic string, so the failure is diagnosable on-device.
+    const detail =
+      error?.response?.data ||
+      (error?.response?.status ? `Server error ${error.response.status}` : null) ||
+      error?.message ||
+      'Failed to delete activity log';
+    throw new Error(typeof detail === 'string' ? detail : 'Failed to delete activity log');
   }
 };
 

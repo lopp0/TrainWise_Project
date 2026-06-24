@@ -9,7 +9,7 @@ import React, {
 import { AppState } from 'react-native';
 import { useAuth } from './AuthContext';
 import { getUnreadMessageCount } from '../services/api';
-import { sendLocalNotification } from './NotificationService';
+import { sendLocalNotification, registerForPushToken } from './NotificationService';
 
 /**
  * MessagesContext
@@ -60,6 +60,9 @@ export const MessagesProvider = ({ children }) => {
       setUnreadCount(0);
       return undefined;
     }
+    // Register this device for remote push (item 12) once we know who's signed
+    // in. Safe no-op on builds without FCM.
+    registerForPushToken(userId);
     refreshUnread();
     const id = setInterval(refreshUnread, POLL_MS);
     const sub = AppState.addEventListener('change', (s) => {

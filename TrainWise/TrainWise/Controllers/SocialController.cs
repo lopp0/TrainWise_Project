@@ -34,6 +34,19 @@ namespace TrainWise.Controllers
             catch (Exception ex) { return StatusCode(500, ex.Message); }
         }
 
+        // PUT /api/social/sharelocation/{userId}  body { share }
+        [HttpPut("sharelocation/{userId}")]
+        public IActionResult SetShareLocation(int userId, [FromBody] ShareLocationRequest body)
+        {
+            try
+            {
+                _bl.SetShareLiveLocation(userId, body?.Share ?? false);
+                return Ok(new { ok = true });
+            }
+            catch (ArgumentException ex) { return BadRequest(ex.Message); }
+            catch (Exception ex) { return StatusCode(500, ex.Message); }
+        }
+
         // ── nearby / profile ─────────────────────────────────────────────
         // GET /api/social/nearby/{userId}?lat=&lng=&radiusKm=
         [HttpGet("nearby/{userId}")]

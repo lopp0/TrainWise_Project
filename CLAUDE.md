@@ -11,7 +11,9 @@ Two cooperating projects in one folder, no shared root package manager:
 
 ## Backend deployment modes
 
-The project supports **two backend modes**. Switching between them is a config change, not a code change. As of 2026-06-06 the project is in **Local LAN mode** because the Azure subscription was disabled when the student credit ran out — Azure mode stays fully documented below in case the subscription is reactivated or migrated.
+The project supports **two backend modes**. Switching between them is a config change, not a code change. **As of 2026-06-16 the project is back in Azure mode** — the C# API + SQL were re-published to a NEW Azure resource: `https://trainwise01-api-djcfcvcedth8hjgp.israelcentral-01.azurewebsites.net` (Cloud project `test01-496711`). Both axios `BASE_URL`s now point at `…azurewebsites.net/api`. The older documented Azure URL (`trainwise-api-fuaahua…`) and the Local-LAN section below are kept for reference / fallback.
+
+> **The Python ML service is NOT on Azure** — it still runs locally (`ml/app.py`, port 8000; [src/services/mlApi.js](TrainWiseExpo/src/services/mlApi.js) carries the PC's LAN IP). So with the C# backend on Azure, login/workouts/chat/coach work from anywhere, but the **coach Analytics/forecast screen only works when the local Python service is running and the phone is on the same WiFi** (else it shows the "analytics offline" fallback). To make the forecast cloud-side, deploy `ml/app.py` to Azure App Service F1 (free) and rewire `ml/db.py` from pyodbc+Windows-auth to **pymssql + Azure SQL (SQL auth)** — not done yet.
 
 ### Mode A — Azure App Service (the original / preferred long-term setup)
 
@@ -43,13 +45,13 @@ Backend runs in VS 2022 on the user's PC, SQL on the same PC's SQL Express, phon
 ```
 const BASE_URL = 'http://<PC-LAN-IP>:5249/api';
 ```
-Currently: `http://192.168.1.119:5249/api` (the PC's DHCP-assigned IP at the time of writing — see "PC's IP changes" gotcha below).
+Currently: `http://192.168.1.117:5249/api` (the PC's DHCP-assigned IP; it shifted .119 -> .117 on 2026-06-13 — see "PC's IP changes" gotcha below. The ML service in [src/services/mlApi.js](TrainWiseExpo/src/services/mlApi.js) carries the same IP on port 8000 and must be kept in sync too).
 
 **Backend `appsettings.json` connection string**:
 ```
 Data Source=Lirone\SQLEXPRESS;Initial Catalog=TrainWise;Integrated Security=True;Encrypt=False
 ```
-The database name is `TrainWise`, not `TrainWiseDB` — local SQL Express was set up with the shorter name. The migrations that ran on Azure SQL also need to run on the local DB; the up-to-date schema as of 2026-06-08 includes the `IsTrainee` column (2026-06-02 migration), the `Messages` table (2026-06-04 migration), `Messages.ImagePath` for image chat (2026-06-07 migration), the **social layer** (`Friendships`, `Gyms`, `GymCoaches`, `CoachOffers` tables + `Users.LastSeen` / `Latitude` / `Longitude` columns, 2026-06-08 migration), and the `sp_InsertUser` / `sp_LoginUser` proc updates. **Run order on a fresh DB**: `TWDB.sql` (schema+procs) → `2026-06-02_add_is_trainee.sql` → `2026-06-04_add_messages.sql` → `2026-06-07_add_message_image.sql` → `seed_reference_data.sql` → `2026-06-08_add_social.sql` (depends on reference data + ActivityTypes for its fake-user seed). Scripts at `c:\Dev\TrainWise\sql\`.
+The database name is `TrainWise`, not `TrainWiseDB` — local SQL Express was set up with the shorter name. The migrations that ran on Azure SQL also need to run on the local DB; the up-to-date schema as of 2026-06-08 includes the `IsTrainee` column (2026-06-02 migration), the `Messages` table (2026-06-04 migration), `Messages.ImagePath` for image chat (2026-06-07 migration), the **social layer** (`Friendships`, `Gyms`, `GymCoaches`, `CoachOffers` tables + `Users.LastSeen` / `Latitude` / `Longitude` columns, 2026-06-08 migration), and the `sp_InsertUser` / `sp_LoginUser` proc updates. **Run order on a fresh DB**: `TWDB.sql` (schema+procs) → `2026-06-02_add_is_trainee.sql` → `2026-06-04_add_messages.sql` → `2026-06-07_add_message_image.sql` → `seed_reference_data.sql` → `2026-06-08_add_social.sql` (depends on reference data + ActivityTypes for its fake-user seed) → `2026-06-12_add_forecasts.sql` (the `MonthlyForecasts` table for the coach forecast; no dependencies). Scripts at `c:\Dev\TrainWise\sql\`.
 
 ### Reference / seed data (must run on any fresh DB)
 
@@ -408,6 +410,56 @@ Daily reminder content can't be mutated after scheduling, so the re-schedule-on-
 
 - `expo-image-picker` SDK 54 **removed `MediaTypeOptions`**. Only the array form works: `mediaTypes: ['images']`. Grep the project before adding new pickers.
 - `expo-camera` 17 exposes `scanFromURLAsync` as a **module-level export**, not a static on `CameraView`. Import it: `import { CameraView, scanFromURLAsync, useCameraPermissions } from 'expo-camera'`.
+
+## Coach analytics + ML forecast service (Python)
+
+Added 2026-06-12. A **separate Python (Flask) microservice** at [ml/](ml/) powers the coach
+analytics screen. It is the project's ML/Data-Science deliverable (built with the same
+libraries as `Python Course ML/`: pandas, scikit-learn, matplotlib/seaborn) and implements
+the spec in `Python Course ML/TrainWise_Smart_Injury_Prevention.pdf` (Task 1 Regression =
+forecast, Task 2 Classification = risk). **The C# backend is untouched** — the RN coach
+screen calls the Python service directly over the LAN.
+
+- **Service** ([ml/app.py](ml/app.py)) binds `0.0.0.0:8000`, reads the same SQL Express DB
+  (`Lirone\SQLEXPRESS` / `TrainWise`) via `pyodbc` with Windows Integrated Security (no
+  password in source), and mirrors the C# load formula exactly ([ml/features.py](ml/features.py):
+  acute = 7-day load sum, chronic = 28-day sum / 4, AC thresholds 0.8 / 1.3 — recomputed from
+  `ActivityLogs`, NOT the stored `DailyLoad` rows, so charts never go stale). Endpoints:
+  `GET /health`, `/api/ml/trainee/<id>/pmc`, `/acwr`, `/forecast[?month=YYYY-MM]`,
+  `/forecast/history`.
+- **Forecast** ([ml/forecast.py](ml/forecast.py)): per-trainee regression on the current
+  month's completed weekly loads (naive carry for week 1, `LinearRegression` at 2 weeks,
+  `PolynomialFeatures(2)` upgrade at 3+ if it clearly fits better), projecting remaining weeks
+  → projected acute load + AC ratio + Safe/Warning/High risk. **Refines weekly, resets each
+  month** (keyed by `MonthKey`), and **every current-month call appends a snapshot to
+  `MonthlyForecasts`** so past months stay viewable read-only. A **global model** trained in
+  the notebook (`ml/models/forecast_model.pkl`) is loaded when present and returned alongside;
+  the service works without it.
+- **Risk** ([ml/risk.py](ml/risk.py)): loads `ml/models/risk_model.pkl` (classification), with
+  a rule-based fallback (AC>1.3 High, ≥0.8 Warning, else Safe) when the pickle is absent.
+- **Notebook** ([ml/notebook/TrainWise_Coach_Analytics.ipynb](ml/notebook/TrainWise_Coach_Analytics.ipynb)):
+  the gradeable writeup (cleaning per PDF slide 7, regression MAE/MSE/RMSE, classification
+  Accuracy/Precision/Recall/F1 + ROC/AUC, KMeans clustering, matplotlib/seaborn PMC + ACWR).
+  Real data is thin, so it includes a documented **synthetic generator** to train the global
+  models; its final cells export the two pickles into `ml/models/`. The **live per-trainee
+  forecast does not depend on the synthetic data.**
+- **DB**: `MonthlyForecasts` table created by [sql/2026-06-12_add_forecasts.sql](sql/2026-06-12_add_forecasts.sql)
+  (idempotent; the Python service writes rows directly — no stored procs).
+- **Frontend**: [src/services/mlApi.js](TrainWiseExpo/src/services/mlApi.js) (axios client,
+  `ML_BASE_URL = http://<PC-IP>:8000` — **must track the PC IP exactly like the C# BASE_URLs**;
+  offline errors degrade gracefully, no red crash). [CoachTraineeAnalyticsScreen.js](TrainWiseExpo/src/screens/CoachTraineeAnalyticsScreen.js)
+  renders the **PMC** (Fitness/Fatigue/Form) and **ACWR safe-zone** charts (custom
+  `react-native-svg` line charts — chart-kit can't shade the 0.8-1.3 band) plus the forecast
+  card (headline, risk pill, per-week projection, month dropdown for history). Reached via a
+  button on [CoachTraineeDetailScreen.js](TrainWiseExpo/src/screens/CoachTraineeDetailScreen.js);
+  registered in HomeStack as `CoachTraineeAnalytics`. **JS-only RN change** — Metro reload in
+  dev; APK rebuild to ship.
+- **Run (Local LAN)**: `cd ml && python -m venv venv && venv\Scripts\activate && pip install
+  -r requirements.txt && python app.py`. One-time firewall (admin PowerShell): `New-NetFirewallRule
+  -DisplayName "TrainWise ML 8000" -Direction Inbound -LocalPort 8000 -Protocol TCP -Action
+  Allow -Profile Private`. Needs **ODBC Driver 17/18 for SQL Server** (ships with SSMS). The PC
+  must run both the C# API (5249) AND this service (8000) for the coach analytics screen to work.
+  See [ml/README.md](ml/README.md).
 
 ## Known pending items
 

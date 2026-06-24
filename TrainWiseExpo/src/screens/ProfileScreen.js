@@ -121,6 +121,18 @@ const ProfileScreen = () => {
 
   return (
     <SafeAreaView style={styles.safe}>
+      {/* B-1: Profile is now pushed onto the Home stack (no longer a tab),
+          so it needs its own back affordance. */}
+      <View style={styles.topBar}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="chevron-back" size={26} color={Colors.primary} />
+        </TouchableOpacity>
+        <Text style={styles.topBarTitle}>Profile</Text>
+        <View style={{ width: 26 }} />
+      </View>
       <ScrollView contentContainerStyle={styles.scroll}>
         <TouchableOpacity
           style={styles.avatarWrap}
@@ -189,6 +201,19 @@ const makeStyles = (C) => StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: C.background,
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.sm,
+  },
+  topBarTitle: {
+    color: C.primary,
+    fontSize: Fonts.subtitleSize,
+    fontWeight: Fonts.bold,
   },
   scroll: {
     alignItems: 'center',

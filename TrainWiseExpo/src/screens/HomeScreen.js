@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useFocusEffect, useScrollToTop } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -9,21 +9,34 @@ import {
   ScrollView,
   Dimensions,
   Image,
+  LayoutAnimation,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../api/AuthContext';
 import { useMessages } from '../api/MessagesContext';
 import { getActivityLogs } from '../api/api';
 import apiClient from '../api/api';
-import { resolveProfileImageUrl, getCoachesForTrainee } from '../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  resolveProfileImageUrl,
+  getCoachesForTrainee,
+  getAllActivityTypes,
+  getAllInjuryTypes,
+  getActiveInjuriesByUser,
+  getCalendar,
+} from '../services/api';
 import DraggableChatBubble from '../components/DraggableChatBubble';
+import HomeHeader from '../components/HomeHeader';
+import WeeklySummaryCard from '../components/WeeklySummaryCard';
+import SmartSuggestionCard from '../components/SmartSuggestionCard';
+import ActivityIcon from '../components/ActivityIcon';
+import InjuryIcon from '../components/InjuryIcon';
 import { scheduleDailyReminder } from '../api/NotificationService';
 import { getStructuredWorkouts } from '../api/HealthConnectService';
 import { getWeekStartDate, getWeekDayLabels } from '../constants/weekStart';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
-import { computeWeeklyStats, computeDailyStats } from '../utils/weeklyStats';
 import { buildRestRecommendation } from '../utils/restRecommendation';
 import { processCheckIn, getStreakEmoji } from '../utils/checkInManager';
 import {
@@ -31,15 +44,17 @@ import {
   getEquippedChartTheme,
   findShopItem,
 } from '../utils/shopManager';
+import OnboardingOverlay from '../components/OnboardingOverlay';
+import { isOnboardingDone, markOnboardingDone } from '../utils/onboardingManager';
 
 const { width } = Dimensions.get('window');
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // Feature flag: when false, the coach chat is NOT a floating bubble on Home —
-// instead the unread count appears as a badge on the "My coach" button (and on
-// the Message button inside MyCoachScreen). Flip to true to bring back the
-// draggable bubble directly on the home screen.
+// instead the unread count appears as a badge on the "My network" button (now
+// in HomeHeader). Flip to true to bring back the draggable bubble directly on
+// the home screen.
 const SHOW_COACH_BUBBLE = false;
 
 /** Returns a hex color based on the workout load value (session load units).
@@ -193,6 +208,15 @@ const chartStyles = StyleSheet.create({
   },
 });
 
+/** Severity (1-10) → traffic-light dot color. Semantic, fixed across themes. */
+const severityColor = (sev) => {
+  const s = Number(sev) || 0;
+  if (s <= 3) return '#00e676';
+  if (s <= 6) return '#ffee58';
+  if (s <= 8) return '#ff9800';
+  return '#f44336';
+};
+
 // ─────────────────────────────────────────────
 // HomeScreen
 // ─────────────────────────────────────────────
@@ -200,6 +224,9 @@ const HomeScreen = ({ navigation }) => {
   const { user, userId } = useAuth();
   const { unreadCount } = useMessages();
   const styles = useThemedStyles(makeStyles);
+  // Tapping the Home tab again scrolls this list back to the top (item 1).
+  const scrollRef = useRef(null);
+  useScrollToTop(scrollRef);
   const [backendLogs, setBackendLogs] = useState([]);
   const [hcWorkouts, setHcWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -211,6 +238,17 @@ const HomeScreen = ({ navigation }) => {
   const [equippedChartThemeId, setEquippedChartThemeId] = useState(null);
   const [coach, setCoach] = useState(null); // first connected coach, if any
   const [coachBubbleDismissed, setCoachBubbleDismissed] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // B-2 — Add-Workout / Add-Injury sections. Each section always shows a compact
+  // horizontal row by default ("folded"); the chevron EXPANDS it into a full
+  // grid of every type (Runna-style). Add Injury is open (row visible) by default.
+  const [activityTypes, setActivityTypes] = useState([]);
+  const [injuryTypes, setInjuryTypes] = useState([]);
+  const [activeInjuries, setActiveInjuries] = useState([]);
+  const [workoutExpanded, setWorkoutExpanded] = useState(false); // false = row, true = grid
+  const [injuryExpanded, setInjuryExpanded] = useState(false);   // false = row, true = grid
+  const [coachPlanBadge, setCoachPlanBadge] = useState(0); // new coach-planned workouts (item 11)
 
   const loadData = useCallback(async () => {
     if (!userId) {
@@ -276,6 +314,38 @@ const HomeScreen = ({ navigation }) => {
       // no coach / endpoint unavailable — just hide the entry
     }
 
+    // Foldable Add-Workout / Add-Injury data (B-2). All best-effort: a failure
+    // just leaves the section's row empty.
+    try {
+      const [actRes, injRes, activeRes] = await Promise.all([
+        getAllActivityTypes(),
+        getAllInjuryTypes(),
+        getActiveInjuriesByUser(userId),
+      ]);
+      setActivityTypes(actRes.data || []);
+      setInjuryTypes(injRes.data || []);
+      setActiveInjuries(activeRes.data || []);
+    } catch {
+      // reference data / injuries unavailable — sections render empty
+    }
+
+    // Badge on the calendar icon when a coach has planned new workouts (item 11).
+    try {
+      const pad = (n) => String(n).padStart(2, '0');
+      const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const todayD = new Date();
+      const toD = new Date();
+      toD.setDate(todayD.getDate() + 28);
+      const calRes = await getCalendar(userId, ymd(todayD), ymd(toD));
+      const plans = Array.isArray(calRes.data) ? calRes.data : [];
+      const coachPlans = plans.filter((p) => p.createdByCoach ?? p.CreatedByCoach);
+      const seenRaw = await AsyncStorage.getItem(`@trainwise_seen_coach_plans_${userId}`);
+      const seen = new Set(seenRaw ? JSON.parse(seenRaw) : []);
+      setCoachPlanBadge(coachPlans.filter((p) => !seen.has(p.planId ?? p.PlanId)).length);
+    } catch {
+      setCoachPlanBadge(0);
+    }
+
     // Re-schedule the daily reminder with fresh load-aware copy. The
     // function suppresses the push entirely when injury risk is high, so
     // we pass both the ratio and the derived level. Threshold mirrors
@@ -312,13 +382,30 @@ const HomeScreen = ({ navigation }) => {
     }
   }, []);
 
+  // First-launch tutorial: show the overlay until the user finishes/skips it
+  // (or replays it from Settings -> Reset Tutorial).
+  const checkOnboarding = useCallback(async () => {
+    try {
+      const done = await isOnboardingDone();
+      if (!done) setShowOnboarding(true);
+    } catch (e) {
+      console.warn('[HomeScreen] onboarding check failed:', e.message);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       runCheckIn();
+      checkOnboarding();
       loadEquippedCosmetics();
       loadData();
-    }, [runCheckIn, loadEquippedCosmetics, loadData])
+    }, [runCheckIn, checkOnboarding, loadEquippedCosmetics, loadData])
   );
+
+  const handleOnboardingFinish = async () => {
+    await markOnboardingDone();
+    setShowOnboarding(false);
+  };
 
   // Auto-dismiss the "+X coins!" celebration after 2 seconds.
   useEffect(() => {
@@ -330,25 +417,42 @@ const HomeScreen = ({ navigation }) => {
 
   const weeklyData = buildWeeklyData(backendLogs, hcWorkouts);
   const maxLoad = Math.max(...weeklyData.map((d) => d.load), 100);
-  const weeklyStats = computeWeeklyStats(weeklyData);
-  const dailyStats = computeDailyStats(weeklyData);
   const recommendation = acRatio > 0 ? buildRestRecommendation({ acRatio }) : null;
   const equippedTitleItem = equippedTitleId ? findShopItem(equippedTitleId) : null;
   const equippedChartTheme = equippedChartThemeId
     ? findShopItem(equippedChartThemeId)
     : null;
   const chartThemeColors = equippedChartTheme?.colors || null;
-  const greetingPrefix = equippedTitleItem?.titleText
-    ? `Hello ${equippedTitleItem.titleText}\n`
-    : 'Hello\n';
+
+  const injuryNameById = (id) =>
+    injuryTypes.find((i) => i.injuryTypeID === id)?.injuryName || `Injury #${id}`;
 
   const handleBarPress = (dayIndex) => {
     navigation.navigate('Stats', { selectedDayIndex: dayIndex });
   };
 
+  const toggleSection = (setter) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setter((o) => !o);
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
+      {/* ── B-1: persistent profile header (avatar/streak/coins · network/settings) ── */}
+      <HomeHeader
+        navigation={navigation}
+        selfId={userId}
+        profileImagePath={user?.profileImagePath}
+        fullName={user?.fullName}
+        streak={checkInState.streak}
+        coins={checkInState.coins}
+        coinsToast={coinsEarnedToast}
+        unreadCount={unreadCount}
+        calendarBadge={coachPlanBadge}
+      />
+
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
@@ -367,55 +471,117 @@ const HomeScreen = ({ navigation }) => {
           </TouchableOpacity>
         )}
 
-        {/* ── Header row: streak + coins on the left (flat, no container),
-            settings gear on the right. Streak/coins are still tappable to
-            open the Shop. */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity
-            style={styles.streakCoinsGroup}
-            onPress={() => navigation.navigate('Shop')}
-            activeOpacity={0.7}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <View style={styles.streakItem}>
-              <Ionicons name="flame" size={20} color="#ff7a00" />
-              <Text style={styles.streakValue}>{checkInState.streak}</Text>
-            </View>
-            <View style={styles.coinsItem}>
-              <Text style={styles.coinsEmoji}>💰</Text>
-              <Text style={styles.coinsValue}>{checkInState.coins}</Text>
-            </View>
-            {coinsEarnedToast > 0 && (
-              <Text style={styles.coinsToast}>+{coinsEarnedToast}</Text>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('Settings')}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="settings-outline" size={26} color={Colors.primary} />
-          </TouchableOpacity>
+        {/* ── Greeting ── */}
+        <View style={styles.greetingWrap}>
+          <Text style={styles.greeting}>Hi, {user?.fullName || 'Athlete'}!</Text>
+          {equippedTitleItem?.titleText ? (
+            <Text style={styles.greetingTitle}>{equippedTitleItem.titleText}</Text>
+          ) : null}
         </View>
 
-        {/* ── Top row: greeting + avatar ── */}
-        <View style={styles.topRow}>
-          <Text style={styles.helloText}>
-            {greetingPrefix}
-            <Text style={styles.helloName}>{user?.fullName || 'Athlete'}!</Text>
-          </Text>
-          <View style={styles.avatarCircle}>
-            {resolveProfileImageUrl(user?.profileImagePath) ? (
-              <Image
-                source={{ uri: resolveProfileImageUrl(user.profileImagePath) }}
-                style={styles.avatarImage}
+        {/* ── Active injuries (relocated up top, only when present) ── */}
+        {activeInjuries.length > 0 && (
+          <TouchableOpacity
+            style={styles.activeInjuryCard}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('ActiveInjuries')}
+          >
+            <MaterialCommunityIcons name="bandage" size={18} color={Colors.danger} />
+            <Text style={styles.activeInjuryText} numberOfLines={1}>
+              {activeInjuries.length === 1
+                ? `Active injury: ${injuryNameById(activeInjuries[0].injuryTypeID)}`
+                : `${activeInjuries.length} active injuries`}
+            </Text>
+            <View
+              style={[
+                styles.sevDot,
+                { backgroundColor: severityColor(Math.max(...activeInjuries.map((i) => Number(i.severity) || 0))) },
+              ]}
+            />
+            <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+          </TouchableOpacity>
+        )}
+
+        {/* ── Add Workout (compact row by default, chevron expands to full grid) ── */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.sectionHeader}
+            activeOpacity={0.8}
+            onPress={() => toggleSection(setWorkoutExpanded)}
+          >
+            <View style={styles.sectionHeaderLeft}>
+              <MaterialCommunityIcons name="dumbbell" size={20} color={Colors.primary} />
+              <Text style={styles.sectionTitle}>Add Workout</Text>
+            </View>
+            <View style={styles.sectionHeaderRight}>
+              <Text style={styles.expandHint}>{workoutExpanded ? 'Less' : 'All'}</Text>
+              <Ionicons
+                name={workoutExpanded ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={Colors.primary}
               />
-            ) : (
-              <Ionicons name="person" size={48} color={Colors.textMuted} />
-            )}
-          </View>
+            </View>
+          </TouchableOpacity>
+
+          {activityTypes.length === 0 ? (
+            <Text style={styles.sectionEmpty}>Loading activities…</Text>
+          ) : workoutExpanded ? (
+            <View style={styles.cardGrid}>
+              {activityTypes.map((t) => (
+                <TouchableOpacity
+                  key={t.activityTypeID}
+                  style={styles.gridCard}
+                  activeOpacity={0.85}
+                  onPress={() =>
+                    navigation.navigate('AddWorkout', {
+                      preselectActivityTypeId: t.activityTypeID,
+                      liveTab: true,
+                    })
+                  }
+                >
+                  <ActivityIcon activityTypeId={t.activityTypeID} typeName={t.typeName} size={26} />
+                  <Text style={styles.gridCardLabel} numberOfLines={1}>
+                    {t.typeName}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.cardRow}
+            >
+              {activityTypes.map((t) => (
+                <TouchableOpacity
+                  key={t.activityTypeID}
+                  style={styles.typeCard}
+                  activeOpacity={0.85}
+                  onPress={() =>
+                    navigation.navigate('AddWorkout', {
+                      preselectActivityTypeId: t.activityTypeID,
+                      liveTab: true,
+                    })
+                  }
+                >
+                  <ActivityIcon activityTypeId={t.activityTypeID} typeName={t.typeName} size={28} />
+                  <Text style={styles.typeCardLabel} numberOfLines={2}>
+                    {t.typeName}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
         </View>
 
-        {/* ── Load recommendation banner ── */}
+        {/* ── Smart suggestion (relocated from AddWorkout — item 4) ── */}
+        <SmartSuggestionCard
+          navigation={navigation}
+          userId={userId}
+          activityTypes={activityTypes}
+        />
+
+        {/* ── Load recommendation banner (part of the dashboard) ── */}
         {recommendation && (
           <TouchableOpacity
             style={[styles.recBanner, { borderLeftColor: recommendation.color }]}
@@ -440,56 +606,7 @@ const HomeScreen = ({ navigation }) => {
           </TouchableOpacity>
         )}
 
-        {/* ── Subtitle ── */}
-        <Text style={styles.subtitle}>WHAT WOULD YOU LIKE TO DO TODAY?</Text>
-
-        {/* ── Action buttons ── */}
-        <View style={styles.buttonsWrap}>
-          <View style={styles.btnRow}>
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => navigation.navigate('AddWorkout')}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.actionBtnText}>{'Add a\nworkout'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => navigation.navigate('Warnings')}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.actionBtnText}>{'See\nwarnings'}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* My Network now holds coaches AND friends, so it's always shown
-              (not gated on having a coach). The badge surfaces unread chat. */}
-          <View style={styles.btnRow}>
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.cyanBtn]}
-              onPress={() => navigation.navigate('InjuryReport')}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.actionBtnText}>{'Report\ninjury'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => navigation.navigate('MyNetwork', { selfId: userId })}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.actionBtnText}>{'My\nnetwork'}</Text>
-              {unreadCount > 0 && (!SHOW_COACH_BUBBLE || coachBubbleDismissed) && (
-                <View style={styles.coachBtnBadge}>
-                  <Text style={styles.coachBtnBadgeText}>
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* ── Weekly chart ── */}
+        {/* ── Home Screen Dashboard: weekly load chart (kept as-is) ── */}
         <View style={styles.chartCard}>
           {loading ? (
             <ActivityIndicator color={Colors.primary} style={{ paddingVertical: 40 }} />
@@ -513,49 +630,76 @@ const HomeScreen = ({ navigation }) => {
           )}
         </View>
 
-        {/* ── Weekly + daily stats summary ── */}
-        {!loading && weeklyStats.hasData && (
-          <View style={styles.statsCard}>
-            <Text style={styles.statsTitle}>This week</Text>
-            <View style={styles.statsGrid}>
-              <View style={styles.statBox}>
-                <Text style={styles.statValue}>{weeklyStats.workoutCount}</Text>
-                <Text style={styles.statLabel}>Workouts</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={styles.statValue}>{weeklyStats.totalLoad}</Text>
-                <Text style={styles.statLabel}>Total load</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={styles.statValue}>{weeklyStats.avgLoad}</Text>
-                <Text style={styles.statLabel}>Avg / session</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={styles.statValue}>{weeklyStats.peakDay || '—'}</Text>
-                <Text style={styles.statLabel}>
-                  Peak day{weeklyStats.peakLoad ? ` (${weeklyStats.peakLoad})` : ''}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.statsDivider} />
-
-            <Text style={styles.statsTitle}>Today</Text>
-            {dailyStats && dailyStats.hasWorkout ? (
-              <View style={styles.todayRow}>
-                <View
-                  style={[styles.todayDot, { backgroundColor: dailyStats.status.color }]}
-                />
-                <Text style={styles.todayLoad}>{dailyStats.load}</Text>
-                <Text style={[styles.todayStatus, { color: dailyStats.status.color }]}>
-                  {dailyStats.status.label}
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.todayEmpty}>No workout today</Text>
-            )}
-          </View>
+        {/* ── B-8: This week at a glance (under the dashboard) ── */}
+        {!loading && (
+          <WeeklySummaryCard logs={backendLogs} activityTypes={activityTypes} />
         )}
+
+        {/* ── Add Injury (open by default: compact row, chevron expands to grid) ── */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.sectionHeader}
+            activeOpacity={0.8}
+            onPress={() => toggleSection(setInjuryExpanded)}
+          >
+            <View style={styles.sectionHeaderLeft}>
+              <MaterialCommunityIcons name="medical-bag" size={20} color={Colors.primary} />
+              <Text style={styles.sectionTitle}>Add Injury</Text>
+            </View>
+            <View style={styles.sectionHeaderRight}>
+              <Text style={styles.expandHint}>{injuryExpanded ? 'Less' : 'All'}</Text>
+              <Ionicons
+                name={injuryExpanded ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={Colors.primary}
+              />
+            </View>
+          </TouchableOpacity>
+
+          {injuryTypes.length === 0 ? (
+            <Text style={styles.sectionEmpty}>Loading…</Text>
+          ) : injuryExpanded ? (
+            <View style={styles.cardGrid}>
+              {injuryTypes.map((t) => (
+                <TouchableOpacity
+                  key={t.injuryTypeID}
+                  style={styles.gridCard}
+                  activeOpacity={0.85}
+                  onPress={() =>
+                    navigation.navigate('InjuryReport', { preselectInjuryTypeId: t.injuryTypeID })
+                  }
+                >
+                  <InjuryIcon injuryTypeId={t.injuryTypeID} size={26} />
+                  <Text style={styles.gridCardLabel} numberOfLines={1}>
+                    {t.injuryName}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.cardRow}
+            >
+              {injuryTypes.map((t) => (
+                <TouchableOpacity
+                  key={t.injuryTypeID}
+                  style={styles.typeCard}
+                  activeOpacity={0.85}
+                  onPress={() =>
+                    navigation.navigate('InjuryReport', { preselectInjuryTypeId: t.injuryTypeID })
+                  }
+                >
+                  <InjuryIcon injuryTypeId={t.injuryTypeID} size={28} />
+                  <Text style={styles.typeCardLabel} numberOfLines={2}>
+                    {t.injuryName}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </View>
       </ScrollView>
 
       {/* Floating AI assistant bubble — "sparkles" so it's clearly the AI
@@ -588,11 +732,14 @@ const HomeScreen = ({ navigation }) => {
           }
         />
       )}
+
+      <OnboardingOverlay
+        visible={showOnboarding}
+        onFinish={handleOnboardingFinish}
+      />
     </SafeAreaView>
   );
 };
-
-const BTN_W = (width - 52) / 2; // two buttons side-by-side with padding + gap
 
 const makeStyles = (C) => StyleSheet.create({
   safe: {
@@ -600,160 +747,219 @@ const makeStyles = (C) => StyleSheet.create({
     backgroundColor: C.background,
   },
   scroll: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 8,
     paddingBottom: 36,
   },
 
-  // ── Header row: streak/coins (flat, left) + gear (right)
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 10,
+  // ── Greeting
+  greetingWrap: {
+    marginBottom: 6,
   },
-  streakCoinsGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  streakItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  streakValue: {
-    color: C.textPrimary,
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  coinsItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  coinsEmoji: {
-    fontSize: 16,
-  },
-  coinsValue: {
-    color: '#FFD700',
-    fontSize: 16,
-    fontWeight: '900',
-  },
-
-  // ── Top row
-  topRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 18,
-  },
-  helloText: {
-    fontSize: 32,
+  greeting: {
+    fontSize: 28,
     fontWeight: '900',
     color: C.primary,
     fontStyle: 'italic',
-    lineHeight: 40,
-    flex: 1,
   },
-  helloName: {
-    fontSize: 36,
-  },
-  avatarCircle: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: C.cardBackground,
-    borderWidth: 2,
-    borderColor: C.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 12,
-    overflow: 'hidden',
-  },
-  avatarImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 45,
-  },
-
-  coinsToast: {
-    color: '#FFD700',
-    fontSize: 11,
-    fontWeight: '800',
-    marginLeft: 6,
-  },
-
-  // ── Subtitle
-  subtitle: {
+  greetingTitle: {
     color: C.textSecondary,
     fontSize: 13,
     fontWeight: '700',
-    textDecorationLine: 'underline',
-    textAlign: 'center',
-    marginBottom: 22,
-    letterSpacing: 0.4,
+    marginTop: 2,
   },
 
-
-  // ── Buttons
-  buttonsWrap: {
-    marginBottom: 24,
-    gap: 14,
+  // ── Foldable section (Add Workout / Add Injury)
+  section: {
+    marginTop: 14,
   },
-  btnRow: {
+  sectionHeader: {
     flexDirection: 'row',
-    gap: 14,
-  },
-  btnRowCenter: {
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
   },
-  actionBtn: {
-    width: BTN_W,
+  sectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sectionHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  expandHint: {
+    color: C.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  sectionTitle: {
+    color: C.textPrimary,
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  sectionEmpty: {
+    color: C.textMuted,
+    fontSize: 13,
+    paddingVertical: 12,
+  },
+  cardRow: {
+    paddingVertical: 10,
+    paddingRight: 4,
+    gap: 10,
+  },
+  // Expanded "show all" grid (Add Workout / Add Injury)
+  cardGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingTop: 10,
+  },
+  gridCard: {
+    width: '31.5%',
+    height: 84,
+    borderRadius: 14,
     backgroundColor: C.cardBackground,
-    borderRadius: 12,
-    paddingVertical: 18,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 80,
     borderWidth: 1,
     borderColor: C.border,
-  },
-  cyanBtn: {
-    backgroundColor: C.primaryLight,
-    borderColor: C.primary,
-  },
-  coachBtnBadge: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    minWidth: 24,
-    height: 24,
-    borderRadius: 12,
-    paddingHorizontal: 6,
-    backgroundColor: C.danger,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: C.background,
+    paddingHorizontal: 4,
+    gap: 6,
+    marginBottom: 10,
   },
-  coachBtnBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  actionBtnText: {
-    color: C.primary,
-    fontSize: 15,
-    fontWeight: '800',
+  gridCardLabel: {
+    color: C.textSecondary,
+    fontSize: 10,
+    fontWeight: '700',
     textAlign: 'center',
-    lineHeight: 21,
+  },
+  // Relocated active-injury banner (top of Home)
+  activeInjuryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: C.cardBackground,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.danger,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginTop: 12,
+  },
+  activeInjuryText: {
+    flex: 1,
+    color: C.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  cardRowSmall: {
+    paddingVertical: 6,
+    gap: 8,
+  },
+  typeCard: {
+    width: 84,
+    height: 92,
+    borderRadius: 14,
+    backgroundColor: C.cardBackground,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    gap: 6,
+  },
+  typeCardLabel: {
+    color: C.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
   },
 
-  // ── Chart
+  // ── Add Injury two-panel layout
+  injuryPanels: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  activePanel: {
+    flex: 1,
+    backgroundColor: C.cardBackground,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 12,
+  },
+  typeSliderPanel: {
+    flex: 1.45,
+    backgroundColor: C.cardBackground,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 12,
+  },
+  panelTitle: {
+    color: C.primary,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  panelEmpty: {
+    color: C.textMuted,
+    fontSize: 12,
+  },
+  activeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 5,
+  },
+  activeName: {
+    flex: 1,
+    color: C.textPrimary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  sevDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+  },
+  panelMore: {
+    color: C.textMuted,
+    fontSize: 11,
+    marginTop: 4,
+  },
+  typeCardSmall: {
+    width: 64,
+    height: 72,
+    borderRadius: 12,
+    backgroundColor: C.background,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    gap: 4,
+  },
+  typeCardLabelSmall: {
+    color: C.textSecondary,
+    fontSize: 9,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  // ── Chart (dashboard)
   chartCard: {
     backgroundColor: C.cardBackground,
     borderRadius: 14,
     padding: 16,
     paddingBottom: 12,
     minHeight: 160,
+    marginTop: 14,
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: C.border,
@@ -788,7 +994,7 @@ const makeStyles = (C) => StyleSheet.create({
     borderLeftWidth: 4,
     paddingVertical: 12,
     paddingHorizontal: 14,
-    marginBottom: 18,
+    marginTop: 14,
     borderWidth: 1,
     borderColor: C.border,
   },
@@ -809,86 +1015,13 @@ const makeStyles = (C) => StyleSheet.create({
     lineHeight: 16,
   },
 
-  // ── Stats summary card (below chart)
-  statsCard: {
-    backgroundColor: C.cardBackground,
-    borderRadius: 14,
-    padding: 16,
-    marginTop: 14,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  statsTitle: {
-    color: C.primary,
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-    marginBottom: 10,
-    textTransform: 'uppercase',
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  statBox: {
-    width: '48%',
-    backgroundColor: C.background,
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    marginBottom: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  statValue: {
-    color: C.textPrimary,
-    fontSize: 20,
-    fontWeight: '800',
-  },
-  statLabel: {
-    color: C.textSecondary,
-    fontSize: 11,
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  statsDivider: {
-    height: 1,
-    backgroundColor: C.border,
-    marginVertical: 12,
-  },
-  todayRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  todayDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 10,
-  },
-  todayLoad: {
-    color: C.textPrimary,
-    fontSize: 20,
-    fontWeight: '800',
-    marginRight: 10,
-  },
-  todayStatus: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  todayEmpty: {
-    color: C.textSecondary,
-    fontSize: 13,
-  },
-
   // ── Warning banner
   warningBanner: {
     backgroundColor: C.primaryDark,
     borderRadius: 12,
     padding: 16,
-    marginBottom: 16,
+    marginTop: 12,
+    marginBottom: 4,
     alignItems: 'center',
   },
   warningBannerTitle: {

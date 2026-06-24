@@ -31,21 +31,23 @@ import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { loadLevelColor, loadLevelLabel } from './CoachDashboardScreen';
 import { getBarColor } from './HomeScreen';
+import { getWeekStartDate } from '../constants/weekStart';
+import { parseServerDate } from '../utils/serverDate';
+import { computeACWR } from '../utils/acwr';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-// Build a 7-day window from the trainee's confirmed ActivityLogs, summing each
-// day's session load. weekOffset shifts the window in 7-day blocks (0 = ending
-// today, -1 = the previous week, …) so the coach can page through the trainee's
-// full history. Each day keeps its workouts so a tapped bar can show per-workout
-// detail. Coloring uses the shared getBarColor thresholds so the coach sees the
-// same green/yellow/orange/red intensity scale as the trainee.
+// Build the trainee's calendar week (Sun–Sat by default, honoring the app's
+// configured week start) from their confirmed ActivityLogs, summing each day's
+// session load. weekOffset shifts whole weeks (0 = this week, -1 = last week, …)
+// so the coach pages through the same weeks the trainee sees on Home — not a
+// rolling Tue-to-Mon window. Each day keeps its workouts so a tapped bar can
+// show per-workout detail. Coloring uses the shared getBarColor thresholds so
+// the coach sees the same green/yellow/orange/red intensity scale as the trainee.
 const buildTraineeWeek = (logs, weekOffset = 0) => {
-  const anchor = new Date();
-  anchor.setHours(0, 0, 0, 0);
-  anchor.setDate(anchor.getDate() + weekOffset * 7); // last day of this window
+  const start = getWeekStartDate(weekOffset); // week-start anchor at midnight
   const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(anchor.getTime() - (6 - i) * DAY_MS);
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    d.setHours(0, 0, 0, 0);
     return { date: d, load: 0, workouts: [] };
   });
   const idxByDate = {};
@@ -53,7 +55,7 @@ const buildTraineeWeek = (logs, weekOffset = 0) => {
 
   (logs || []).forEach((w) => {
     if ((w.isConfirmed ?? w.IsConfirmed) === false) return; // pending don't count
-    const key = new Date(w.startTime || w.StartTime).toDateString();
+    const key = parseServerDate(w.startTime || w.StartTime).toDateString();
     const idx = idxByDate[key];
     if (idx === undefined) return;
     const load = Number(
@@ -71,7 +73,7 @@ const buildTraineeWeek = (logs, weekOffset = 0) => {
 const ACTIVITY_NAMES = { 1: 'Running', 2: 'Walking', 3: 'Cycling', 4: 'Weightlifting', 5: 'Other' };
 const fmtTime = (iso) => {
   try {
-    return new Date(iso).toLocaleTimeString('en-US', {
+    return parseServerDate(iso).toLocaleTimeString('en-US', {
       hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Jerusalem',
     });
   } catch { return ''; }
@@ -159,9 +161,13 @@ const CoachTraineeDetailScreen = ({ route, navigation }) => {
     load();
   }, [load]);
 
-  const latest = history[history.length - 1];
-  const latestLevel = latest?.loadLevel ?? latest?.LoadLevel;
-  const latestRatio = latest?.aC_Ratio ?? latest?.AC_Ratio;
+  // Status card is computed CLIENT-SIDE from the trainee's confirmed logs (same
+  // formula as the trainee's Warnings screen) so the coach sees the identical
+  // AC ratio / acute / chronic / stress the trainee sees — the stored DailyLoad
+  // lacks the cold-start floor and reads high (item: detail AC mismatch).
+  const acwr = computeACWR(traineeLogs, trainee?.experienceLevel ?? trainee?.ExperienceLevel);
+  const latestLevel = acwr.level;
+  const latestRatio = acwr.ratio;
   // Per-day chart from the trainee's actual workouts (intensity-colored, tappable).
   const week = buildTraineeWeek(traineeLogs, weekOffset);
   const maxLoad = Math.max(...week.map((d) => d.load), 100);
@@ -275,14 +281,51 @@ const CoachTraineeDetailScreen = ({ route, navigation }) => {
                     AC {latestRatio != null ? Number(latestRatio).toFixed(2) : '—'}
                   </Text>
                 </View>
-                {latest && (
-                  <Text style={styles.statusMeta}>
-                    Acute {Math.round(latest.acuteLoad ?? latest.AcuteLoad ?? 0)} ·
-                    Chronic {Math.round(latest.chronicLoad ?? latest.ChronicLoad ?? 0)} ·
-                    Stress {latest.stressScore ?? latest.StressScore ?? 0}
-                  </Text>
-                )}
+                <Text style={styles.statusMeta}>
+                  Acute {acwr.acute} · Chronic {acwr.chronic} · Stress {acwr.stress}
+                </Text>
               </View>
+
+              {/* Analytics & forecast — opens the PMC + ACWR charts and the
+                  monthly training-load forecast (Python ML service). */}
+              <TouchableOpacity
+                style={styles.analyticsBtn}
+                onPress={() =>
+                  navigation.navigate('CoachTraineeAnalytics', { coachId, trainee })
+                }
+                activeOpacity={0.85}
+              >
+                <Ionicons name="analytics" size={20} color={Colors.textPrimary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.analyticsTitle}>Analytics & forecast</Text>
+                  <Text style={styles.analyticsSub}>
+                    Fitness/fatigue/form, load ratio, and the monthly projection
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={Colors.textPrimary} />
+              </TouchableOpacity>
+
+              {/* A-4: Coach builds the trainee's training plan (calendar). */}
+              <TouchableOpacity
+                style={styles.analyticsBtn}
+                onPress={() =>
+                  navigation.navigate('TrainingCalendar', {
+                    targetUserId: traineeId,
+                    coachMode: true,
+                    traineeName,
+                  })
+                }
+                activeOpacity={0.85}
+              >
+                <Ionicons name="calendar" size={20} color={Colors.textPrimary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.analyticsTitle}>Training plan</Text>
+                  <Text style={styles.analyticsSub}>
+                    Schedule this trainee's week
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={Colors.textPrimary} />
+              </TouchableOpacity>
 
               {/* Active injuries reported by the trainee — surfaces injury
                   reports to the connected coach (#5b). */}
@@ -527,6 +570,18 @@ const makeStyles = (C) =>
     statusLabel: { fontSize: 16, fontWeight: '800' },
     statusRatio: { color: C.textPrimary, fontSize: 16, fontWeight: '800' },
     statusMeta: { color: C.textSecondary, fontSize: 12, marginTop: 10 },
+
+    analyticsBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      backgroundColor: C.primary,
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 14,
+    },
+    analyticsTitle: { color: C.textPrimary, fontSize: 15, fontWeight: '800' },
+    analyticsSub: { color: C.textPrimary, opacity: 0.85, fontSize: 12, marginTop: 2 },
 
     chartRow: {
       flexDirection: 'row',

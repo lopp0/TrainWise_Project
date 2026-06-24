@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { savePushToken } from '../services/api';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -14,6 +15,9 @@ Notifications.setNotificationHandler({
 // Tracks the last time the user actively opened the app so the daily
 // reminder can escalate its tone Duolingo-style when ignored.
 const LAST_OPENED_KEY = '@trainwise_last_opened';
+// Written by AddWorkoutScreen / SyncService after a workout lands, so the
+// reminder can skip a day the user already trained (B-3).
+const LAST_WORKOUT_DATE_KEY = '@trainwise_last_workout_date';
 const DAILY_HOUR = 18; // 6pm — late enough that most users have finished work
 const DAILY_MINUTE = 0;
 
@@ -37,6 +41,40 @@ export const requestNotificationPermission = async () => {
 
   const { status } = await Notifications.requestPermissionsAsync();
   return status === 'granted';
+};
+
+// Item 12 — register this device's NATIVE FCM token with the backend so the
+// server (FirebaseAdmin / FCM HTTP v1) can deliver remote notifications even
+// when the app is closed (new chat messages, coach-planned workouts).
+// Best-effort: on Android this only yields a token when the build has FCM
+// configured (google-services.json baked in + the Google Services gradle plugin
+// applied). Without that getDevicePushTokenAsync throws and we no-op, leaving
+// the in-app foreground notifications working as before.
+const PUSH_TOKEN_KEY = '@trainwise_push_token';
+
+export const registerForPushToken = async (userId) => {
+  if (!userId) return;
+  try {
+    if (!Device.isDevice) return;
+    const granted = await requestNotificationPermission();
+    if (!granted) return;
+
+    // Raw FCM registration token (the backend talks to FCM directly).
+    const tokenResp = await Notifications.getDevicePushTokenAsync();
+    const token = tokenResp?.data;
+    if (!token || typeof token !== 'string') return;
+
+    // Only hit the backend when the token (or the signed-in user) changed.
+    const cacheKey = `${userId}:${token}`;
+    const cached = await AsyncStorage.getItem(PUSH_TOKEN_KEY);
+    if (cached === cacheKey) return;
+
+    await savePushToken(userId, token);
+    await AsyncStorage.setItem(PUSH_TOKEN_KEY, cacheKey);
+  } catch (e) {
+    // No FCM in this build / offline — remote push simply stays off.
+    console.warn('[Notifications] push-token registration skipped:', e.message);
+  }
 };
 
 export const sendLocalNotification = async (title, body) => {
@@ -71,112 +109,162 @@ export const sendLoadWarningIfNeeded = async (acRatio, loadLevel) => {
   }
 };
 
-// Mark the app as opened today. Call this when the app launches and on
-// each Home focus, so the escalation logic knows the user is engaged.
+// Mark the app as opened today.
 export const markAppOpened = async () => {
   try {
     await AsyncStorage.setItem(LAST_OPENED_KEY, new Date().toISOString());
   } catch (e) {
-    // Non-fatal — escalation will just default to the highest tier if the
-    // timestamp can't be read later, which is the safe direction.
     console.warn('[Notifications] markAppOpened failed:', e.message);
   }
 };
 
-// Returns the number of full calendar days since the user last opened the
-// app. 0 = opened today, 1 = yesterday, etc. Null means we've never seen
-// them open it (fresh install) — caller can treat as "engaged" to avoid
-// scaring a first-time user.
-const daysSinceLastOpened = async () => {
+// Record that a workout landed (defaults to today) so the daily reminder skips
+// that day. Accepts a Date or a YYYY-MM-DD string; stored as a LOCAL date so it
+// lines up with the reminder's "today" check. Called from AddWorkoutScreen and
+// SyncService.
+export const markWorkoutToday = async (date) => {
   try {
-    const iso = await AsyncStorage.getItem(LAST_OPENED_KEY);
-    if (!iso) return null;
-    const last = new Date(iso);
-    const now = new Date();
-    const lastMidnight = new Date(last.getFullYear(), last.getMonth(), last.getDate()).getTime();
-    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    return Math.max(0, Math.round((todayMidnight - lastMidnight) / 86400000));
+    const str = typeof date === 'string' ? date : localDateStr(date || new Date());
+    await AsyncStorage.setItem(LAST_WORKOUT_DATE_KEY, str);
+  } catch (e) {
+    console.warn('[Notifications] markWorkoutToday failed:', e.message);
+  }
+};
+
+// Local-midnight YYYY-MM-DD (not UTC) so "today" lines up with the user's
+// calendar day regardless of timezone.
+const localDateStr = (d) => {
+  const x = new Date(d);
+  const y = x.getFullYear();
+  const m = String(x.getMonth() + 1).padStart(2, '0');
+  const day = String(x.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const midnight = (d) => {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x.getTime();
+};
+
+const daysBetween = (fromIso, toDate) => {
+  if (!fromIso) return null;
+  try {
+    return Math.max(0, Math.round((midnight(toDate) - midnight(new Date(fromIso))) / 86400000));
   } catch {
     return null;
   }
 };
 
-// Picks the reminder body based on the user's current training load AND
-// how long it's been since they opened the app. Suppresses the reminder
-// entirely when injury risk is high (Red / acRatio > 1.5) so we don't
-// nudge a fatigued user into training.
-//
-// Returns { title, body } or null to suppress.
-const buildDailyReminderContent = (acRatio, loadLevel, daysAway) => {
-  // Hard safety gate: never push someone into a workout when their body
-  // is already over the spike threshold. The Warnings dashboard handles
-  // that case with its own messaging.
-  if (loadLevel === 'Red' || (acRatio && acRatio > 1.5)) {
-    return null;
-  }
-
-  // Duolingo-style escalation tiers. Day 0 = friendly nudge, day 1 = mild
-  // guilt, day 2+ = direct & punchy. Phrasing stays positive — we're
-  // building a habit, not shaming the user.
-  const tier = daysAway == null ? 0 : Math.min(daysAway, 3);
-
-  // Load-aware suffix: tells the user what kind of session is appropriate
-  // given their AC ratio so they don't have to open the Warnings screen
-  // first. Yellow zone = keep it moderate. Green = anything goes.
-  let loadHint;
-  if (loadLevel === 'Yellow' || (acRatio && acRatio >= 1.0)) {
-    loadHint = 'Keep it moderate today — a steady session keeps you in the sweet spot.';
-  } else {
-    loadHint = "You're fresh — a good day to push or add a new workout.";
-  }
-
-  const tiers = [
-    {
-      title: 'Time for today\'s session 💪',
-      body: `Keep your streak alive. ${loadHint}`,
-    },
-    {
-      title: 'Yesterday slipped by — let\'s not make it two 👀',
-      body: `Your streak is on the line. ${loadHint}`,
-    },
-    {
-      title: 'Your gains are getting cold 🥶',
-      body: `Two days off. Open TrainWise and log even a short session. ${loadHint}`,
-    },
-    {
-      title: 'Where did you go? TrainWise misses you 😢',
-      body: `Three+ days away. One workout today resets your momentum. ${loadHint}`,
-    },
-  ];
-
-  return tiers[tier];
+// ─────────────────────────────────────────────
+// Reminder copy — 5 escalation tiers, each with 5 randomized bodies (B-3).
+// (No em-dashes per project style; commas/periods only.)
+// ─────────────────────────────────────────────
+const MESSAGES = {
+  green: {
+    title: "Time for today's session 💪",
+    bodies: [
+      "You're fresh and ready, let's log a session today! 💪",
+      "Green zone! Perfect time to push a little harder. 🚀",
+      "Your body is recovered. Don't waste it, train today! 🔥",
+      "Fresh legs, full potential. Add a workout now! 🏃",
+      "Recovered and raring to go. Today's a great day to move! ⚡",
+    ],
+  },
+  yellow: {
+    title: 'Keep the momentum 🔥',
+    bodies: [
+      "You're building well, keep the pace moderate today. 🟡",
+      "Good effort this week! One more solid session keeps it rolling. 💪",
+      "Yellow zone, train smart not hard today. 🎯",
+      "Steady progress! A moderate workout holds your momentum. 📈",
+      "You're in a good rhythm, just keep it controlled. 🧘",
+    ],
+  },
+  nudge1: {
+    title: 'Yesterday slipped by, keep the streak 👀',
+    bodies: [
+      "Your streak is on the line, log a quick session today. 👀",
+      "One day off is fine, two is a habit. Train today! 🔁",
+      "Don't let yesterday turn into a pattern. Move today! 🏃",
+      "A short workout today keeps the momentum alive. ⏱️",
+      "Your streak misses you. Even 20 minutes counts! 💪",
+    ],
+  },
+  nudge2: {
+    title: 'Your gains are getting cold 🥶',
+    bodies: [
+      "Two days off. Open TrainWise and log even a short session. 🥶",
+      "Cold gains warm up fast, one workout today does it. 🔥",
+      "Two days is a blip, not a trend. Get moving today! 🏋️",
+      "Your body remembers. A light session restarts the engine. ⚙️",
+      "Let's break the two day pause with a quick workout. ✅",
+    ],
+  },
+  nudge3: {
+    title: 'TrainWise misses you 😢',
+    bodies: [
+      "Three plus days away. One workout today resets your momentum. 😢",
+      "It's been a while. Today is the perfect day to come back. 🌅",
+      "No guilt, just a fresh start. Log a session today! 🌱",
+      "Your training is waiting. Ease back in with a light one. 🤝",
+      "Welcome back energy starts with one workout. Let's go! 🚀",
+    ],
+  },
 };
 
-// Cancels any existing daily reminder and schedules a fresh one for
-// ${DAILY_HOUR}:${DAILY_MINUTE} today (or tomorrow if that's already
-// passed). Call this on app launch and after every workout / load
-// recalculation so the next notification reflects the latest state.
-//
-// `acRatio` / `loadLevel` are the user's current values from the Warnings
-// dashboard. Pass null / 'Green' if unknown — we'll send a neutral nudge.
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+// Picks the message tier from how long the user has been away (computed for the
+// DAY THE REMINDER WILL FIRE) and their current load. Suppresses entirely when
+// injury risk is high (Red / acRatio > 1.5) so we don't nudge a fatigued user.
+const buildReminderContent = (acRatio, loadLevel, daysAwayAtFire) => {
+  if (loadLevel === 'Red' || (acRatio && acRatio > 1.5)) return null;
+
+  let tier;
+  if (daysAwayAtFire >= 3) tier = 'nudge3';
+  else if (daysAwayAtFire === 2) tier = 'nudge2';
+  else if (daysAwayAtFire === 1) tier = 'nudge1';
+  else tier = loadLevel === 'Yellow' || (acRatio && acRatio >= 1.0) ? 'yellow' : 'green';
+
+  const set = MESSAGES[tier];
+  return { title: set.title, body: pick(set.bodies) };
+};
+
+// Cancels any pending reminder and schedules a fresh ONE-OFF reminder for the
+// next 18:00. Because this is called on every app launch / Home focus / workout,
+// it keeps re-arming for the next day, so it stays "daily" for engaged users
+// while a future-dated trigger never fires on app open (fixes the instant-fire
+// bug). If the user already opened the app OR trained today, the reminder is
+// pushed to tomorrow so we don't nag an already-active user.
 export const scheduleDailyReminder = async (acRatio = null, loadLevel = 'Green') => {
   try {
-    // Cancel everything we previously scheduled so we don't stack stale
-    // bodies on top of new ones. The only thing we schedule is the daily
-    // reminder, so a blanket cancel is safe here.
     await Notifications.cancelAllScheduledNotificationsAsync();
 
-    const daysAway = await daysSinceLastOpened();
-    const content = buildDailyReminderContent(acRatio, loadLevel, daysAway);
-    if (!content) {
-      // Suppressed (injury risk high). Don't reschedule — the next launch
-      // will try again with fresh load data.
-      return;
+    const now = new Date();
+    const lastOpenedIso = await AsyncStorage.getItem(LAST_OPENED_KEY);
+    const lastWorkout = await AsyncStorage.getItem(LAST_WORKOUT_DATE_KEY);
+
+    const openedToday = daysBetween(lastOpenedIso, now) === 0;
+    const workoutToday = lastWorkout === localDateStr(now);
+
+    // Next 18:00 occurrence.
+    const fire = new Date(now);
+    fire.setHours(DAILY_HOUR, DAILY_MINUTE, 0, 0);
+    const past1745 = now.getHours() * 60 + now.getMinutes() >= 17 * 60 + 45;
+    if (past1745) fire.setDate(fire.getDate() + 1);
+
+    // Already engaged today → skip today's nudge, aim for tomorrow.
+    if ((openedToday || workoutToday) && midnight(fire) === midnight(now)) {
+      fire.setDate(fire.getDate() + 1);
     }
 
-    // expo-notifications DAILY trigger fires at the same wall-clock time
-    // every day. Works while the app is backgrounded; iOS limits the body
-    // to the last-scheduled version, so we re-schedule on every app open.
+    // Tier reflects how stale the user will be WHEN THE REMINDER FIRES.
+    const daysAwayAtFire =
+      lastOpenedIso != null ? daysBetween(lastOpenedIso, fire) : 0;
+    const content = buildReminderContent(acRatio, loadLevel, daysAwayAtFire);
+    if (!content) return; // suppressed (injury risk high)
+
     await Notifications.scheduleNotificationAsync({
       content: {
         title: content.title,
@@ -185,9 +273,8 @@ export const scheduleDailyReminder = async (acRatio = null, loadLevel = 'Green')
         channelId: 'trainwise',
       },
       trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DAILY,
-        hour: DAILY_HOUR,
-        minute: DAILY_MINUTE,
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: fire,
       },
     });
   } catch (error) {
@@ -195,7 +282,5 @@ export const scheduleDailyReminder = async (acRatio = null, loadLevel = 'Green')
   }
 };
 
-// Back-compat shim: older code still imports scheduleWeeklyReminder via
-// App.js. Routes the call to the new daily flow with a neutral load so
-// existing call sites don't break before they get migrated.
+// Back-compat shim: older code still imports scheduleWeeklyReminder via App.js.
 export const scheduleWeeklyReminder = () => scheduleDailyReminder(null, 'Green');

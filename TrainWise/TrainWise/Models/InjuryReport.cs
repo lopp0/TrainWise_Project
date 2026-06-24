@@ -9,5 +9,7 @@
         public int Severity { get; set; }
         public string Notes { get; set; }
         public bool IsActiveInjury { get; set; }
+        // B-7: optional link to the workout after which the injury appeared.
+        public int? LinkedActivityLogID { get; set; }
     }
 }

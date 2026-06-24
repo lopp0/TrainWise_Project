@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Image as ExpoImage } from 'expo-image';
 import * as Location from 'expo-location';
 import { useAuth } from '../api/AuthContext';
 import { useSocial } from '../api/SocialContext';
@@ -29,8 +30,13 @@ import {
   sendCoachOffer,
   addCoachToGym,
   removeCoachFromGym,
+  getCosmeticsForUsers,
+  sendMessage,
 } from '../services/api';
 import Avatar from '../components/Avatar';
+import UserProfileCard from '../components/UserProfileCard';
+import ConnectTabs from '../components/ConnectTabs';
+import { findShopItem } from '../utils/shopManager';
 import { experienceLabel } from '../utils/experience';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
@@ -48,7 +54,7 @@ const { height: SCREEN_H } = Dimensions.get('window');
 // Fallback center (Netanya) so the seeded demo data still appears if the user
 // denies location.
 const FALLBACK = { latitude: 32.3215, longitude: 34.8532 };
-const VIEW_LABEL = { trainees: 'Trainees', coaches: 'Coaches', gyms: 'Gyms' };
+const VIEW_LABEL = { all: 'Everyone', trainees: 'Trainees', coaches: 'Coaches', gyms: 'Gyms' };
 
 const ConnectScreen = ({ navigation }) => {
   const { userId, user } = useAuth();
@@ -61,6 +67,12 @@ const ConnectScreen = ({ navigation }) => {
   const [locDenied, setLocDenied] = useState(false);
   const [gyms, setGyms] = useState([]);
   const [people, setPeople] = useState([]);
+  const [cosmeticsById, setCosmeticsById] = useState({}); // A-1: userId -> cosmetics
+  const [showLiveUsers, setShowLiveUsers] = useState(true); // A-6: show opted-in user pins
+  // Item 8: rasterize vector glyphs into map-marker icons (dumbbell for a gym,
+  // a person for a user) so the pins are meaningful instead of identical red
+  // drops. If rasterizing fails, markers fall back to the default pin.
+  const [markerIcons, setMarkerIcons] = useState({ gym: null, user: null });
   const [view, setView] = useState('trainees'); // 'trainees' | 'coaches' | 'gyms'
   const [sort, setSort] = useState('nearest');  // 'nearest' | 'az'
   const [filterOpen, setFilterOpen] = useState(false);
@@ -111,7 +123,20 @@ const ConnectScreen = ({ navigation }) => {
           getNearbyUsers(userId, center.latitude, center.longitude, 25),
         ]);
         setGyms(Array.isArray(g.data) ? g.data : []);
-        setPeople(Array.isArray(p.data) ? p.data : []);
+        const peopleList = Array.isArray(p.data) ? p.data : [];
+        setPeople(peopleList);
+        // A-1: batch-fetch equipped cosmetics for the nearby users.
+        const ids = peopleList.map((u) => u.userID ?? u.UserID).filter(Boolean);
+        if (ids.length) {
+          try {
+            const c = await getCosmeticsForUsers(ids);
+            const map = {};
+            (Array.isArray(c.data) ? c.data : []).forEach((x) => {
+              map[x.userID ?? x.UserID] = x;
+            });
+            setCosmeticsById(map);
+          } catch {}
+        }
       } catch {
         // leave whatever we had; the list shows an empty state
       }
@@ -164,6 +189,42 @@ const ConnectScreen = ({ navigation }) => {
     setRefreshing(false);
   };
 
+  // Build the marker icons once on mount (glyph -> PNG uri -> expo-image ref).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [gymSrc, userSrc] = await Promise.all([
+          MaterialCommunityIcons.getImageSource('dumbbell', 38, '#ff7043'),
+          MaterialCommunityIcons.getImageSource('account', 40, Colors.primary),
+        ]);
+        const [gymRef, userRef] = await Promise.all([
+          ExpoImage.loadAsync(gymSrc),
+          ExpoImage.loadAsync(userSrc),
+        ]);
+        if (alive) setMarkerIcons({ gym: gymRef, user: userRef });
+      } catch {
+        // leave nulls — markers render as default pins
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // A-1: merge a user's equipped cosmetics (from the batch map) onto a
+  // user-like object so UserProfileCard / Avatar can render them.
+  const withCosmetics = (u, id) => {
+    const c = cosmeticsById[id];
+    if (!c) return u;
+    return {
+      ...u,
+      equippedBadge: c.equippedBadge ?? c.EquippedBadge,
+      equippedTitle: c.equippedTitle ?? c.EquippedTitle,
+      equippedFrame: c.equippedFrame ?? c.EquippedFrame,
+    };
+  };
+
   // ── Detail openers ─────────────────────────────────────────────────────
   const openUser = async (targetId) => {
     if (targetId === userId) return;
@@ -171,7 +232,7 @@ const ConnectScreen = ({ navigation }) => {
     setProfileLoading(true);
     try {
       const res = await getUserMiniProfile(userId, targetId);
-      setProfile(res.data);
+      setProfile(withCosmetics(res.data, targetId));
     } catch {
       Alert.alert('Could not load profile', 'Please try again.');
       setProfile(null);
@@ -258,6 +319,27 @@ const ConnectScreen = ({ navigation }) => {
     });
   };
 
+  // A-2/A-6: invite a connected friend to train together (sends a chat message).
+  const inviteToWorkout = async (target) => {
+    const peerId = target.userID ?? target.UserID;
+    try {
+      await sendMessage({
+        senderId: userId,
+        receiverId: peerId,
+        text: "Hey, want to train together? I'm nearby! 💪",
+      });
+      setProfile(null);
+      navigation.navigate('Chat', {
+        selfId: userId,
+        peerId,
+        peerName: target.fullName ?? target.FullName,
+        peerImagePath: target.profileImagePath ?? target.ProfileImagePath,
+      });
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data || 'Could not send invite.');
+    }
+  };
+
   const iAmListedAtGym = gymCoaches.some((c) => (c.userID ?? c.UserID) === userId);
   const toggleGymListing = async () => {
     if (!gym) return;
@@ -278,15 +360,49 @@ const ConnectScreen = ({ navigation }) => {
     }
   };
 
-  // ── Markers ──────────────────────────────────────────────────────────────
-  // Only GYMS (public places) are plotted. Other users' exact coordinates are
-  // never shown on the map for privacy — people appear only as a proximity list.
-  const markers = gyms.map((g) => ({
+  // ── Markers (A-6) ──────────────────────────────────────────────────────────
+  // Gyms are always plotted. Users appear ONLY if they opted into live-location
+  // sharing (A-2): the backend nulls non-sharers' coords, so a user with coords
+  // here has consented. The "Live users" filter can hide them.
+  // NOTE: expo-maps' marker API takes simple {id,coordinates,title,snippet} —
+  // it can't render a custom avatar/pulse pin, so gyms vs users are distinguished
+  // by their snippet ('Gym' vs 'Athlete (live)') and routed by id prefix.
+  // The map pins follow the list filter (item 8): gyms view -> only gyms,
+  // trainees -> only trainee pins, coaches -> only coach pins. The user pin icon
+  // is the SAME person glyph regardless of the viewer's role.
+  const gymMarker = (g) => ({
     id: `gym-${g.gymID ?? g.GymID}`,
     coordinates: { latitude: g.latitude ?? g.Latitude, longitude: g.longitude ?? g.Longitude },
     title: g.name ?? g.Name,
     snippet: 'Gym',
-  }));
+    anchor: { x: 0.5, y: 0.5 },
+    ...(markerIcons.gym ? { icon: markerIcons.gym } : {}),
+  });
+  const userMarker = (u) => ({
+    id: `user-${u.userID ?? u.UserID}`,
+    coordinates: { latitude: u.latitude ?? u.Latitude, longitude: u.longitude ?? u.Longitude },
+    title: u.fullName ?? u.FullName,
+    snippet: (u.isCoach ?? u.IsCoach) ? 'Coach (live)' : 'Athlete (live)',
+    anchor: { x: 0.5, y: 0.5 },
+    ...(markerIcons.user ? { icon: markerIcons.user } : {}),
+  });
+  const liveUsers = showLiveUsers
+    ? people.filter((u) => {
+        const lat = u.latitude ?? u.Latitude;
+        const lng = u.longitude ?? u.Longitude;
+        return lat != null && lng != null && (u.shareLiveLocation ?? u.ShareLiveLocation);
+      })
+    : [];
+  let markers;
+  if (view === 'gyms') {
+    markers = gyms.map(gymMarker);
+  } else if (view === 'all') {
+    markers = [...gyms.map(gymMarker), ...liveUsers.map(userMarker)];
+  } else if (view === 'coaches') {
+    markers = liveUsers.filter((u) => u.isCoach ?? u.IsCoach).map(userMarker);
+  } else {
+    markers = liveUsers.filter((u) => u.isTrainee ?? u.IsTrainee).map(userMarker);
+  }
 
   const cameraPosition = coords ? { coordinates: coords, zoom: 12.5 } : undefined;
 
@@ -295,9 +411,10 @@ const ConnectScreen = ({ navigation }) => {
 
   // ── Render ───────────────────────────────────────────────────────────────
   // wantCoach=true → coaches, false → trainees. No exact distance shown (#1).
-  const renderPeople = (wantCoach) => {
+  // mode: 'all' = everyone, true = coaches, false = trainees.
+  const renderPeople = (mode) => {
     const filtered = people.filter((u) =>
-      wantCoach ? (u.isCoach ?? u.IsCoach) : (u.isTrainee ?? u.IsTrainee)
+      mode === 'all' ? true : mode ? (u.isCoach ?? u.IsCoach) : (u.isTrainee ?? u.IsTrainee)
     );
     const list = [...filtered].sort((a, b) =>
       sort === 'az' ? sortByName(a, b, (x) => x.fullName ?? x.FullName) : sortByDist(a, b)
@@ -305,7 +422,7 @@ const ConnectScreen = ({ navigation }) => {
     if (list.length === 0) {
       return (
         <Text style={styles.emptyText}>
-          No {wantCoach ? 'coaches' : 'athletes'} nearby yet. Pull to refresh.
+          No {mode === 'all' ? 'people' : mode ? 'coaches' : 'athletes'} nearby yet. Pull to refresh.
         </Text>
       );
     }
@@ -313,24 +430,23 @@ const ConnectScreen = ({ navigation }) => {
       const id = u.userID ?? u.UserID;
       const coach = u.isCoach ?? u.IsCoach;
       return (
-        <TouchableOpacity key={id} style={styles.row} activeOpacity={0.8} onPress={() => openUser(id)}>
-          <Avatar
-            imagePath={u.profileImagePath ?? u.ProfileImagePath}
-            name={u.fullName ?? u.FullName}
-            size={50}
-            showDot
-            online={u.isOnline ?? u.IsOnline}
-          />
-          <View style={styles.rowBody}>
-            <Text style={styles.rowName} numberOfLines={1}>{u.fullName ?? u.FullName}</Text>
-            <Text style={styles.rowMeta} numberOfLines={1}>
-              {experienceLabel(u.experienceLevel ?? u.ExperienceLevel)} · Nearby
-            </Text>
-          </View>
-          <View style={[styles.roleTag, coach && styles.roleTagCoach]}>
-            <Text style={[styles.roleTagText, coach && styles.roleTagTextCoach]}>{coach ? 'Coach' : 'Athlete'}</Text>
-          </View>
-        </TouchableOpacity>
+        <UserProfileCard
+          key={id}
+          style={styles.row}
+          user={withCosmetics(u, id)}
+          size={50}
+          showDot
+          online={u.isOnline ?? u.IsOnline}
+          subtitle={`${experienceLabel(u.experienceLevel ?? u.ExperienceLevel)} · Nearby`}
+          right={
+            <View style={[styles.roleTag, coach && styles.roleTagCoach]}>
+              <Text style={[styles.roleTagText, coach && styles.roleTagTextCoach]}>
+                {coach ? 'Coach' : 'Athlete'}
+              </Text>
+            </View>
+          }
+          onPress={() => openUser(id)}
+        />
       );
     });
   };
@@ -399,6 +515,9 @@ const ConnectScreen = ({ navigation }) => {
         </View>
       </View>
 
+      {/* A-3: Connect sub-tabs (Map / Board / Leaderboard) */}
+      <ConnectTabs active="map" navigation={navigation} />
+
       {/* Map (resizable) */}
       <View style={[styles.mapWrap, { height: mapHeight }]}>
         {GoogleMaps?.View && coords ? (
@@ -440,7 +559,11 @@ const ConnectScreen = ({ navigation }) => {
           <Ionicons name="chevron-down" size={16} color={Colors.textMuted} />
         </TouchableOpacity>
         <Text style={styles.filterCount}>
-          {view === 'gyms' ? `${gyms.length} gyms` : `${people.filter((u) => (view === 'coaches' ? (u.isCoach ?? u.IsCoach) : (u.isTrainee ?? u.IsTrainee))).length}`}
+          {view === 'gyms'
+            ? `${gyms.length} gyms`
+            : view === 'all'
+            ? `${people.length} people · ${gyms.length} gyms`
+            : `${people.filter((u) => (view === 'coaches' ? (u.isCoach ?? u.IsCoach) : (u.isTrainee ?? u.IsTrainee))).length}`}
         </Text>
       </View>
 
@@ -459,6 +582,11 @@ const ConnectScreen = ({ navigation }) => {
           <ActivityIndicator color={Colors.primary} size="large" style={{ marginTop: 40 }} />
         ) : view === 'gyms' ? (
           renderGyms()
+        ) : view === 'all' ? (
+          <>
+            {renderPeople('all')}
+            {renderGyms()}
+          </>
         ) : (
           renderPeople(view === 'coaches')
         )}
@@ -471,6 +599,7 @@ const ConnectScreen = ({ navigation }) => {
             <View style={styles.sheetHandle} />
             <Text style={styles.filterGroupLabel}>SHOW</Text>
             {[
+              ['all', 'Everyone', 'apps'],
               ['trainees', 'Trainees', 'walk'],
               ['coaches', 'Coaches', 'ribbon'],
               ['gyms', 'Gyms', 'barbell'],
@@ -501,6 +630,15 @@ const ConnectScreen = ({ navigation }) => {
                 {sort === key && <Ionicons name="checkmark" size={18} color={Colors.primary} />}
               </TouchableOpacity>
             ))}
+            <View style={styles.filterDivider} />
+            <Text style={styles.filterGroupLabel}>MAP</Text>
+            <TouchableOpacity style={styles.filterOption} onPress={() => setShowLiveUsers((v) => !v)}>
+              <Ionicons name="navigate-circle" size={18} color={showLiveUsers ? Colors.primary : Colors.textSecondary} />
+              <Text style={[styles.filterOptionText, showLiveUsers && styles.filterOptionTextActive]}>
+                Live users on map
+              </Text>
+              <Ionicons name={showLiveUsers ? 'checkmark' : 'close'} size={18} color={showLiveUsers ? Colors.primary : styles._muted} />
+            </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -522,6 +660,7 @@ const ConnectScreen = ({ navigation }) => {
                 onUnfriend={doUnfriend}
                 onOfferCoach={doOfferCoach}
                 onMessage={() => messageUser(profile)}
+                onInvite={() => inviteToWorkout(profile)}
                 onRespond={() => {
                   setProfile(null);
                   navigation.navigate('Requests');
@@ -564,12 +703,17 @@ const ConnectScreen = ({ navigation }) => {
 };
 
 // ── User mini-profile sheet content ────────────────────────────────────────
-const UserSheet = ({ styles, profile, viewerIsCoach, viewerId, acting, onAddFriend, onUnfriend, onOfferCoach, onMessage, onRespond, onClose }) => {
+const UserSheet = ({ styles, profile, viewerIsCoach, viewerId, acting, onAddFriend, onUnfriend, onOfferCoach, onMessage, onInvite, onRespond, onClose }) => {
   const status = profile.friendStatus;
   const iRequested = profile.friendRequesterID === viewerId;
   const isFriend = status === 'accepted';
   const isTrainee = profile.isTrainee;
   const canOfferCoach = viewerIsCoach && isTrainee && profile.userID !== viewerId;
+
+  // A-1 cosmetics
+  const frameItem = profile.equippedFrame ? findShopItem(profile.equippedFrame) : null;
+  const badgeItem = profile.equippedBadge ? findShopItem(profile.equippedBadge) : null;
+  const titleItem = profile.equippedTitle ? findShopItem(profile.equippedTitle) : null;
 
   return (
     <>
@@ -581,9 +725,14 @@ const UserSheet = ({ styles, profile, viewerIsCoach, viewerId, acting, onAddFrie
           size={72}
           showDot
           online={profile.isOnline}
+          frameColor={frameItem?.frameColor || null}
+          badgeEmoji={badgeItem?.emoji || null}
         />
         <View style={{ flex: 1, marginLeft: 14 }}>
-          <Text style={styles.sheetName}>{profile.fullName}</Text>
+          <Text style={styles.sheetName}>
+            {profile.fullName}
+            {titleItem?.titleText ? ` · ${titleItem.titleText}` : ''}
+          </Text>
           <Text style={styles.sheetSub}>
             {experienceLabel(profile.experienceLevel)}
             {profile.isCoach ? ' · Coach' : ''}
@@ -647,6 +796,14 @@ const UserSheet = ({ styles, profile, viewerIsCoach, viewerId, acting, onAddFrie
           </TouchableOpacity>
         )}
       </View>
+
+      {/* A-2/A-6: invite a connected friend to train together */}
+      {isFriend && (
+        <TouchableOpacity style={styles.offerBtn} onPress={onInvite} activeOpacity={0.85}>
+          <Ionicons name="barbell" size={18} color={Colors.primary} />
+          <Text style={styles.offerBtnText}>Invite to workout</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Coach offer (coach viewing a trainee) */}
       {canOfferCoach && (

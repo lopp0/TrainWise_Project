@@ -11,6 +11,8 @@ import {
   putUserDevice,
 } from './api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { markWorkoutToday } from './NotificationService';
+import { checkRecords } from '../services/api';
 import { loadHcTombstones, isTombstoned } from '../constants/hcTombstones';
 import { scopedKey } from '../utils/activeUser';
 import { HC_CONNECTED_BASE } from '../constants/hcKeys';
@@ -263,15 +265,19 @@ export const syncWorkoutsToBackend = async (
 
     // Step 6: Post new workouts to backend
     console.log('Step 6: Posting new workouts to backend...');
+    let latestSyncedStart = null;
     for (const workout of newWorkouts) {
       // Add userId to each workout
       workout.userID = userId;
 
       const postResult = await postWorkout(workout);
-      
+
       if (postResult.success) {
         result.synced++;
         result.workouts.push(postResult.data);
+        if (!latestSyncedStart || new Date(workout.startTime) > new Date(latestSyncedStart)) {
+          latestSyncedStart = workout.startTime;
+        }
         console.log('✓ Posted workout:', workout.startTime);
       } else {
         result.errors.push({
@@ -280,6 +286,17 @@ export const syncWorkoutsToBackend = async (
         });
         console.error('✗ Failed to post workout:', workout.startTime, postResult.error);
       }
+    }
+
+    // B-3: a successful sync means the user actually trained — mark the most
+    // recent synced workout's day so the daily reminder can skip it.
+    if (result.synced > 0 && latestSyncedStart) {
+      await markWorkoutToday(new Date(latestSyncedStart));
+    }
+
+    // A-5: re-evaluate personal records / badges after a sync added workouts.
+    if (result.synced > 0) {
+      try { await checkRecords(userId); } catch {}
     }
 
     // Step 7: Update device lastSync timestamp

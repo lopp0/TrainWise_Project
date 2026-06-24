@@ -15,6 +15,7 @@ import {
   Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 import { useAuth } from '../api/AuthContext';
@@ -22,6 +23,53 @@ import { registerUser } from '../api/api';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { useTheme } from '../theme/ThemeContext';
+
+// ─── Google reCAPTCHA (v2 checkbox) ───────────────────────────────
+// Rendered inside a WebView since reCAPTCHA needs a real browser context.
+// The widget posts its token back over window.ReactNativeWebView; we only
+// gate the Done button on a successful solve (client-side bot deterrent).
+// Google's official reCAPTCHA v2 TEST key — renders on ANY origin (the WebView
+// uses baseUrl http://localhost, which a domain-locked key rejects with the
+// "Invalid domain / ERROR for site owner" widget the user was seeing). The test
+// key always renders the checkbox and verifies, which is what we want for the
+// demo. For production, register a real key for your domain and swap it back.
+const RECAPTCHA_SITE_KEY = '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI';
+
+const RECAPTCHA_HTML = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #ffffff;
+    }
+  </style>
+</head>
+<body>
+  <div
+    class="g-recaptcha"
+    data-sitekey="${RECAPTCHA_SITE_KEY}"
+    data-callback="onSuccess"
+    data-expired-callback="onExpire">
+  </div>
+  <script>
+    function onSuccess(token) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'success', token: token }));
+    }
+    function onExpire() {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'expire' }));
+    }
+  </script>
+</body>
+</html>
+`;
 
 // ─── Checkbox ─────────────────────────────────────────────────────
 const Checkbox = ({ checked, onPress, children }) => {
@@ -57,6 +105,9 @@ const SignUpFinal = ({ navigation, route }) => {
   const [agreedPrivacy, setAgreedPrivacy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [policyModal, setPolicyModal] = useState(null); // 'tos' | 'privacy' | null
+  // 'idle' | 'verified' | 'failed' — Done stays disabled until 'verified'
+  const [captchaState, setCaptchaState] = useState('idle');
+  const [captchaToken, setCaptchaToken] = useState(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -79,7 +130,8 @@ const SignUpFinal = ({ navigation, route }) => {
     emailValid &&
     password.trim().length >= 4 &&
     agreedTOS &&
-    agreedPrivacy;
+    agreedPrivacy &&
+    captchaState === 'verified';
 
   const handleDone = async () => {
     if (!canSubmit) return;
@@ -211,6 +263,35 @@ const SignUpFinal = ({ navigation, route }) => {
                 </Text>
               </Text>
             </Checkbox>
+          </View>
+
+          {/* Google reCAPTCHA — must be solved before Done enables */}
+          <View style={s.recaptchaContainer}>
+            <WebView
+              style={s.recaptchaInline}
+              source={{ html: RECAPTCHA_HTML, baseUrl: 'http://localhost' }}
+              onMessage={(e) => {
+                try {
+                  const data = JSON.parse(e.nativeEvent.data);
+                  if (data.type === 'success') {
+                    setCaptchaToken(data.token);
+                    setCaptchaState('verified');
+                  } else if (data.type === 'expire') {
+                    setCaptchaToken(null);
+                    setCaptchaState('idle');
+                  }
+                } catch {}
+              }}
+              onError={() => {
+                setCaptchaToken(null);
+                setCaptchaState('failed');
+              }}
+              javaScriptEnabled
+              domStorageEnabled
+              mixedContentMode="always"
+              scrollEnabled={false}
+              nestedScrollEnabled={false}
+            />
           </View>
 
           {/* Done */}
@@ -383,6 +464,20 @@ const makeStyles = (Colors) => StyleSheet.create({
   checkBoxChecked: { backgroundColor: Colors.primary },
   checkLabel: { color: Colors.textPrimary, fontSize: 13, fontWeight: '500', flex: 1 },
   checkLink: { color: Colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
+
+  // reCAPTCHA — keep the widget on a white card (it renders on white).
+  recaptchaContainer: {
+    width: '100%',
+    height: 100,
+    marginTop: 28,
+    borderRadius: 4,
+    overflow: 'hidden',
+    backgroundColor: '#ffffff',
+  },
+  recaptchaInline: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+  },
 
   btnDisabled: {
     opacity: 0.35,

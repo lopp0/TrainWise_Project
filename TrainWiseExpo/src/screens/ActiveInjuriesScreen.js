@@ -150,7 +150,7 @@ const makeStyles = (Colors) => StyleSheet.create({
   injuryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Spacing.md,
+    paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: Colors.inputBorder,
   },
@@ -170,9 +170,9 @@ const makeStyles = (Colors) => StyleSheet.create({
   recoverBtn: {
     backgroundColor: Colors.primary,
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: 18,
-    minWidth: 130,
+    paddingVertical: 8,
+    borderRadius: 16,
+    minWidth: 110,
     alignItems: 'center',
   },
   recoverBtnText: {

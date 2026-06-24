@@ -243,8 +243,79 @@ namespace TrainWise.DAL
                 TermConfirmationDate = reader["TermConfirmationDate"] as DateTime?,
                 IsCoach = reader["IsCoach"] as bool? ?? false,
                 GoogleId = HasColumn(reader, "GoogleId") ? reader["GoogleId"] as string : null,
-                IsTrainee = SafeReadBool(reader, "IsTrainee", true)
+                IsTrainee = SafeReadBool(reader, "IsTrainee", true),
+                EquippedBadge = HasColumn(reader, "EquippedBadge") ? reader["EquippedBadge"] as string : null,
+                EquippedTitle = HasColumn(reader, "EquippedTitle") ? reader["EquippedTitle"] as string : null,
+                EquippedFrame = HasColumn(reader, "EquippedFrame") ? reader["EquippedFrame"] as string : null
             };
+        }
+
+        // Item 12 — store / read the device's Expo push token for remote push.
+        public void SetPushToken(int userId, string? token)
+        {
+            using (SqlConnection con = Connect())
+            using (SqlCommand cmd = new SqlCommand(
+                "UPDATE dbo.Users SET PushToken = @t WHERE UserID = @u", con))
+            {
+                cmd.Parameters.AddWithValue("@u", userId);
+                cmd.Parameters.AddWithValue("@t", (object?)token ?? DBNull.Value);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        public string? GetPushToken(int userId)
+        {
+            using (SqlConnection con = Connect())
+            using (SqlCommand cmd = new SqlCommand(
+                "SELECT PushToken FROM dbo.Users WHERE UserID = @u", con))
+            {
+                cmd.Parameters.AddWithValue("@u", userId);
+                var v = cmd.ExecuteScalar();
+                return v == null || v == DBNull.Value ? null : v.ToString();
+            }
+        }
+
+        // A-1: persist a user's equipped cosmetics (any may be null = none).
+        public void UpdateEquippedItems(int userId, string? badge, string? title, string? frame)
+        {
+            using (SqlConnection con = Connect())
+            {
+                var param = new Dictionary<string, object>
+                {
+                    {"@UserID", userId},
+                    {"@EquippedBadge", (object?)badge ?? DBNull.Value},
+                    {"@EquippedTitle", (object?)title ?? DBNull.Value},
+                    {"@EquippedFrame", (object?)frame ?? DBNull.Value}
+                };
+                using (SqlCommand cmd = CreateCommandWithStoredProcedure("sp_UpdateEquippedItems", con, param))
+                {
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+        // A-1: batch cosmetics for a CSV of user ids (drives UserProfileCard in Connect).
+        public List<UserCosmetics> GetCosmeticsForUsers(string idsCsv)
+        {
+            var list = new List<UserCosmetics>();
+            if (string.IsNullOrWhiteSpace(idsCsv)) return list;
+            using (SqlConnection con = Connect())
+            using (SqlCommand cmd = new SqlCommand(
+                "SELECT UserID, EquippedBadge, EquippedTitle, EquippedFrame FROM dbo.Users " +
+                "WHERE UserID IN (SELECT TRY_CONVERT(INT, value) FROM STRING_SPLIT(@ids, ','))", con))
+            {
+                cmd.Parameters.AddWithValue("@ids", idsCsv);
+                using (var r = cmd.ExecuteReader())
+                    while (r.Read())
+                        list.Add(new UserCosmetics
+                        {
+                            UserID = (int)r["UserID"],
+                            EquippedBadge = r["EquippedBadge"] as string,
+                            EquippedTitle = r["EquippedTitle"] as string,
+                            EquippedFrame = r["EquippedFrame"] as string
+                        });
+            }
+            return list;
         }
 
         private static bool SafeReadBool(SqlDataReader reader, string column, bool fallback)

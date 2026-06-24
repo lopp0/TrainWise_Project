@@ -21,7 +21,8 @@ namespace TrainWise.BL
             if (!hasText && !hasImage)
                 throw new ArgumentException("Message text or image is required");
 
-            if (_userDal.GetUserById(m.SenderID) == null)
+            var sender = _userDal.GetUserById(m.SenderID);
+            if (sender == null)
                 throw new ArgumentException("Sender does not exist");
             if (_userDal.GetUserById(m.ReceiverID) == null)
                 throw new ArgumentException("Receiver does not exist");
@@ -31,7 +32,17 @@ namespace TrainWise.BL
             if (m.Text.Length > MaxTextLength)
                 m.Text = m.Text.Substring(0, MaxTextLength);
 
-            return _dal.Insert(m);
+            var saved = _dal.Insert(m);
+
+            // Item 12 — remote push to the receiver so they're notified even when
+            // the app is closed (best-effort; no-op if they have no push token).
+            string preview = hasText
+                ? (m.Text.Length > 80 ? m.Text.Substring(0, 80) + "…" : m.Text)
+                : "Sent you a photo 📷";
+            PushSender.Send(_userDal.GetPushToken(m.ReceiverID),
+                $"{sender.FullName} 💬", preview);
+
+            return saved;
         }
 
         public List<Message> GetConversation(int userA, int userB)

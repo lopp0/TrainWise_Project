@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "TrainWiseExpo",
+    "name": "TrainWise",
     "slug": "TrainWiseExpo",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -29,6 +29,7 @@
         "android.permission.CAMERA"
       ],
       "package": "com.anonymous.TrainWiseExpo",
+      "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
           "apiKey": ""

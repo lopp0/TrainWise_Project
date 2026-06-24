@@ -40,6 +40,15 @@ namespace TrainWise.DAL
             cmd.ExecuteNonQuery();
         }
 
+        // A-2: opt in/out of sharing live location on the Connect map.
+        public void SetShareLiveLocation(int userId, bool share)
+        {
+            using SqlConnection con = Connect();
+            var p = new Dictionary<string, object> { { "@UserID", userId }, { "@Share", share } };
+            using SqlCommand cmd = CreateCommandWithStoredProcedure("sp_SetShareLiveLocation", con, p);
+            cmd.ExecuteNonQuery();
+        }
+
         // ── nearby / mini profile ────────────────────────────────────────
         public List<NearbyUser> GetNearbyUsers(int userId, double lat, double lng, double radiusKm)
         {
@@ -65,6 +74,7 @@ namespace TrainWise.DAL
                     Longitude = Dbl(r, "Longitude"),
                     LastSeen = Dt(r, "LastSeen"),
                     IsOnline = Bool(r, "IsOnline"),
+                    ShareLiveLocation = Has(r, "ShareLiveLocation") && Bool(r, "ShareLiveLocation"),
                     DistanceKm = Dbl(r, "DistanceKm")
                 });
             }
