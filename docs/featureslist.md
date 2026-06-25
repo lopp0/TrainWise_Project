@@ -10,9 +10,13 @@
 ## Auth & Accounts
 1. Welcome / landing screen — first entry point for guests
 2. Login — email + password sign‑in (`POST /api/auth/login`, validated by `sp_LoginUser`)
-3. Two‑step registration — basic info + gender, then preferences + terms (`SignUpScreen` → `SignUpFinal`)
+3. Two‑step registration — basic info + gender, then preferences + terms (`SignUpScreen` → `SignUpFinal`),
+   with a **reCAPTCHA** gate whose token is **verified server‑side** (`CaptchaVerifier` → Google
+   `siteverify`) before the account is created
 4. Role picker — `trainer` / `trainee` / `both` → sets `IsCoach` / `IsTrainee` independently
-5. Google sign‑in — `POST /api/users/google-login` + native Google Sign‑In plugin
+5. Google sign‑in — **native** account picker (`@react-native-google-signin`, no WebView/redirect) on
+   both Login and Sign Up; the Sign‑Up path requires TOS + Privacy consent. Sends the Google **ID token**
+   to `POST /api/users/google-login`, which **verifies it server‑side** before find‑or‑create
 6. Health declaration + terms confirmation at signup
 7. Profile screen — view / edit personal + training info
 8. Settings — update profile, week‑start, theme

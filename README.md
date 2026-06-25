@@ -104,7 +104,7 @@ the Python ML service runs **locally** (see the note below the diagram).
 | **Database** | Microsoft SQL Server — Azure SQL (prod) / SQL Server Express (local) · stored procedures |
 | **ML** | Python 3.10+ · Flask · pandas · NumPy · scikit‑learn · matplotlib / seaborn · pyodbc |
 | **Cloud** | Azure App Service · Azure SQL Database (Israel Central) |
-| **Auth** | Session‑based (no JWT) — credentials validated server‑side via `sp_LoginUser`; a Google sign‑in endpoint also exists |
+| **Auth** | Session‑based (no JWT) — credentials validated server‑side via `sp_LoginUser`; **native Google Sign‑In** with the Google **ID token verified server‑side**; **reCAPTCHA** on signup verified server‑side |
 | **External APIs** | Google Maps SDK · Google Weather API · Google Air Quality API · OpenAI (in‑app AI chat + injury advice) · Firebase Cloud Messaging (push) · Google Health Connect |
 
 ---

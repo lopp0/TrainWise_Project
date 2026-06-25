@@ -182,6 +182,9 @@ If that works, you're set up.
 | DB connection | `TrainWise/TrainWise/appsettings.json` | Local string by default; Azure overrides via the Connection strings blade |
 | Frontend secrets | `TrainWiseExpo/.env` (gitignored) | Google + OpenAI keys; `EXPO_PUBLIC_*` are inlined into the bundle |
 | Native Maps key | injected by `TrainWiseExpo/app.config.js` from `.env` | `app.json` keeps an empty placeholder — never a literal key |
+| reCAPTCHA | secret in Azure App Service `RECAPTCHA_SECRET`; site key in `SignUpFinal.js` | leave the secret unset to disable verification (fail‑open) |
+| Google Sign‑In | Firebase project `trainwise-ef6aa` → Authentication → enable **Google**; register the release‑keystore **SHA‑1** on the Android app; place `google-services.json` at `android/app/` (gitignored) | web client ID from that project lives in `src/constants/google.js` (public) |
+| Release keystore | `android/app/trainwise-release.keystore` (+ passwords in `android/app/build.gradle`) | gitignored; **back it up** — needed to sign every build |
 
 > Since both `BASE_URL`s already include `/api`, endpoint paths must **not** start with `/api`
 > (write `apiClient.post('/Users', …)`, not `/api/Users`).

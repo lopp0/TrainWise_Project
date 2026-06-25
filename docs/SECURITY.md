@@ -22,8 +22,15 @@ raise it directly with the project owner — do not open a public issue with rep
 - **Session‑based, no JWT.** Login is `POST /api/auth/login`; credentials are validated server‑side by
   the `sp_LoginUser` stored procedure. The frontend (`src/api/AuthContext.js`) stores the returned user
   object in `AsyncStorage` and exposes `userId` to the app.
-- A **Google sign‑in** endpoint also exists (`POST /api/users/google-login`) alongside the
-  `@react-native-google-signin` client package.
+- **Google sign‑in** (`POST /api/users/google-login`) uses the **native** `@react-native-google-signin`
+  picker (no WebView / custom‑scheme redirect — that was the old `invalid_request` OAuth‑policy failure).
+  The client sends the Google **ID token**, which the backend **verifies server‑side** (`GoogleTokenVerifier`
+  → Google `tokeninfo`, with the token's `aud` checked against our web client ID and `email_verified`
+  required) before find‑or‑create. The raw client‑supplied `GoogleId` is **not** trusted.
+- **reCAPTCHA on registration.** `POST /api/users` (register) runs `CaptchaVerifier` (Google `siteverify`)
+  before creating the user. It is **fail‑open**: if `RECAPTCHA_SECRET` isn't configured, verification is
+  skipped so signup still works. Enabling it requires the matching site key in the app + the secret in
+  Azure (see [Secrets](#secrets-management)).
 - A locally generated `deviceId` (`dev-<timestamp>-<rand>`) is persisted per install.
 
 ### Transport
@@ -54,6 +61,23 @@ key was once leaked via a push.
   key (`EXPO_PUBLIC_OPENAI_API_KEY`).
 - The **native Maps key** is injected at build time by `app.config.js` from the env var; `app.json`'s
   `android.config.googleMaps.apiKey` is an **empty placeholder** — never a literal key.
+
+### Server‑side auth secrets (Azure App Service → Configuration)
+These are read from environment variables on the backend, never hardcoded:
+- **`RECAPTCHA_SECRET`** — the reCAPTCHA **secret** key (pairs with the site key in `SignUpFinal.js`).
+  Used by `CaptchaVerifier`. Leave unset to disable verification (fail‑open). The site key is public; the
+  secret is not — keep it only in Azure config.
+- **`GOOGLE_WEB_CLIENT_ID`** *(optional)* — expected audience for Google ID‑token verification. Falls back
+  to the public web client ID literal of the Firebase project (`trainwise-ef6aa`); a web **client ID** is
+  public (it ships in the APK), so the fallback is not a secret.
+
+### Android release signing key (local only)
+Google Sign‑In requires the app's Android OAuth client (package + **SHA‑1**). The release APK is signed
+with a **dedicated keystore** `TrainWiseExpo/android/app/trainwise-release.keystore` (unique SHA‑1, so it
+doesn't collide with another project's OAuth client). The keystore **and its passwords** (in
+`android/app/build.gradle`) live only locally — `TrainWiseExpo/android/` is gitignored wholesale and
+`*.keystore` (except `debug.keystore`) is gitignored, so neither is ever committed. **Back the keystore
+up** — losing it means you can't sign updates.
 
 ### `EXPO_PUBLIC_*` are baked into the APK in plaintext
 Any `EXPO_PUBLIC_`‑prefixed var is inlined into the JS bundle at build time, so it ships **in the APK
@@ -129,6 +153,9 @@ Honest list of what is **not** yet done:
 
 - **Password hashing** — the app layer passes the password straight to `sp_LoginUser`; there is no
   salted hash (e.g. BCrypt) visible in the C#/SQL layer. Add salted hashing + verify on login.
+- *(Closed 2026‑06‑25)* ~~Google login trusted a raw client‑supplied `GoogleId`~~ — now the server
+  verifies the Google **ID token** (`GoogleTokenVerifier`, audience‑checked) and ignores any
+  client‑provided identity.
 - **Token‑based sessions** — replace the AsyncStorage user object with a short‑lived access token +
   refresh.
 - **Rate limiting** — no per‑endpoint or global throttle on login / register.

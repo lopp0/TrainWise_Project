@@ -50,6 +50,13 @@ The current Azure target (as of the last redeploy) is:
   reads config with environment‑variable fallback, so the App Service value wins over the JSON.
 - **Azure SQL networking** — "Allow Azure services and resources to access this server" must be **ON**,
   or the App Service can't reach the DB.
+- **Auth env vars** (App Service → **Configuration → Application settings**, read from the environment,
+  never hardcoded):
+  - `RECAPTCHA_SECRET` — reCAPTCHA secret key for `CaptchaVerifier`. Leave **unset** to keep signup
+    verification disabled (fail‑open); set it only once the app ships the matching site key.
+  - `GOOGLE_WEB_CLIENT_ID` *(optional)* — expected audience for Google ID‑token verification (defaults to
+    the project's public web client ID).
+  - `FIREBASE_CREDENTIALS_JSON` — service‑account JSON for FCM push (`PushSender`).
 - **Schema parity** — run every `sql/` migration against Azure SQL too (SSMS → connect to
   `<your-sql-server>.database.windows.net`). The schema must match local SQL Express.
 - **Swagger** — `Program.cs` gates Swagger to `IsDevelopment()`. If you need the API explorer on the
@@ -99,6 +106,11 @@ $env:NODE_OPTIONS = "--max-old-space-size=8192"   # avoids the JS-bundle OOM
   the APK stays ~125 MB.
 - A rotated native Maps key only reaches the manifest via `expo run:android` / prebuild — plain
   `gradlew` does not re‑prebuild.
+- **Release signing** uses a dedicated keystore `android/app/trainwise-release.keystore` (not the shared
+  debug keystore) so Google Sign‑In's Android OAuth client has a **unique SHA‑1**. The keystore + its
+  passwords live only locally (gitignored) — **back them up**. Changing the keystore changes the app
+  **signature**, so the app must be **uninstalled** before installing the new APK, and the new SHA‑1 must
+  be registered on the Firebase Android app.
 
 > **Never run `npx expo prebuild --clean` and never use EAS Build** on this project. Both regenerate
 > `android/` from `app.json` and wipe the manual Health Connect manifest edits (the

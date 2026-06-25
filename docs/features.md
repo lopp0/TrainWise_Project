@@ -49,12 +49,16 @@ clients must send `Content-Type: application/json` even for "empty" bodies.
 - `POST /login` — email + password → user (via `sp_LoginUser`)
 
 **`UsersController`** — `api/users`
-- `GET /` · `GET /{id}` · `POST /` (register) · `PUT /{id}` · `DELETE /{id}`
+- `GET /` · `GET /{id}` · `POST /` (register; **server‑side reCAPTCHA verification** via
+  `CaptchaVerifier` before create — see [Auth security](#auth--users)) · `PUT /{id}` · `DELETE /{id}`
 - `POST /{id}/upload` — profile image (multipart)
 - `GET /{id}/summary` · `PUT /{id}/baseline`
 - `GET /cosmetics` · `PUT /{id}/equip` — cosmetics shop
 - `PUT /{id}/pushtoken` — FCM token
-- `POST /google-login` — Google sign‑in
+- `POST /google-login` — Google sign‑in. Body is `{ idToken }`; the backend **verifies the Google
+  ID token server‑side** (`GoogleTokenVerifier` → Google `tokeninfo`, audience‑checked against the
+  web client ID) and derives the identity from the verified token, then find‑or‑creates the user via
+  `sp_LoginOrCreateGoogleUser`. A raw client‑supplied `GoogleId` is **not** trusted.
 
 **`UserGoalsController`** — `api/users/{userId}/goals` — `POST /{goalId}` · `DELETE /{goalId}`
 **`UserDevicesController`** — `api/users/{userId}/devices` — `GET /` · `POST /` · `PUT /{deviceId}`
