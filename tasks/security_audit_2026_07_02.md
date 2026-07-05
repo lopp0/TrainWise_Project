@@ -36,7 +36,7 @@ injection found**. Google ID tokens are verified server-side (signature/expiry/a
 `AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H`
 
 **What:** The working copy of `TrainWise/TrainWise/appsettings.json` contains a usable credential:
-`Server=tcp:trainwiseadmin01.database.windows.net;User ID=TrainWiseAdmin;Password=***REDACTED-ROTATE***;...`.
+an Azure SQL connection string with the admin username and password inline (server / user / password redacted here).
 The password is also trivially weak. The Azure SQL server has "Allow Azure services" enabled.
 
 **Attack vector:** Anyone who obtains the file (a mis-`git add -A`, a leaked build artifact, a repo push)
