@@ -2,6 +2,42 @@ import React, { createContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { login as apiLogin } from './api';
 import { setActiveUserId } from '../utils/activeUser';
+import { setAuthToken, clearAuthToken, loadAuthToken } from './authToken';
+import { isBiometricEnabled, isBiometricSupported } from '../utils/biometric';
+
+// Auth responses are now { token, user }. Older builds/paths may still return a
+// bare user object, so tolerate both shapes.
+const unwrapAuthResponse = (data) => ({
+  token: data?.token ?? null,
+  user: data?.user ?? data,
+});
+
+// Map a backend user payload (from email/password OR Google login) to the shape
+// we persist. Shared so both login paths produce an identical stored user.
+const normalizeUser = (userData, deviceId) => ({
+  userId: userData.userID || userData.userId,
+  deviceId,
+  fullName: userData.fullName,
+  email: userData.email,
+  userName: userData.userName,
+  isCoach: userData.isCoach,
+  // Default true so users created before the IsTrainee column existed still see
+  // the trainee UI. Coach-only is a deliberate opt-in.
+  isTrainee: userData.isTrainee ?? true,
+  profileImagePath: userData.profileImagePath ?? null,
+  activityLevel: userData.activityLevel,
+  height: userData.height,
+  weight: userData.weight,
+  birthYear: userData.birthYear,
+  gender: userData.gender,
+  deviceType: userData.deviceType,
+  experienceLevel: userData.experienceLevel,
+  baseLineDailyLoad: userData.baseLineDailyLoad,
+  baseLineWeeklyLoad: userData.baseLineWeeklyLoad,
+  isBaselineEstablished: userData.isBaselineEstablished,
+  healthDeclaration: userData.healthDeclaration,
+  confirmTerms: userData.confirmTerms,
+});
 
 /**
  * AuthContext
@@ -27,6 +63,10 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  // #112 — when biometric unlock is enabled, the restored session starts
+  // `locked` and a full-screen overlay (rendered in App.js) blocks the app
+  // until authenticateAsync succeeds. Fresh logins are never locked.
+  const [locked, setLocked] = useState(false);
 
   const STORAGE_KEY = '@trainwise_user';
   const DEVICE_ID_KEY = '@trainwise_device_id';
@@ -48,7 +88,9 @@ export const AuthProvider = ({ children }) => {
     try {
       setIsLoading(true);
       const savedUser = await AsyncStorage.getItem(STORAGE_KEY);
-      
+      // Restore the bearer token so API calls are authenticated after a restart.
+      await loadAuthToken();
+
       if (savedUser) {
         const parsed = JSON.parse(savedUser);
         if (!parsed.deviceId) {
@@ -59,6 +101,13 @@ export const AuthProvider = ({ children }) => {
         // BEFORE any screen reads them.
         setActiveUserId(parsed.userId);
         setUser(parsed);
+        // #112 — gate re-entry on biometrics when the user enabled it AND the
+        // device still has biometrics enrolled (else don't lock them out).
+        try {
+          if ((await isBiometricEnabled()) && (await isBiometricSupported())) {
+            setLocked(true);
+          }
+        } catch {}
       }
     } catch (error) {
       console.error('Failed to restore user session:', error);
@@ -82,35 +131,12 @@ export const AuthProvider = ({ children }) => {
       setIsLoading(true);
       setError(null);
 
-      const userData = await apiLogin(email, password);
+      const { token, user: userData } = unwrapAuthResponse(await apiLogin(email, password));
       const deviceId = await getOrCreateDeviceId();
+      const normalizedUser = normalizeUser(userData, deviceId);
 
-      // Normalize field names if needed (backend returns userID, we store as userID)
-      const normalizedUser = {
-        userId: userData.userID || userData.userId,
-        deviceId,
-        fullName: userData.fullName,
-        email: userData.email,
-        userName: userData.userName,
-        isCoach: userData.isCoach,
-        // Default true so users created before the IsTrainee column existed
-        // still see the trainee UI. Coach-only is a deliberate opt-in.
-        isTrainee: userData.isTrainee ?? true,
-        profileImagePath: userData.profileImagePath ?? null,
-        activityLevel: userData.activityLevel,
-        height: userData.height,
-        weight: userData.weight,
-        birthYear: userData.birthYear,
-        gender: userData.gender,
-        deviceType: userData.deviceType,
-        experienceLevel: userData.experienceLevel,
-        baseLineDailyLoad: userData.baseLineDailyLoad,
-        baseLineWeeklyLoad: userData.baseLineWeeklyLoad,
-        isBaselineEstablished: userData.isBaselineEstablished,
-        healthDeclaration: userData.healthDeclaration,
-        confirmTerms: userData.confirmTerms,
-      };
-
+      // Store the signed token FIRST so any follow-up request is authenticated.
+      await setAuthToken(token);
       // Persist to AsyncStorage
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedUser));
 
@@ -127,6 +153,31 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   /**
+   * Establish a session from a backend user object returned by Google sign-in
+   * (POST /api/users/google-login). Same normalize + persist as `login`, but the
+   * credential check already happened (server verified the Google ID token).
+   */
+  const loginWithGoogleUser = useCallback(async (userData) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const { token, user: u } = unwrapAuthResponse(userData);
+      const deviceId = await getOrCreateDeviceId();
+      const normalizedUser = normalizeUser(u, deviceId);
+      await setAuthToken(token);
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedUser));
+      setActiveUserId(normalizedUser.userId);
+      setUser(normalizedUser);
+      return normalizedUser;
+    } catch (err) {
+      setError(err.message || 'Google login failed');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  /**
    * Logout user.
    * Clears stored user and resets context state.
    */
@@ -134,8 +185,10 @@ export const AuthProvider = ({ children }) => {
     try {
       setIsLoading(true);
       await AsyncStorage.removeItem(STORAGE_KEY);
+      await clearAuthToken();
       setActiveUserId(null);
       setUser(null);
+      setLocked(false);
       setError(null);
     } catch (err) {
       console.error('Error during logout:', err);
@@ -167,6 +220,9 @@ export const AuthProvider = ({ children }) => {
     bootstrapAsync();
   }, [bootstrapAsync]);
 
+  // #112 — called by the lock overlay once biometric auth succeeds.
+  const unlock = useCallback(() => setLocked(false), []);
+
   const value = {
     // State
     user,
@@ -174,12 +230,15 @@ export const AuthProvider = ({ children }) => {
     deviceId: user?.deviceId, // May be added later
     isLoggedIn: !!user,
     isLoading,
+    locked,
     error,
-    
+
     // Methods
     login,
+    loginWithGoogleUser,
     logout,
     updateUser,
+    unlock,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

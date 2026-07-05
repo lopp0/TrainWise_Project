@@ -64,5 +64,33 @@ namespace TrainWise.BL
             if (userId <= 0) throw new ArgumentException("UserID must be positive");
             return _dal.GetUnreadCount(userId);
         }
+
+        // #138 — typing indicator.
+        public void SetTyping(int fromUserId, int toUserId, bool isTyping)
+        {
+            if (fromUserId <= 0 || toUserId <= 0) throw new ArgumentException("Invalid ids");
+            _dal.SetTyping(fromUserId, toUserId, isTyping);
+        }
+
+        public bool IsTyping(int fromUserId, int toUserId)
+        {
+            if (fromUserId <= 0 || toUserId <= 0) throw new ArgumentException("Invalid ids");
+            return _dal.IsTyping(fromUserId, toUserId);
+        }
+
+        // #140 — message reactions.
+        public void React(int messageId, int userId, string emoji)
+        {
+            if (messageId <= 0 || userId <= 0) throw new ArgumentException("Invalid ids");
+            if (string.IsNullOrWhiteSpace(emoji)) throw new ArgumentException("Emoji is required");
+            if (emoji.Length > 16) emoji = emoji.Substring(0, 16);
+            _dal.ToggleReaction(messageId, userId, emoji);
+        }
+
+        public List<MessageReaction> GetThreadReactions(int userA, int userB)
+        {
+            if (userA <= 0 || userB <= 0) throw new ArgumentException("Both user ids must be positive");
+            return _dal.GetThreadReactions(userA, userB);
+        }
     }
 }

@@ -19,5 +19,8 @@
         public bool IsCoach { get; set; }
         public bool IsTrainee { get; set; } = true;
 
+        // reCAPTCHA v2 token from the sign-up WebView. Nullable so the request
+        // doesn't 400 on model validation when captcha is disabled/skipped.
+        public string? CaptchaToken { get; set; }
     }
 }

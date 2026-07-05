@@ -21,16 +21,31 @@ import {getUserById, updateUser as updateUserApi, deleteUser as deleteUserApi, s
 import { getShareLocation, setShareLocationLocal } from '../utils/locationSharing';
 import { useAuth } from '../api/AuthContext';
 import { useTheme } from '../theme/ThemeContext';
+import { ACCENT_LIST } from '../theme/palettes';
 import {
   DAY_NAMES,
   getWeekStartDay,
   setWeekStartDay,
 } from '../constants/weekStart';
 import { resetOnboarding } from '../utils/onboardingManager';
+import {
+  getNotifPrefs,
+  setNotifPrefs,
+  NOTIF_DEFAULTS,
+  NOTIF_TYPE_LABELS,
+} from '../utils/notificationPrefs';
+import {
+  isBiometricSupported,
+  isBiometricEnabled,
+  setBiometricEnabled,
+  authenticateBiometric,
+} from '../utils/biometric';
+import { changePassword as changePasswordApi } from '../services/api';
+import { sendWeeklyRecapNow } from '../api/NotificationService';
 
 const SettingsScreen = ({navigation}) => {
   const { userId, updateUser: updateAuthUser, logout } = useAuth();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, accent, setAccent, autoTheme, updateAutoTheme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -49,6 +64,15 @@ const SettingsScreen = ({navigation}) => {
   const [weight, setWeight] = useState('');
   const [weekStart, setWeekStart] = useState(getWeekStartDay());
   const [shareLocation, setShareLocation] = useState(false); // A-2
+  const [notifPrefs, setNotifPrefsState] = useState(NOTIF_DEFAULTS); // #161
+  // #112 — biometric unlock
+  const [bioSupported, setBioSupported] = useState(false);
+  const [bioEnabled, setBioEnabled] = useState(false);
+  // #111 — change password
+  const [curPassword, setCurPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPw, setChangingPw] = useState(false);
   // Server-managed fields the BL requires on update — kept hidden but echoed back.
   const [serverFields, setServerFields] = useState({
     activityLevel: 1,
@@ -60,7 +84,67 @@ const SettingsScreen = ({navigation}) => {
   useEffect(() => {
     loadUser();
     getShareLocation().then(setShareLocation);
+    getNotifPrefs().then(setNotifPrefsState);
+    isBiometricSupported().then(setBioSupported);
+    isBiometricEnabled().then(setBioEnabled);
   }, []);
+
+  // #112 — enabling requires a successful biometric check first (so a user
+  // can't lock themselves out with a sensor that doesn't recognize them).
+  const toggleBiometric = async (value) => {
+    if (value) {
+      const ok = await authenticateBiometric('Confirm to enable biometric unlock');
+      if (!ok) return;
+      await setBiometricEnabled(true);
+      setBioEnabled(true);
+    } else {
+      await setBiometricEnabled(false);
+      setBioEnabled(false);
+    }
+  };
+
+  // #111 — change password (Google-only accounts have no password to change).
+  const handleChangePassword = async () => {
+    if (!newPassword || newPassword.length < 6) {
+      Alert.alert('Weak password', 'New password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Mismatch', 'New password and confirmation do not match.');
+      return;
+    }
+    setChangingPw(true);
+    try {
+      await changePasswordApi(userId, curPassword, newPassword);
+      setCurPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      Alert.alert('Done', 'Your password has been changed.');
+    } catch (error) {
+      Alert.alert('Could not change password', error.response?.data || error.message || 'Try again.');
+    } finally {
+      setChangingPw(false);
+    }
+  };
+
+  // #161 — persist a single notification preference and reflect it immediately.
+  const updateNotifPref = async (patch) => {
+    const next = await setNotifPrefs(patch);
+    setNotifPrefsState({ ...next });
+  };
+
+  // Quiet-hours start/end steppers (0–23, wrap).
+  const stepQuiet = (field, delta) => {
+    const cur = notifPrefs[field] ?? 0;
+    updateNotifPref({ [field]: (cur + delta + 24) % 24 });
+  };
+  const hh = (h) => `${String(h).padStart(2, '0')}:00`;
+
+  // #179 — auto-dark window start/end steppers (0–23, wrap).
+  const stepDark = (field, delta) => {
+    const cur = autoTheme[field] ?? 0;
+    updateAutoTheme({ [field]: (cur + delta + 24) % 24 });
+  };
 
   // A-2: toggle live-location sharing (double opt-in with an explainer).
   const toggleShareLocation = (value) => {
@@ -324,6 +408,7 @@ const SettingsScreen = ({navigation}) => {
                   key={opt}
                   style={[styles.segmentBtn, active && styles.segmentBtnActive]}
                   onPress={() => setTheme(opt)}
+                  disabled={autoTheme.enabled}
                 >
                   <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
                     {opt === 'dark' ? 'Dark' : 'Light'}
@@ -332,7 +417,83 @@ const SettingsScreen = ({navigation}) => {
               );
             })}
           </View>
-          <Text style={styles.hint}>Light mode uses the logo&apos;s mint/teal palette.</Text>
+          <Text style={styles.hint}>
+            {autoTheme.enabled
+              ? 'Auto dark mode is on — the schedule below controls light/dark.'
+              : 'Light mode uses the logo’s mint/teal palette.'}
+          </Text>
+
+          {/* #160 — accent color picker */}
+          <Text style={[styles.label, { marginTop: Spacing.md }]}>Accent color</Text>
+          <View style={styles.accentRow}>
+            {ACCENT_LIST.map((a) => {
+              const active = accent === a.name;
+              return (
+                <TouchableOpacity
+                  key={a.name}
+                  style={styles.accentItem}
+                  onPress={() => setAccent(a.name)}
+                  activeOpacity={0.8}
+                >
+                  <View
+                    style={[
+                      styles.accentSwatch,
+                      { backgroundColor: a.swatch },
+                      active && styles.accentSwatchActive,
+                    ]}
+                  >
+                    {active && <Text style={styles.accentCheck}>✓</Text>}
+                  </View>
+                  <Text style={[styles.accentLabel, active && styles.accentLabelActive]}>
+                    {a.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* #179 — scheduled (auto) dark mode */}
+          <View style={[styles.switchRow, { marginTop: Spacing.sm }]}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={styles.switchLabel}>Auto dark mode</Text>
+              <Text style={styles.hint}>Switch to dark in the evening and back to light by day.</Text>
+            </View>
+            <Switch
+              value={!!autoTheme.enabled}
+              onValueChange={(v) => updateAutoTheme({ enabled: v })}
+              trackColor={{ false: Colors.border, true: Colors.primary }}
+              thumbColor="#fff"
+            />
+          </View>
+
+          {autoTheme.enabled && (
+            <View style={styles.quietRow}>
+              <View style={styles.quietCol}>
+                <Text style={styles.label}>Dark from</Text>
+                <View style={styles.stepper}>
+                  <TouchableOpacity style={styles.stepBtn} onPress={() => stepDark('darkStart', -1)}>
+                    <Text style={styles.stepBtnText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.stepVal}>{hh(autoTheme.darkStart)}</Text>
+                  <TouchableOpacity style={styles.stepBtn} onPress={() => stepDark('darkStart', 1)}>
+                    <Text style={styles.stepBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <View style={styles.quietCol}>
+                <Text style={styles.label}>Light from</Text>
+                <View style={styles.stepper}>
+                  <TouchableOpacity style={styles.stepBtn} onPress={() => stepDark('darkEnd', -1)}>
+                    <Text style={styles.stepBtnText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.stepVal}>{hh(autoTheme.darkEnd)}</Text>
+                  <TouchableOpacity style={styles.stepBtn} onPress={() => stepDark('darkEnd', 1)}>
+                    <Text style={styles.stepBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
         </Card>
 
         {/* Week start */}
@@ -379,6 +540,140 @@ const SettingsScreen = ({navigation}) => {
               thumbColor="#fff"
             />
           </View>
+        </Card>
+
+        {/* Security (#112 biometric + #111 change password) */}
+        <Card>
+          <Text style={styles.cardTitle}>Security</Text>
+          {bioSupported && (
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={styles.switchLabel}>Unlock with biometrics</Text>
+                <Text style={styles.hint}>
+                  Require fingerprint or face to open TrainWise.
+                </Text>
+              </View>
+              <Switch
+                value={bioEnabled}
+                onValueChange={toggleBiometric}
+                trackColor={{ false: Colors.border, true: Colors.primary }}
+                thumbColor="#fff"
+              />
+            </View>
+          )}
+
+          <Text style={[styles.label, { marginTop: Spacing.md }]}>Change password</Text>
+          <TextInput
+            style={styles.input}
+            value={curPassword}
+            onChangeText={setCurPassword}
+            placeholder="Current password"
+            placeholderTextColor={Colors.textMuted}
+            secureTextEntry
+            autoCapitalize="none"
+          />
+          <TextInput
+            style={[styles.input, { marginTop: Spacing.sm }]}
+            value={newPassword}
+            onChangeText={setNewPassword}
+            placeholder="New password"
+            placeholderTextColor={Colors.textMuted}
+            secureTextEntry
+            autoCapitalize="none"
+          />
+          <TextInput
+            style={[styles.input, { marginTop: Spacing.sm }]}
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            placeholder="Confirm new password"
+            placeholderTextColor={Colors.textMuted}
+            secureTextEntry
+            autoCapitalize="none"
+          />
+          <TouchableOpacity
+            style={[styles.changePwBtn, changingPw && { opacity: 0.6 }]}
+            onPress={handleChangePassword}
+            disabled={changingPw}
+            activeOpacity={0.85}
+          >
+            {changingPw ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.changePwText}>Update password</Text>
+            )}
+          </TouchableOpacity>
+        </Card>
+
+        {/* Notifications (#161) */}
+        <Card>
+          <Text style={styles.cardTitle}>Notifications</Text>
+          {Object.keys(NOTIF_TYPE_LABELS).map((key) => (
+            <View key={key} style={styles.switchRow}>
+              <Text style={[styles.switchLabel, { flex: 1, paddingRight: 12 }]}>
+                {NOTIF_TYPE_LABELS[key]}
+              </Text>
+              <Switch
+                value={notifPrefs[key] !== false}
+                onValueChange={(v) => updateNotifPref({ [key]: v })}
+                trackColor={{ false: Colors.border, true: Colors.primary }}
+                thumbColor="#fff"
+              />
+            </View>
+          ))}
+
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={styles.switchLabel}>Quiet hours</Text>
+              <Text style={styles.hint}>Silence all notifications during a chosen window.</Text>
+            </View>
+            <Switch
+              value={!!notifPrefs.quietHoursEnabled}
+              onValueChange={(v) => updateNotifPref({ quietHoursEnabled: v })}
+              trackColor={{ false: Colors.border, true: Colors.primary }}
+              thumbColor="#fff"
+            />
+          </View>
+
+          {/* #162 — preview the weekly recap notification right now */}
+          <TouchableOpacity
+            style={styles.testRecapBtn}
+            activeOpacity={0.85}
+            onPress={async () => {
+              await sendWeeklyRecapNow();
+              Alert.alert('Sent', 'Check your notification shade for the weekly recap preview.');
+            }}
+          >
+            <Text style={styles.testRecapText}>Send test recap now</Text>
+          </TouchableOpacity>
+
+          {notifPrefs.quietHoursEnabled && (
+            <View style={styles.quietRow}>
+              <View style={styles.quietCol}>
+                <Text style={styles.label}>From</Text>
+                <View style={styles.stepper}>
+                  <TouchableOpacity style={styles.stepBtn} onPress={() => stepQuiet('quietStart', -1)}>
+                    <Text style={styles.stepBtnText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.stepVal}>{hh(notifPrefs.quietStart)}</Text>
+                  <TouchableOpacity style={styles.stepBtn} onPress={() => stepQuiet('quietStart', 1)}>
+                    <Text style={styles.stepBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <View style={styles.quietCol}>
+                <Text style={styles.label}>To</Text>
+                <View style={styles.stepper}>
+                  <TouchableOpacity style={styles.stepBtn} onPress={() => stepQuiet('quietEnd', -1)}>
+                    <Text style={styles.stepBtnText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.stepVal}>{hh(notifPrefs.quietEnd)}</Text>
+                  <TouchableOpacity style={styles.stepBtn} onPress={() => stepQuiet('quietEnd', 1)}>
+                    <Text style={styles.stepBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
         </Card>
 
         {/* Privacy + Terms */}
@@ -597,6 +892,42 @@ const makeStyles = (Colors) => StyleSheet.create({
   segmentTextActive: {
     color: Colors.textPrimary,
   },
+  accentRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: Spacing.xs,
+  },
+  accentItem: {
+    width: '16.66%',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  accentSwatch: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  accentSwatchActive: {
+    borderColor: Colors.textPrimary,
+  },
+  accentCheck: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: Fonts.bold,
+  },
+  accentLabel: {
+    color: Colors.textSecondary,
+    fontSize: 10,
+    marginTop: 3,
+  },
+  accentLabelActive: {
+    color: Colors.textPrimary,
+    fontWeight: Fonts.semiBold,
+  },
   weekStartRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -628,6 +959,64 @@ const makeStyles = (Colors) => StyleSheet.create({
     color: Colors.textPrimary,
     fontSize: Fonts.bodySize,
     fontWeight: Fonts.semiBold,
+  },
+  testRecapBtn: {
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+  },
+  testRecapText: {
+    color: Colors.primary,
+    fontSize: Fonts.captionSize + 1,
+    fontWeight: Fonts.semiBold,
+  },
+  changePwBtn: {
+    backgroundColor: Colors.primary,
+    paddingVertical: Spacing.md,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: Spacing.md,
+  },
+  changePwText: {
+    color: '#fff',
+    fontSize: Fonts.bodySize,
+    fontWeight: Fonts.bold,
+  },
+  quietRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  quietCol: {
+    flex: 1,
+  },
+  stepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.inputBackground,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+  },
+  stepBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 2,
+  },
+  stepBtnText: {
+    color: Colors.primary,
+    fontSize: 22,
+    fontWeight: Fonts.bold,
+  },
+  stepVal: {
+    color: Colors.textPrimary,
+    fontSize: Fonts.bodySize,
+    fontWeight: Fonts.bold,
   },
   hint: {
     color: Colors.textMuted,

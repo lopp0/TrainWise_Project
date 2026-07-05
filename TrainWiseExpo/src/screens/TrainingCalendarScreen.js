@@ -33,6 +33,7 @@ import {
   calculateDailyLoad,
 } from '../services/api';
 import { markWorkoutToday } from '../api/NotificationService';
+import { errText } from '../utils/errText';
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTHS = [
@@ -209,7 +210,7 @@ const TrainingCalendarScreen = ({ navigation, route }) => {
       setModalOpen(false);
       load();
     } catch (e) {
-      Alert.alert('Error', e?.response?.data || 'Could not save plan.');
+      Alert.alert('Error', errText(e, 'Could not save plan.'));
     } finally {
       setSaving(false);
     }
@@ -296,7 +297,7 @@ const TrainingCalendarScreen = ({ navigation, route }) => {
       setCompletePlan(null);
       load();
     } catch (e) {
-      Alert.alert('Error', e?.response?.data || 'Could not complete this workout.');
+      Alert.alert('Error', errText(e, 'Could not complete this workout.'));
     } finally {
       setCompleting(false);
     }

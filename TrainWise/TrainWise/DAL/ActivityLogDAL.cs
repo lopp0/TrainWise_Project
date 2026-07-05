@@ -64,6 +64,34 @@ namespace TrainWise.DAL
             }
         }
 
+        // #124 — set the optional note + photo on a workout (inline SQL so we
+        // don't have to touch the insert/update stored procs). Returns the values
+        // back so the client can confirm.
+        public void SetNotesAndPhoto(int activityId, string? notes, string? photoPath)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(
+                "UPDATE dbo.ActivityLogs SET Notes = @n, PhotoPath = @p WHERE ActivityID = @id", con);
+            cmd.Parameters.AddWithValue("@id", activityId);
+            cmd.Parameters.AddWithValue("@n", (object?)notes ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@p", (object?)photoPath ?? DBNull.Value);
+            cmd.ExecuteNonQuery();
+        }
+
+        // #124 — read the note + photo for one workout.
+        public (string? notes, string? photoPath) GetNotesAndPhoto(int activityId)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(
+                "SELECT Notes, PhotoPath FROM dbo.ActivityLogs WHERE ActivityID = @id", con);
+            cmd.Parameters.AddWithValue("@id", activityId);
+            using var r = cmd.ExecuteReader();
+            if (r.Read())
+                return (r["Notes"] == DBNull.Value ? null : r["Notes"].ToString(),
+                        r["PhotoPath"] == DBNull.Value ? null : r["PhotoPath"].ToString());
+            return (null, null);
+        }
+
         public void Delete(int activityId)
         {
             using (SqlConnection con = Connect())
@@ -74,6 +102,17 @@ namespace TrainWise.DAL
                     cmd.ExecuteNonQuery();
                 }
             }
+        }
+
+        // Owner of a workout row (for authorization). Null if it doesn't exist.
+        public int? GetOwnerUserId(int activityId)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(
+                "SELECT UserID FROM dbo.ActivityLogs WHERE ActivityID = @id", con);
+            cmd.Parameters.AddWithValue("@id", activityId);
+            var v = cmd.ExecuteScalar();
+            return v == null || v == DBNull.Value ? (int?)null : Convert.ToInt32(v);
         }
 
         public List<ActivityLog> GetByUser(int userId)

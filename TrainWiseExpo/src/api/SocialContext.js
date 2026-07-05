@@ -26,8 +26,15 @@ import {
  * Exposes badge counts (friendRequestCount + coachOfferCount) + refresh().
  */
 
-const HEARTBEAT_MS = 60000;
-const POLL_MS = 25000;
+// Slowed (heartbeat 60s→3min, inbox 25s→90s) and paused while backgrounded
+// (below) so the app stops keeping Azure SQL awake — the 25/60s polls never let
+// the serverless DB auto-pause, which burned the free vCore allowance.
+const HEARTBEAT_MS = 180000;
+const POLL_MS = 90000;
+// Stop the heartbeat + inbox poll after this long continuously foregrounded, so
+// a phone left with the app open lets the serverless Azure DB auto-pause instead
+// of being kept awake indefinitely. Resumes on the next background→foreground.
+const IDLE_STOP_MS = 15 * 60 * 1000;
 
 // Backend serializes C# PascalCase as camelCase, but stay tolerant of both.
 const fName = (x) => x?.fullName ?? x?.FullName ?? 'Someone';
@@ -61,7 +68,7 @@ export const SocialProvider = ({ children }) => {
       if (knownRequestIds.current) {
         const fresh = rows.find((r) => !knownRequestIds.current.has(r.friendshipID ?? r.FriendshipID));
         if (fresh) {
-          sendLocalNotification('New friend request 👋', `${fName(fresh)} wants to connect on TrainWise.`);
+          sendLocalNotification('New friend request 👋', `${fName(fresh)} wants to connect on TrainWise.`, 'social');
         }
       }
       knownRequestIds.current = ids;
@@ -77,7 +84,7 @@ export const SocialProvider = ({ children }) => {
       if (knownFriendIds.current) {
         const fresh = rows.find((r) => !knownFriendIds.current.has(fFriendId(r)));
         if (fresh) {
-          sendLocalNotification('New friend 🎉', `You and ${fName(fresh)} are now connected. Say hi!`);
+          sendLocalNotification('New friend 🎉', `You and ${fName(fresh)} are now connected. Say hi!`, 'social');
         }
       }
       knownFriendIds.current = ids;
@@ -95,7 +102,7 @@ export const SocialProvider = ({ children }) => {
         if (knownOfferIds.current) {
           const fresh = rows.find((r) => !knownOfferIds.current.has(r.offerID ?? r.OfferID));
           if (fresh) {
-            sendLocalNotification('A coach wants to train you 🏋️', `${fName(fresh)} offered to be your coach. Tap Connect to respond.`);
+            sendLocalNotification('A coach wants to train you 🏋️', `${fName(fresh)} offered to be your coach. Tap Connect to respond.`, 'social');
           }
         }
         knownOfferIds.current = ids;
@@ -125,25 +132,37 @@ export const SocialProvider = ({ children }) => {
       } catch {}
     };
 
-    ping();
-    poll();
-    const hb = setInterval(ping, HEARTBEAT_MS);
-    const pl = setInterval(() => {
-      if (alive) poll();
-    }, POLL_MS);
+    // Only run the heartbeat + inbox poll while FOREGROUNDED; stop both when the
+    // app is backgrounded so an idle phone stops hitting Azure SQL (lets the
+    // serverless DB auto-pause). Returning to the foreground re-pings immediately.
+    let hb = null;
+    let pl = null;
+    let idle = null;
+    const stopTimers = () => {
+      if (hb != null) { clearInterval(hb); hb = null; }
+      if (pl != null) { clearInterval(pl); pl = null; }
+      if (idle != null) { clearTimeout(idle); idle = null; }
+    };
+    const startTimers = () => {
+      ping();
+      poll();
+      if (hb == null) hb = setInterval(ping, HEARTBEAT_MS);
+      if (pl == null) pl = setInterval(() => { if (alive) poll(); }, POLL_MS);
+      // Auto-stop after IDLE_STOP_MS continuously foregrounded so a phone left
+      // with the app open lets Azure SQL auto-pause; resumes on next foreground.
+      if (idle != null) clearTimeout(idle);
+      idle = setTimeout(stopTimers, IDLE_STOP_MS);
+    };
 
-    // Re-ping + re-poll immediately when the app returns to the foreground.
+    if (AppState.currentState === 'active') startTimers();
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        ping();
-        poll();
-      }
+      if (state === 'active') startTimers();
+      else stopTimers();
     });
 
     return () => {
       alive = false;
-      clearInterval(hb);
-      clearInterval(pl);
+      stopTimers();
       sub.remove();
     };
   }, [userId, poll]);

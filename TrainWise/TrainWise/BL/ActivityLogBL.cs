@@ -14,6 +14,9 @@ namespace TrainWise.BL
             _userDal = new UserDAL();
         }
 
+        // Owner (UserID) of a workout row, for authorization. Null if not found.
+        public int? GetOwnerUserId(int activityId) => _dal.GetOwnerUserId(activityId);
+
         public int Create(ActivityLog log)
         {
             if (log.UserID <= 0) throw new ArgumentException("UserID required");
@@ -61,6 +64,20 @@ namespace TrainWise.BL
         {
             if (userId <= 0) throw new ArgumentException("UserID > 0");
             return _dal.GetByUser(userId);
+        }
+
+        // #124 — per-workout note + photo.
+        public void SetNotesAndPhoto(int activityId, string? notes, string? photoPath)
+        {
+            if (activityId <= 0) throw new ArgumentException("ActivityID > 0");
+            if (notes != null && notes.Length > 500) notes = notes.Substring(0, 500);
+            _dal.SetNotesAndPhoto(activityId, notes, photoPath);
+        }
+
+        public (string? notes, string? photoPath) GetNotesAndPhoto(int activityId)
+        {
+            if (activityId <= 0) throw new ArgumentException("ActivityID > 0");
+            return _dal.GetNotesAndPhoto(activityId);
         }
     }
 }

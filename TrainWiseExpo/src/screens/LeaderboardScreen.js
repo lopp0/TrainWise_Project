@@ -49,6 +49,7 @@ const LeaderboardScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [metric, setMetric] = useState('load_weekly');
   const [optIn, setOptIn] = useState(true);
+  const [scope, setScope] = useState('global'); // #170 — 'global' | 'friends'
 
   useEffect(() => {
     AsyncStorage.getItem(OPTIN_KEY).then((v) => setOptIn(v !== '0'));
@@ -57,14 +58,14 @@ const LeaderboardScreen = ({ navigation }) => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getLeaderboard({ country: 'IL', metric, limit: 50 });
+      const res = await getLeaderboard({ country: 'IL', metric, limit: 50, scope, viewerId: userId });
       setEntries(Array.isArray(res.data) ? res.data : []);
     } catch {
       setEntries([]);
     } finally {
       setLoading(false);
     }
-  }, [metric]);
+  }, [metric, scope, userId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -114,6 +115,19 @@ const LeaderboardScreen = ({ navigation }) => {
       </View>
       <ConnectTabs active="leaderboard" navigation={navigation} />
 
+      {/* #170 — Global / Friends scope */}
+      <View style={styles.scopeRow}>
+        {[['global', 'Global'], ['friends', 'Friends']].map(([key, label]) => (
+          <TouchableOpacity
+            key={key}
+            style={[styles.scopeBtn, scope === key && styles.scopeBtnActive]}
+            onPress={() => setScope(key)}
+          >
+            <Text style={[styles.scopeText, scope === key && styles.scopeTextActive]}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
       {/* Metric chips */}
       <View style={styles.chipRow}>
         {METRICS.map(([key, label]) => (
@@ -158,6 +172,14 @@ const makeStyles = (C) => StyleSheet.create({
   header: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 10 },
   title: { color: C.primary, fontSize: 28, fontWeight: '900', fontStyle: 'italic' },
   subtitle: { color: C.textSecondary, fontSize: 12, marginTop: 2 },
+  scopeRow: {
+    flexDirection: 'row', backgroundColor: C.inputBackground, borderRadius: 10,
+    marginHorizontal: 16, marginBottom: 8, padding: 4,
+  },
+  scopeBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
+  scopeBtnActive: { backgroundColor: C.primary },
+  scopeText: { color: C.textSecondary, fontSize: 13, fontWeight: '700' },
+  scopeTextActive: { color: '#fff' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
   chip: {
     paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16,

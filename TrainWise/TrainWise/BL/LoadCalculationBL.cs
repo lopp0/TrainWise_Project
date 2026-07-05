@@ -110,7 +110,10 @@ namespace TrainWise.BL
             return Math.Clamp(score, 0, 100);
         }
 
-        private string DetermineLoadLevel(double? acRatio, bool hasActiveInjury, LoadParameters p)
+        // Internal static so LoadAnalyticsBL (trend series) grades every point with
+        // the EXACT same thresholds — one source of truth, no drift between the
+        // stored DailyLoad and the charts.
+        internal static string DetermineLoadLevel(double? acRatio, bool hasActiveInjury, LoadParameters p)
         {
             //   Green  : ratio < 0.8
             //   Yellow : 0.8 <= ratio <= 1.3
@@ -133,7 +136,7 @@ namespace TrainWise.BL
             return "Green";
         }
 
-        private double GetBootstrapAcuteLoad(byte experienceLevel, LoadParameters p)
+        internal static double GetBootstrapAcuteLoad(byte experienceLevel, LoadParameters p)
         {
             return experienceLevel switch
             {

@@ -7,8 +7,18 @@ namespace TrainWise.DAL
         // יצירת חיבור למסד הנתונים
         protected SqlConnection Connect()
         {
+            // Read config with environment variables taking precedence over the
+            // JSON file. This lets the connection string (which carries the Azure
+            // SQL password) live ONLY in the hosting platform's config — Azure App
+            // Service "Connection strings"/"Application settings" inject it as the
+            // env var ConnectionStrings__DefaultConnection (or SQLAZURECONNSTR_*),
+            // so the secret never has to sit in the committed appsettings.json.
+            // SetBasePath(AppContext.BaseDirectory) makes the JSON resolve
+            // regardless of the process working directory.
             IConfigurationRoot configuration = new ConfigurationBuilder()
-                .AddJsonFile("appsettings.json")
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("appsettings.json", optional: true)
+                .AddEnvironmentVariables()
                 .Build();
 
             string cStr = configuration.GetConnectionString("DefaultConnection");

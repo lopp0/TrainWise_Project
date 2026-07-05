@@ -22,6 +22,7 @@ import {
   unequipItem,
 } from '../utils/shopManager';
 import { getCheckInState, grantCoins } from '../utils/checkInManager';
+import { getFreezeCount, buyFreeze, FREEZE_PRICE } from '../utils/streakFreeze';
 import { useAuth } from '../api/AuthContext';
 import { updateEquipped } from '../services/api';
 import { Colors } from '../theme/colors';
@@ -50,6 +51,7 @@ const ShopScreen = ({ navigation }) => {
   const [tab, setTab] = useState('shop');
   const [coins, setCoins] = useState(0);
   const [owned, setOwned] = useState([]);
+  const [freezes, setFreezes] = useState(0); // #150
   const [equipped, setEquipped] = useState({
     badge: null,
     title: null,
@@ -58,18 +60,40 @@ const ShopScreen = ({ navigation }) => {
   });
 
   const refresh = useCallback(async () => {
-    const [state, ownedList, badge, title, theme, frame] = await Promise.all([
+    const [state, ownedList, badge, title, theme, frame, freezeCount] = await Promise.all([
       getCheckInState(),
       getOwnedItems(),
       getEquippedBadge(),
       getEquippedTitle(),
       getEquippedChartTheme(),
       getEquippedAvatarFrame(),
+      getFreezeCount(),
     ]);
     setCoins(state.coins);
     setOwned(ownedList);
     setEquipped({ badge, title, chart_theme: theme, avatar_frame: frame });
+    setFreezes(freezeCount);
   }, []);
+
+  // #150 — buy a streak freeze (consumable; protects one missed day).
+  const handleBuyFreeze = () => {
+    if (coins < FREEZE_PRICE) return;
+    Alert.alert(
+      'Buy a streak freeze?',
+      `A streak freeze protects your streak for one missed day.\n\nPrice: ${FREEZE_PRICE} coins\nYour balance: ${coins} coins\nYou own: ${freezes}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Buy',
+          onPress: async () => {
+            const res = await buyFreeze();
+            if (!res.success) Alert.alert('Purchase failed', res.message);
+            await refresh();
+          },
+        },
+      ]
+    );
+  };
 
   // A-1: push the equipped badge/title/frame to the server so OTHER users see
   // them in Connect. (chart_theme is local-only and not synced.)
@@ -198,6 +222,30 @@ const ShopScreen = ({ navigation }) => {
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
     >
+      {/* #150 — Power-ups: streak freeze (consumable) */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Power-ups</Text>
+        <View style={styles.freezeCard}>
+          <Text style={styles.freezeEmoji}>🧊</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.freezeName}>Streak Freeze</Text>
+            <Text style={styles.freezeDesc}>
+              Protects your streak for one missed day. You own: {freezes}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.buyBtn, styles.freezeBuyBtn, coins < FREEZE_PRICE && styles.buyBtnDisabled]}
+            onPress={handleBuyFreeze}
+            disabled={coins < FREEZE_PRICE}
+            activeOpacity={coins >= FREEZE_PRICE ? 0.8 : 1}
+          >
+            <Text style={[styles.buyBtnText, coins < FREEZE_PRICE && styles.buyBtnTextDisabled]}>
+              Buy · {FREEZE_PRICE}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {TYPE_SECTIONS.map((section) => {
         const items = SHOP_ITEMS.filter((i) => i.type === section.type);
         if (items.length === 0) return null;
@@ -396,6 +444,21 @@ const makeStyles = (Colors) => StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
   },
+  // #150 streak freeze card
+  freezeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: Colors.cardBackground,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    padding: 12,
+  },
+  freezeEmoji: { fontSize: 34 },
+  freezeName: { color: Colors.textPrimary, fontSize: 15, fontWeight: '800' },
+  freezeDesc: { color: Colors.textSecondary, fontSize: 11, lineHeight: 15, marginTop: 2 },
+  freezeBuyBtn: { width: 'auto', paddingHorizontal: 14 },
 
   itemCard: {
     width: '48%',

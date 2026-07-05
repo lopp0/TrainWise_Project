@@ -12,6 +12,7 @@ import { Colors, Fonts, Spacing } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import ScreenHeader from '../components/ScreenHeader';
 import Card from '../components/Card';
+import PainTracker from '../components/PainTracker';
 import {
   getAllInjuryTypes,
   getActiveInjuriesByUser,
@@ -100,30 +101,34 @@ const ActiveInjuriesScreen = ({ navigation }) => {
               <View
                 key={inj.injuryID}
                 style={[
-                  styles.injuryRow,
+                  styles.injuryItem,
                   idx === activeInjuries.length - 1 && styles.lastRow,
                 ]}
               >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.injuryName}>
-                    {injuryNameById(inj.injuryTypeID)}
-                  </Text>
-                  <Text style={styles.injuryMeta}>
-                    Severity {inj.severity}/10 ·{' '}
-                    {new Date(inj.date).toLocaleDateString()}
-                  </Text>
+                <View style={styles.injuryRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.injuryName}>
+                      {injuryNameById(inj.injuryTypeID)}
+                    </Text>
+                    <Text style={styles.injuryMeta}>
+                      Severity {inj.severity}/10 ·{' '}
+                      {new Date(inj.date).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.recoverBtn}
+                    onPress={() => handleMarkRecovered(inj)}
+                    disabled={recoveringId === inj.injuryID}
+                  >
+                    {recoveringId === inj.injuryID ? (
+                      <ActivityIndicator color={Colors.textPrimary} size="small" />
+                    ) : (
+                      <Text style={styles.recoverBtnText}>Mark Recovered</Text>
+                    )}
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity
-                  style={styles.recoverBtn}
-                  onPress={() => handleMarkRecovered(inj)}
-                  disabled={recoveringId === inj.injuryID}
-                >
-                  {recoveringId === inj.injuryID ? (
-                    <ActivityIndicator color={Colors.textPrimary} size="small" />
-                  ) : (
-                    <Text style={styles.recoverBtnText}>Mark Recovered</Text>
-                  )}
-                </TouchableOpacity>
+                {/* #127 — daily pain-level tracker */}
+                <PainTracker injuryId={inj.injuryID} />
               </View>
             ))}
           </Card>
@@ -147,12 +152,14 @@ const makeStyles = (Colors) => StyleSheet.create({
     textAlign: 'center',
     paddingVertical: Spacing.lg,
   },
-  injuryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  injuryItem: {
     paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: Colors.inputBorder,
+  },
+  injuryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   lastRow: {
     borderBottomWidth: 0,

@@ -27,7 +27,16 @@ const MessagesContext = createContext({ unreadCount: 0, refreshUnread: () => {} 
 
 export const useMessages = () => useContext(MessagesContext);
 
-const POLL_MS = 12000;
+// 60s (was 12s): the unread badge doesn't need second-level freshness, and a
+// 12s poll kept Azure SQL constantly awake (it never auto-paused), burning the
+// serverless free vCore allowance. Polling also stops while backgrounded (below).
+const POLL_MS = 60000;
+// Stop polling after this long continuously foregrounded, so a phone left with
+// the app open (screen on, untouched) stops hitting Azure SQL and lets the
+// serverless DB auto-pause. Polling resumes the next time the app is brought to
+// the foreground (background→active). This is the safeguard against the
+// "left it running and it drained the vCores" case.
+const IDLE_STOP_MS = 15 * 60 * 1000;
 
 export const MessagesProvider = ({ children }) => {
   const { userId, isLoggedIn } = useAuth();
@@ -45,7 +54,8 @@ export const MessagesProvider = ({ children }) => {
       if (prevRef.current != null && count > prevRef.current) {
         sendLocalNotification(
           'New message 💬',
-          'You have a new message in TrainWise.'
+          'You have a new message in TrainWise.',
+          'messages'
         );
       }
       prevRef.current = count;
@@ -63,13 +73,39 @@ export const MessagesProvider = ({ children }) => {
     // Register this device for remote push (item 12) once we know who's signed
     // in. Safe no-op on builds without FCM.
     registerForPushToken(userId);
-    refreshUnread();
-    const id = setInterval(refreshUnread, POLL_MS);
+
+    // Only poll while the app is in the FOREGROUND. When backgrounded we stop
+    // the interval entirely so the app isn't hitting Azure SQL from a phone in
+    // someone's pocket — that's what kept the serverless DB from auto-pausing.
+    let intervalId = null;
+    let idleTimer = null;
+    const stopPolling = () => {
+      if (intervalId != null) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+      if (idleTimer != null) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
+    };
+    const startPolling = () => {
+      if (intervalId == null) {
+        refreshUnread();
+        intervalId = setInterval(refreshUnread, POLL_MS);
+      }
+      // (Re)arm the idle auto-stop each time we (re)start on foreground.
+      if (idleTimer != null) clearTimeout(idleTimer);
+      idleTimer = setTimeout(stopPolling, IDLE_STOP_MS);
+    };
+
+    if (AppState.currentState === 'active') startPolling();
     const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') refreshUnread();
+      if (s === 'active') startPolling();
+      else stopPolling();
     });
     return () => {
-      clearInterval(id);
+      stopPolling();
       sub.remove();
     };
   }, [isLoggedIn, userId, refreshUnread]);

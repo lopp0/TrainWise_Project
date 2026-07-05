@@ -1,6 +1,7 @@
 import { Colors } from '../theme/colors';
 import { getWeekStartDate } from '../constants/weekStart';
 import { parseServerDate } from './serverDate';
+import { computeACWR } from './acwr';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -79,7 +80,7 @@ const dayKey = (d) => {
   return x.getTime();
 };
 
-export const computeWeeklySummary = (logs, activityTypes = []) => {
+export const computeWeeklySummary = (logs, activityTypes = [], experienceLevel = 1) => {
   const confirmed = (logs || []).filter(isConfirmedLog);
   const weekStart = getWeekStartDate(0);
   const weekEnd = new Date(weekStart);
@@ -145,6 +146,18 @@ export const computeWeeklySummary = (logs, activityTypes = []) => {
   const deltaPct =
     lastWeekLoad > 0 ? Math.round(((totalLoad - lastWeekLoad) / lastWeekLoad) * 100) : null;
 
+  // #118 — sessions week-over-week delta (count difference).
+  const sessionsDelta = thisWeek.length - lastWeek.length;
+
+  // #118 — AC ratio this week vs last week (same calc as the Warnings screen,
+  // just shifted a week back for the comparison). Delta is the point change.
+  const acNow = computeACWR(confirmed, experienceLevel, 0);
+  const acLast = computeACWR(confirmed, experienceLevel, -1);
+  const acRatio = acNow.ratio || 0;
+  const acRatioLast = acLast.ratio || 0;
+  const acRatioDelta =
+    acRatio > 0 && acRatioLast > 0 ? Number((acRatio - acRatioLast).toFixed(2)) : null;
+
   return {
     sessions: thisWeek.length,
     totalLoad: Math.round(totalLoad),
@@ -152,6 +165,10 @@ export const computeWeeklySummary = (logs, activityTypes = []) => {
     mostFrequent,
     streak,
     deltaPct,
+    sessionsDelta,
+    acRatio,
+    acRatioLast,
+    acRatioDelta,
     lastWeekLoad: Math.round(lastWeekLoad),
     hasData: thisWeek.length > 0,
   };

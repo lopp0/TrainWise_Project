@@ -8,3 +8,4 @@ matplotlib
 seaborn
 pyodbc
 joblib
+PyJWT  # only needed when ML_AUTH_ENFORCE=true (JWT validation)

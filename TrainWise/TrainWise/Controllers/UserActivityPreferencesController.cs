@@ -5,13 +5,14 @@ namespace TrainWise.Controllers
 {
     [ApiController]
     [Route("api/users/{userId}/activity-preferences")]
-    public class UserActivityPreferencesController : ControllerBase
+    public class UserActivityPreferencesController : BaseApiController
     {
         private readonly UserActivityPreferenceBL _bl = new UserActivityPreferenceBL();
 
         [HttpPost("{activityTypeId}")]
         public IActionResult AddPreference(int userId, int activityTypeId)
         {
+            if (!CallerMayAct(userId)) return Forbid();
             try
             {
                 _bl.AddPreference(userId, activityTypeId);
@@ -30,6 +31,7 @@ namespace TrainWise.Controllers
         [HttpDelete("{activityTypeId}")]
         public IActionResult RemovePreference(int userId, int activityTypeId)
         {
+            if (!CallerMayAct(userId)) return Forbid();
             try
             {
                 _bl.RemovePreference(userId, activityTypeId);

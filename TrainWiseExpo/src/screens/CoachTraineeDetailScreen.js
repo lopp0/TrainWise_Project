@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Modal,
+  LayoutAnimation,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -27,6 +28,7 @@ import { useAuth } from '../api/AuthContext';
 import { useMessages } from '../api/MessagesContext';
 import ScreenHeader from '../components/ScreenHeader';
 import DraggableChatBubble from '../components/DraggableChatBubble';
+import LoadAnalyticsSection from '../components/LoadAnalyticsSection';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { loadLevelColor, loadLevelLabel } from './CoachDashboardScreen';
@@ -112,6 +114,7 @@ const CoachTraineeDetailScreen = ({ route, navigation }) => {
   const [injuryTypes, setInjuryTypes] = useState([]);
   const [selectedDay, setSelectedDay] = useState(null); // tapped bar's day
   const [weekOffset, setWeekOffset] = useState(0); // 0 = current week, -1 = prev…
+  const [analyticsOpen, setAnalyticsOpen] = useState(false); // foldable trend section
   const [bubbleDismissed, setBubbleDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState('');
@@ -422,6 +425,37 @@ const CoachTraineeDetailScreen = ({ route, navigation }) => {
                 </View>
               </View>
 
+              {/* Load trend & analysis (same charts the trainee sees on their
+                  Load tab, incl. the Classic/EWMA toggle). Foldable so the
+                  screen stays compact; only fetches when opened. */}
+              <View style={styles.card}>
+                <TouchableOpacity
+                  style={styles.foldRow}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setAnalyticsOpen((o) => !o);
+                  }}
+                >
+                  <Ionicons name="pulse" size={18} color={Colors.primary} />
+                  <Text style={styles.foldTitle}>Load trend & analysis</Text>
+                  <Ionicons
+                    name={analyticsOpen ? 'chevron-up' : 'chevron-down'}
+                    size={20}
+                    color={Colors.primary}
+                  />
+                </TouchableOpacity>
+              </View>
+              {analyticsOpen && (
+                <LoadAnalyticsSection
+                  userId={traineeId}
+                  experienceLevel={trainee?.experienceLevel ?? trainee?.ExperienceLevel}
+                  hasActiveInjury={injuries.length > 0}
+                  logs={traineeLogs}
+                  cardStyle={{ marginHorizontal: 0 }}
+                />
+              )}
+
               {/* Send recommendation */}
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Send recommendation</Text>
@@ -558,6 +592,17 @@ const makeStyles = (C) =>
       marginBottom: 14,
       borderWidth: 1,
       borderColor: C.border,
+    },
+    foldRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    foldTitle: {
+      flex: 1,
+      color: C.primary,
+      fontSize: 15,
+      fontWeight: '700',
     },
     cardTitle: {
       color: C.primary,

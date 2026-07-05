@@ -42,6 +42,42 @@ namespace TrainWise.DAL
             return list;
         }
 
+        // Same proc, caller-controlled window — used by LoadAnalyticsBL, which
+        // needs more than 28 days (EWMA warmup + the displayed trend range).
+        // sp_GetActivityLogsForLoad already takes @StartDate/@EndDate, so no new
+        // stored procedure is required.
+        public List<ActivityLog> GetActivityLogsForRange(int userId, DateTime startDate, DateTime endDate)
+        {
+            var list = new List<ActivityLog>();
+            using (SqlConnection con = Connect())
+            {
+                var param = new Dictionary<string, object>
+                {
+                    {"@UserID", userId},
+                    {"@StartDate", startDate},
+                    {"@EndDate", endDate}
+                };
+                using (SqlCommand cmd = CreateCommandWithStoredProcedure("sp_GetActivityLogsForLoad", con, param))
+                using (SqlDataReader reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        list.Add(new ActivityLog
+                        {
+                            ActivityID = (int)reader["ActivityID"],
+                            UserID = (int)reader["UserID"],
+                            ActivityTypeID = (int)reader["ActivityTypeID"],
+                            Duration = reader["Duration"] == DBNull.Value ? 0 : Convert.ToInt32(reader["Duration"]),
+                            ExertionLevel = reader["ExertionLevel"] as byte? ?? 0,
+                            CalculatedLoadForSession = reader["CalculatedLoadForSession"] == DBNull.Value ? 0 : Convert.ToInt32(reader["CalculatedLoadForSession"]),
+                            StartTime = reader["StartTime"] as DateTime? ?? default,
+                        });
+                    }
+                }
+            }
+            return list;
+        }
+
         // Fetches user baseline + LoadParameters + HasActiveInjury in one call
         public UserLoadContext GetUserLoadContext(int userId)
         {

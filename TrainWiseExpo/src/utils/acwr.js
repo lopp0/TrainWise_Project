@@ -26,10 +26,13 @@ const sumInRange = (logs, start, end) =>
     return sum;
   }, 0);
 
-export const computeACWR = (logsRaw, experienceLevel) => {
+export const computeACWR = (logsRaw, experienceLevel, weekOffset = 0) => {
   const logs = (logsRaw || []).filter((l) => (l.isConfirmed ?? l.IsConfirmed) !== false);
 
-  const weekStart = getWeekStartDate(0);
+  // weekOffset shifts the whole acute/chronic window by N weeks (0 = current,
+  // -1 = last week) so the same calculation can power a week-over-week delta
+  // (#118) without duplicating the load math.
+  const weekStart = getWeekStartDate(weekOffset);
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekStart.getDate() + 6);
   weekEnd.setHours(23, 59, 59, 999);

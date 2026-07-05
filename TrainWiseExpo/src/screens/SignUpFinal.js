@@ -19,7 +19,8 @@ import { WebView } from 'react-native-webview';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons, AntDesign } from '@expo/vector-icons';
 import { useAuth } from '../api/AuthContext';
-import { registerUser } from '../api/api';
+import { registerUser, googleLogin } from '../api/api';
+import { signInWithGoogle, signOutGoogle, statusCodes } from '../api/googleAuth';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { useTheme } from '../theme/ThemeContext';
@@ -28,12 +29,14 @@ import { useTheme } from '../theme/ThemeContext';
 // Rendered inside a WebView since reCAPTCHA needs a real browser context.
 // The widget posts its token back over window.ReactNativeWebView; we only
 // gate the Done button on a successful solve (client-side bot deterrent).
-// Google's official reCAPTCHA v2 TEST key — renders on ANY origin (the WebView
-// uses baseUrl http://localhost, which a domain-locked key rejects with the
-// "Invalid domain / ERROR for site owner" widget the user was seeing). The test
-// key always renders the checkbox and verifies, which is what we want for the
-// demo. For production, register a real key for your domain and swap it back.
-const RECAPTCHA_SITE_KEY = '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI';
+// REAL reCAPTCHA v2 site key (public; safe to ship). Its matching SECRET lives
+// only in Azure App Service config as RECAPTCHA_SECRET and is checked server-
+// side in CaptchaVerifier.cs (Users POST). The WebView runs on baseUrl
+// http://localhost; reCAPTCHA treats localhost as always-allowed for testing,
+// so this works without owning a domain — BUT if the key has "Verify the origin
+// of reCAPTCHA solutions" ON, `localhost` must be added to the key's Domains
+// list in the reCAPTCHA console or siteverify rejects with a hostname mismatch.
+const RECAPTCHA_SITE_KEY = '6LcAKyYtAAAAABG4KwQzM-LW0fyKlHqHMgYDm-hR';
 
 const RECAPTCHA_HTML = `
 <!DOCTYPE html>
@@ -91,7 +94,7 @@ const ACTIVITY_LEVEL = { Beginner: 1, Regular: 2, Advanced: 3 };
 const EXPERIENCE_LEVEL = { Low: 1, Medium: 2, High: 3 };
 
 const SignUpFinal = ({ navigation, route }) => {
-  const { login } = useAuth();
+  const { login, loginWithGoogleUser } = useAuth();
   const s = useThemedStyles(makeStyles);
   const { theme } = useTheme();
   const {
@@ -104,6 +107,7 @@ const SignUpFinal = ({ navigation, route }) => {
   const [agreedTOS, setAgreedTOS] = useState(false);
   const [agreedPrivacy, setAgreedPrivacy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [policyModal, setPolicyModal] = useState(null); // 'tos' | 'privacy' | null
   // 'idle' | 'verified' | 'failed' — Done stays disabled until 'verified'
   const [captchaState, setCaptchaState] = useState('idle');
@@ -132,6 +136,45 @@ const SignUpFinal = ({ navigation, route }) => {
     agreedTOS &&
     agreedPrivacy &&
     captchaState === 'verified';
+
+  const handleGoogleSignUp = async () => {
+    // Consent is required before creating an account, same as the form signup.
+    // (Captcha is intentionally NOT required here — Google's own auth already
+    // proves a real account, so the "I'm not a robot" check is redundant.)
+    if (!agreedTOS || !agreedPrivacy) {
+      Alert.alert(
+        'Accept the terms',
+        'Please agree to the TOS and Privacy Policy before signing up with Google.'
+      );
+      return;
+    }
+    setGoogleLoading(true);
+    try {
+      await signOutGoogle(); // force a fresh account picker
+      const { idToken, email: gEmail, fullName } = await signInWithGoogle();
+      const userData = await googleLogin({ idToken, email: gEmail, fullName, isSignUp: true });
+      await loginWithGoogleUser(userData);
+      // success -> AuthContext flips isLoggedIn and the app navigates in
+    } catch (err) {
+      if (err?.code === statusCodes?.SIGN_IN_CANCELLED) return; // user backed out
+      if (err?.code === statusCodes?.PLAY_SERVICES_NOT_AVAILABLE) {
+        Alert.alert('Google Play Services', 'Google Play Services is required and not available on this device.');
+        return;
+      }
+      // Backend returns 409 when the Google account already exists — steer to Login.
+      if (/already exists/i.test(err.message || '')) {
+        Alert.alert(
+          'Account already exists',
+          'You already have an account with this Google login. Please sign in instead.',
+          [{ text: 'Go to Login', onPress: () => navigation.navigate('Login') }, { text: 'Cancel', style: 'cancel' }]
+        );
+        return;
+      }
+      Alert.alert('Google Sign-Up Failed', err.message || 'Could not sign up with Google. Please try again.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   const handleDone = async () => {
     if (!canSubmit) return;
@@ -170,6 +213,7 @@ const SignUpFinal = ({ navigation, route }) => {
       // role 'trainer' means coach-only — they should not see trainee
       // screens. Both 'trainee' and 'both' get full trainee UI.
       isTrainee:               role === 'trainee' || role === 'both',
+      captchaToken:            captchaToken ?? null,
     };
 
     setSubmitting(true);
@@ -178,7 +222,11 @@ const SignUpFinal = ({ navigation, route }) => {
       // Auto-login so the user lands directly in the app
       await login(email.trim(), password);
     } catch (err) {
-      Alert.alert('Sign Up Failed', err.message || 'Something went wrong. Please try again.');
+      const msg = err.message || 'Something went wrong. Please try again.';
+      // A rejected captcha consumes the token server-side; clear it so the user
+      // must solve a fresh challenge before retrying.
+      if (/captcha/i.test(msg)) setCaptchaToken(null);
+      Alert.alert('Sign Up Failed', msg);
       setSubmitting(false);
     }
   };
@@ -232,9 +280,20 @@ const SignUpFinal = ({ navigation, route }) => {
 
           {/* Google */}
           <Text style={s.googlePrompt}>Or sign up with google:</Text>
-          <TouchableOpacity style={s.googleBtn} activeOpacity={0.85}>
-            <AntDesign name="google" size={20} color="#EA4335" />
-            <Text style={s.googleText}>Sign in with Google</Text>
+          <TouchableOpacity
+            style={[s.googleBtn, googleLoading && { opacity: 0.6 }]}
+            activeOpacity={0.85}
+            onPress={handleGoogleSignUp}
+            disabled={googleLoading || submitting}
+          >
+            {googleLoading ? (
+              <ActivityIndicator color="#EA4335" />
+            ) : (
+              <>
+                <AntDesign name="google" size={20} color="#EA4335" />
+                <Text style={s.googleText}>Sign up with Google</Text>
+              </>
+            )}
           </TouchableOpacity>
 
           {/* Checkboxes */}

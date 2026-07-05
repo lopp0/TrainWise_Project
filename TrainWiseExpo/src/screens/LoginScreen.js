@@ -14,18 +14,22 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { AntDesign } from '@expo/vector-icons';
 import { useAuth } from '../api/AuthContext';
+import { googleLogin } from '../api/api';
+import { signInWithGoogle, signOutGoogle, statusCodes } from '../api/googleAuth';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { useTheme } from '../theme/ThemeContext';
 
 const LoginScreen = ({ navigation }) => {
-  const { login } = useAuth();
+  const { login, loginWithGoogleUser } = useAuth();
   const styles = useThemedStyles(makeStyles);
   const { theme } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -39,6 +43,28 @@ const LoginScreen = ({ navigation }) => {
       Alert.alert('Login Failed', err.message || 'Invalid credentials. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Returning Google users have no password, so this is their way back in.
+  // No TOS/captcha gate here — they accepted at signup. LoginOrCreateGoogleUser
+  // matches the existing account by the verified GoogleId.
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
+    try {
+      await signOutGoogle(); // force a fresh account picker
+      const { idToken, email: gEmail, fullName } = await signInWithGoogle();
+      const userData = await googleLogin({ idToken, email: gEmail, fullName });
+      await loginWithGoogleUser(userData);
+    } catch (err) {
+      if (err?.code === statusCodes?.SIGN_IN_CANCELLED) return;
+      if (err?.code === statusCodes?.PLAY_SERVICES_NOT_AVAILABLE) {
+        Alert.alert('Google Play Services', 'Google Play Services is required and not available on this device.');
+        return;
+      }
+      Alert.alert('Google Sign-In Failed', err.message || 'Could not sign in with Google. Please try again.');
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -109,6 +135,22 @@ const LoginScreen = ({ navigation }) => {
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.signInButtonText}>Sign in</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.googleButton, googleLoading && styles.signInButtonDisabled]}
+            activeOpacity={0.85}
+            onPress={handleGoogleLogin}
+            disabled={googleLoading || loading}
+          >
+            {googleLoading ? (
+              <ActivityIndicator color="#EA4335" />
+            ) : (
+              <>
+                <AntDesign name="google" size={20} color="#EA4335" />
+                <Text style={styles.googleText}>Sign in with Google</Text>
+              </>
             )}
           </TouchableOpacity>
 

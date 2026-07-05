@@ -18,6 +18,7 @@ import { useThemedStyles } from '../theme/useThemedStyles';
 import ScreenHeader from '../components/ScreenHeader';
 import Card from '../components/Card';
 import PrimaryButton from '../components/PrimaryButton';
+import LoadAnalyticsSection from '../components/LoadAnalyticsSection';
 import { getActivityLogsByUser, getActiveInjuriesByUser, getCoachRecommendationsByUser } from '../services/api';
 import { useAuth } from '../api/AuthContext';
 import { buildRestRecommendation } from '../utils/restRecommendation';
@@ -462,6 +463,16 @@ const WarningsDashboardScreen = () => {
               />
               <Text style={styles.chartCaption}>Daily session load (load units)</Text>
             </Card>
+
+            {/* Load Trend (Classic/EWMA toggle) + Training Analysis. Computed
+                by the backend LoadAnalyticsBL; falls back to the on-device
+                mirror (utils/loadSeries) using the logs fetched above. */}
+            <LoadAnalyticsSection
+              userId={userId}
+              experienceLevel={user?.experienceLevel ?? user?.ExperienceLevel}
+              hasActiveInjury={hasActiveInjury}
+              logs={allLogs}
+            />
 
             {/* Recommendation */}
             <Card>

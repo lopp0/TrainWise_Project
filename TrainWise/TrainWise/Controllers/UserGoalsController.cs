@@ -5,13 +5,14 @@ namespace TrainWise.Controllers
 {
     [ApiController]
     [Route("api/users/{userId}/goals")]
-    public class UserGoalsController : ControllerBase
+    public class UserGoalsController : BaseApiController
     {
         private readonly UserTrainingGoalBL _bl = new UserTrainingGoalBL();
 
         [HttpPost("{goalId}")]
         public IActionResult AddGoal(int userId, int goalId)
         {
+            if (!CallerMayAct(userId)) return Forbid();
             try
             {
                 _bl.AddGoal(userId, goalId);
@@ -30,6 +31,7 @@ namespace TrainWise.Controllers
         [HttpDelete("{goalId}")]
         public IActionResult RemoveGoal(int userId, int goalId)
         {
+            if (!CallerMayAct(userId)) return Forbid();
             try
             {
                 _bl.RemoveGoal(userId, goalId);

@@ -6,13 +6,14 @@ namespace TrainWise.Controllers
 {
     [ApiController]
     [Route("api/users/{userId}/devices")]
-    public class UserDevicesController :ControllerBase
+    public class UserDevicesController : BaseApiController
     {
         private readonly UserDeviceBL _bl = new UserDeviceBL();
 
         [HttpGet]
         public IActionResult GetDevices(int userId)
         {
+            if (!CallerMayAct(userId)) return Forbid();
             try
             {
                 return Ok(_bl.GetByUser(userId));
@@ -30,6 +31,7 @@ namespace TrainWise.Controllers
         [HttpPost]
         public IActionResult Create(int userId, [FromBody] CreateDeviceRequest request)
         {
+            if (!CallerMayAct(userId)) return Forbid();
             try
             {
                 var d = new UserDevice
@@ -57,6 +59,7 @@ namespace TrainWise.Controllers
         [HttpPut("{deviceId}")]
         public IActionResult Update(int userId, int deviceId, [FromBody] UpdateDeviceRequest request)
         {
+            if (!CallerMayAct(userId)) return Forbid();
             try
             {
                 var d = new UserDevice

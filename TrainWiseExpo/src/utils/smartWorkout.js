@@ -212,4 +212,46 @@ export const buildSmartSuggestion = ({ weather, acRatio }) => {
   };
 };
 
-export default { buildSmartSuggestion, scoreConditions };
+// #152 — the canonical indoor fallback set, reused by the card to offer an
+// indoor backup even on borderline-outdoor days.
+export const INDOOR_ALTERNATIVES = INDOOR;
+
+/**
+ * #151 — Best time to train today.
+ * Given an array of hourly snapshots (each in the same shape scoreConditions
+ * reads, plus an ISO `time`), score the remaining DAYTIME hours today (06:00–
+ * 21:00) and return the single best window, or null when there's nothing usable.
+ *
+ * @returns {{ hour:number, time:Date, score:number, level:string, label:string }|null}
+ */
+export const bestTrainingWindow = (hours, now = new Date()) => {
+  if (!Array.isArray(hours) || !hours.length) return null;
+
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const d = now.getDate();
+  const curHour = now.getHours();
+
+  const scored = hours
+    .map((h) => {
+      const t = h?.time ? new Date(h.time) : null;
+      if (!t || isNaN(t.getTime())) return null;
+      if (t.getFullYear() !== y || t.getMonth() !== m || t.getDate() !== d) return null; // today only
+      const hr = t.getHours();
+      if (hr < 6 || hr > 21) return null; // sensible training hours
+      if (hr < curHour) return null; // future (or current) hours only
+      const cond = scoreConditions(h);
+      if (!cond) return null;
+      return { hour: hr, time: t, score: cond.score, level: cond.level };
+    })
+    .filter(Boolean);
+
+  if (!scored.length) return null;
+
+  const best = scored.reduce((b, c) => (c.score > b.score ? c : b));
+  const endHour = (best.hour + 1) % 24;
+  const pad = (n) => String(n).padStart(2, '0');
+  return { ...best, label: `${pad(best.hour)}:00–${pad(endHour)}:00` };
+};
+
+export default { buildSmartSuggestion, scoreConditions, bestTrainingWindow, INDOOR_ALTERNATIVES };

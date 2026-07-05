@@ -6,13 +6,14 @@ namespace TrainWise.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class CoachController :ControllerBase
+    public class CoachController : BaseApiController
     {
         private readonly CoachBL _bl = new CoachBL();
 
         [HttpGet("by-user/{userId}")]
         public IActionResult GetCoachByUser(int userId)
         {
+            if (!CallerMayAct(userId)) return Forbid();
             try
             {
                 return Ok(_bl.GetCoachByUserId(userId));
@@ -30,6 +31,7 @@ namespace TrainWise.Controllers
         [HttpGet("{coachId}/trainees")]
         public IActionResult GetTrainees(int coachId)
         {
+            if (!CallerOwnsCoachId(coachId)) return Forbid();
             try
             {
                 return Ok(_bl.GetTrainees(coachId));
@@ -47,6 +49,7 @@ namespace TrainWise.Controllers
         [HttpGet("{coachId}/trainees/{userId}/load")]
         public IActionResult GetTraineeLoad(int coachId, int userId)
         {
+            if (!CallerOwnsCoachId(coachId)) return Forbid();
             try
             {
                 return Ok(_bl.GetTraineeLoad(coachId, userId));
@@ -66,6 +69,7 @@ namespace TrainWise.Controllers
         [HttpGet("for-trainee/{userId}")]
         public IActionResult GetCoachesForTrainee(int userId)
         {
+            if (!CallerMayAct(userId)) return Forbid();
             try
             {
                 return Ok(_bl.GetCoachesForTrainee(userId));

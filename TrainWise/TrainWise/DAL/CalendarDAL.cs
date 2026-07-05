@@ -79,6 +79,17 @@ UPDATE dbo.PlannedWorkouts
             cmd.ExecuteNonQuery();
         }
 
+        // Owner (trainee) of a planned-workout row, for authorization. Null if absent.
+        public int? GetOwnerUserId(int planId)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(
+                "SELECT UserID FROM dbo.PlannedWorkouts WHERE PlanId = @p", con);
+            cmd.Parameters.AddWithValue("@p", planId);
+            var v = cmd.ExecuteScalar();
+            return v == null || v == DBNull.Value ? (int?)null : Convert.ToInt32(v);
+        }
+
         private static PlannedWorkout Map(SqlDataReader r) => new PlannedWorkout
         {
             PlanId = Int(r, "PlanId"),

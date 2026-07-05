@@ -9,6 +9,9 @@ namespace TrainWise.BL
         private readonly CalendarDAL _dal = new CalendarDAL();
         private readonly UserDAL _userDal = new UserDAL();
 
+        // Owner (trainee UserID) of a planned-workout row, for authorization.
+        public int? GetOwnerUserId(int planId) => _dal.GetOwnerUserId(planId);
+
         public List<PlannedWorkout> GetRange(int userId, DateTime from, DateTime to)
         {
             if (userId <= 0) throw new ArgumentException("UserID required");

@@ -733,8 +733,6 @@ const makeStyles = (Colors) => StyleSheet.create({
     borderRadius: 10,
     padding: 14,
     marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.primary,
     shadowColor: Colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,

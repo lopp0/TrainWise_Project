@@ -14,24 +14,39 @@ import { computeWeeklySummary } from '../utils/weeklyStats';
  */
 // Module-level sub-component receives `styles` as a prop (it can't close over
 // the component-scoped themed styles otherwise — see lessons 2026-05-31).
-const Stat = ({ icon, value, label, valueColor, styles }) => (
+const Stat = ({ icon, value, label, valueColor, delta, deltaColor, styles }) => (
   <View style={styles.statBox}>
     <View style={styles.statIconRow}>{icon}</View>
     <Text style={[styles.statValue, valueColor && { color: valueColor }]} numberOfLines={1}>
       {value}
     </Text>
+    {/* #118 — week-over-week delta chip (▲/▼ vs last week). */}
+    {delta ? (
+      <Text style={[styles.statDelta, deltaColor && { color: deltaColor }]} numberOfLines={1}>
+        {delta}
+      </Text>
+    ) : null}
     <Text style={styles.statLabel} numberOfLines={1}>
       {label}
     </Text>
   </View>
 );
 
-const WeeklySummaryCard = ({ logs, activityTypes }) => {
+// AC ratio → zone color (matches getBarColor / determineLevel thresholds:
+// <0.8 green, 0.8–1.3 yellow, >1.3 red).
+const acColorFor = (r) => {
+  if (!r || r <= 0) return null;
+  if (r < 0.8) return '#00e676';
+  if (r <= 1.3) return '#ffee58';
+  return '#f44336';
+};
+
+const WeeklySummaryCard = ({ logs, activityTypes, experienceLevel = 1 }) => {
   const styles = useThemedStyles(makeStyles);
   const [open, setOpen] = useState(false); // collapsed by default
   const summary = useMemo(
-    () => computeWeeklySummary(logs, activityTypes),
-    [logs, activityTypes]
+    () => computeWeeklySummary(logs, activityTypes, experienceLevel),
+    [logs, activityTypes, experienceLevel]
   );
 
   const toggle = () => {
@@ -39,10 +54,23 @@ const WeeklySummaryCard = ({ logs, activityTypes }) => {
     setOpen((o) => !o);
   };
 
-  const deltaColor =
-    summary.deltaPct == null ? styles._muted : summary.deltaPct >= 0 ? '#00e676' : '#ff9800';
-  const deltaText =
-    summary.deltaPct == null ? '—' : `${summary.deltaPct >= 0 ? '+' : ''}${summary.deltaPct}%`;
+  // #118 — directional delta chips. Load up = green, down = orange (kept from
+  // the original convention); sessions follow the same. Neutral when no change
+  // or no prior-week baseline.
+  const arrow = (n) => (n > 0 ? '▲' : n < 0 ? '▼' : '');
+  const upColor = (n) => (n > 0 ? '#00e676' : n < 0 ? '#ff9800' : styles._muted);
+
+  const loadDelta =
+    summary.deltaPct == null || summary.deltaPct === 0
+      ? null
+      : `${arrow(summary.deltaPct)} ${Math.abs(summary.deltaPct)}%`;
+  const sessDelta =
+    !summary.sessionsDelta ? null : `${arrow(summary.sessionsDelta)} ${Math.abs(summary.sessionsDelta)}`;
+  const acDelta =
+    summary.acRatioDelta == null || summary.acRatioDelta === 0
+      ? null
+      : `${arrow(summary.acRatioDelta)} ${Math.abs(summary.acRatioDelta).toFixed(2)}`;
+  const acColor = acColorFor(summary.acRatio);
 
   return (
     <View style={styles.card}>
@@ -64,12 +92,16 @@ const WeeklySummaryCard = ({ logs, activityTypes }) => {
               icon={<Ionicons name="barbell" size={18} color={styles._primary} />}
               value={String(summary.sessions)}
               label="Sessions"
+              delta={sessDelta}
+              deltaColor={upColor(summary.sessionsDelta)}
             />
             <Stat
               styles={styles}
               icon={<Ionicons name="pulse" size={18} color={styles._primary} />}
               value={String(summary.totalLoad)}
               label="Total load"
+              delta={loadDelta}
+              deltaColor={upColor(summary.deltaPct)}
             />
             <Stat
               styles={styles}
@@ -109,18 +141,21 @@ const WeeklySummaryCard = ({ logs, activityTypes }) => {
               value={String(summary.streak)}
               label="Day streak"
             />
+            {/* #118 — AC ratio with its own week-over-week delta. */}
             <Stat
               styles={styles}
               icon={
                 <Ionicons
-                  name={summary.deltaPct == null ? 'remove' : summary.deltaPct >= 0 ? 'trending-up' : 'trending-down'}
+                  name="speedometer"
                   size={18}
-                  color={deltaColor}
+                  color={acColor || styles._muted}
                 />
               }
-              value={deltaText}
-              valueColor={deltaColor}
-              label="vs last week"
+              value={summary.acRatio > 0 ? summary.acRatio.toFixed(2) : '—'}
+              valueColor={acColor || undefined}
+              delta={acDelta}
+              deltaColor={styles._muted}
+              label="AC ratio"
             />
           </View>
         ))}
@@ -180,6 +215,11 @@ const makeStyles = (Colors) => {
       fontSize: 19,
       fontWeight: '800',
       marginTop: 2,
+    },
+    statDelta: {
+      fontSize: 11,
+      fontWeight: '800',
+      marginTop: 1,
     },
     statLabel: {
       color: Colors.textSecondary,

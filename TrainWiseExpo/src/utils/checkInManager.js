@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { scopedKey } from './activeUser';
+// #150 — lazy require to avoid a circular import (streakFreeze imports spendCoins
+// from this file). Required at call time inside processCheckIn.
 
 // Base keys — namespaced per account via scopedKey() at call time so coins /
 // streak don't leak across accounts on the same device.
@@ -51,6 +53,7 @@ export const processCheckIn = async () => {
   const today = toDateOnly(new Date());
   const lastDate = lastRaw ? toDateOnly(new Date(lastRaw)) : null;
 
+  let freezeUsed = 0;
   if (lastDate) {
     const diff = daysBetween(lastDate, today);
     if (diff === 0) {
@@ -59,10 +62,26 @@ export const processCheckIn = async () => {
         coins,
         coinsEarned: 0,
         isNewCheckIn: false,
+        freezeUsed: 0,
         streakEmoji: getStreakEmoji(streak),
       };
     }
-    streak = diff === 1 ? streak + 1 : 1;
+    if (diff === 1) {
+      streak = streak + 1;
+    } else {
+      // #150 — a streak freeze covers each missed day. If the user has enough
+      // freezes to cover the whole gap, consume them and keep the streak alive
+      // (+1 for today); otherwise the streak resets.
+      const missed = diff - 1;
+      const { tryConsumeFreezes } = require('./streakFreeze');
+      const covered = await tryConsumeFreezes(missed);
+      if (covered) {
+        freezeUsed = missed;
+        streak = streak + 1;
+      } else {
+        streak = 1;
+      }
+    }
   } else {
     streak = 1;
   }
@@ -81,6 +100,7 @@ export const processCheckIn = async () => {
     coins,
     coinsEarned,
     isNewCheckIn: true,
+    freezeUsed,
     streakEmoji: getStreakEmoji(streak),
   };
 };

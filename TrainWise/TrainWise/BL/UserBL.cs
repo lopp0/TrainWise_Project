@@ -38,8 +38,8 @@ namespace TrainWise.BL
             if (string.IsNullOrWhiteSpace(u.Password))
                 throw new ArgumentException("Password is required");
 
-            if (u.Password.Length < 4)
-                throw new ArgumentException("Password must have minimum 4 characters");
+            if (u.Password.Length < 8)
+                throw new ArgumentException("Password must have at least 8 characters");
 
             if (u.ExperienceLevel < 1 || u.ExperienceLevel > 3)
                 throw new ArgumentException("ExperienceLevel must be 1 (Beginner), 2 (Regular), or 3 (Advanced)");
@@ -49,6 +49,9 @@ namespace TrainWise.BL
 
             if (!u.ConfirmTerms)
                 throw new ArgumentException("Terms and conditions must be confirmed");
+
+            // Never persist the raw password — store a salted PBKDF2 hash.
+            u.Password = PasswordHasher.Hash(u.Password);
 
             int newUserId = _dal.InsertUser(u);
 
@@ -129,6 +132,12 @@ namespace TrainWise.BL
             return _dal.LoginOrCreateGoogleUser(googleId, email, fullName);
         }
 
+        public User? GetUserByGoogleId(string googleId)
+        {
+            if (string.IsNullOrWhiteSpace(googleId)) return null;
+            return _dal.GetUserByGoogleId(googleId);
+        }
+
 
         // A-1: persist equipped cosmetics; GetCosmetics for a batch of users.
         public void UpdateEquipped(int userId, string? badge, string? title, string? frame)
@@ -147,6 +156,32 @@ namespace TrainWise.BL
         public List<UserCosmetics> GetCosmetics(string idsCsv)
         {
             return _dal.GetCosmeticsForUsers(idsCsv);
+        }
+
+        // #131 — body-measurement tracking.
+        public int AddBodyMeasurement(int userId, double weight, double? bodyFat, DateTime date)
+        {
+            if (userId <= 0) throw new ArgumentException("UserID must be positive");
+            if (weight < 20 || weight > 400) throw new ArgumentException("Weight must be between 20 and 400 kg");
+            if (bodyFat.HasValue && (bodyFat < 1 || bodyFat > 70))
+                throw new ArgumentException("Body fat must be between 1 and 70%");
+            return _dal.InsertBodyMeasurement(userId, weight, bodyFat, date == default ? DateTime.UtcNow : date);
+        }
+
+        public List<BodyMeasurement> GetBodyMeasurements(int userId)
+        {
+            if (userId <= 0) throw new ArgumentException("UserID must be positive");
+            return _dal.GetBodyMeasurements(userId);
+        }
+
+        // #111 — change password (verifies current). Returns false on mismatch.
+        public bool ChangePassword(int userId, string? currentPassword, string? newPassword)
+        {
+            if (userId <= 0)
+                throw new ArgumentException("UserID must be positive");
+            if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 4)
+                throw new ArgumentException("New password must have at least 4 characters");
+            return _dal.ChangePassword(userId, currentPassword ?? "", newPassword);
         }
 
         public void UpdateBaseline(int userId, short dailyLoad, short weeklyLoad)

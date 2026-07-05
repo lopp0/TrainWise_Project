@@ -23,12 +23,18 @@ import {
   resolveProfileImageUrl,
   getUserById,
   uploadChatImage,
+  setTyping,
+  getTyping,
+  reactToMessage,
+  getThreadReactions,
 } from '../services/api';
 import { useMessages } from '../api/MessagesContext';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 
 const POLL_MS = 4000;
+// #140 — the emoji set offered on long-press.
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '🔥', '💪', '👏'];
 
 // Field accessors tolerant of camelCase (ASP.NET default) AND PascalCase,
 // mirroring the dual-casing convention used across the app.
@@ -81,10 +87,15 @@ const ChatScreen = ({ route, navigation }) => {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [viewerUri, setViewerUri] = useState(null); // full-screen image viewer
+  const [peerTyping, setPeerTyping] = useState(false); // #138
+  const [reactions, setReactions] = useState({}); // #140 — messageId -> [emoji]
+  const [reactTarget, setReactTarget] = useState(null); // #140 — message being reacted to
   // Peer avatar: prefer the path passed via params, otherwise resolve it from
   // the user record (coach-side trainee summaries don't carry the image path).
   const [peerImg, setPeerImg] = useState(peerImagePath || null);
 
+  const typingSentRef = useRef(0);
+  const typingTimerRef = useRef(null);
   const listRef = useRef(null);
   const mountedRef = useRef(true);
   const firstLoadRef = useRef(true);
@@ -146,6 +157,26 @@ const ChatScreen = ({ route, navigation }) => {
           .then(() => refreshUnread())
           .catch(() => {});
       }
+
+      // #138 — is the peer currently typing to me?
+      getTyping(selfId, peerId)
+        .then((r) => mountedRef.current && setPeerTyping(!!r.data?.typing))
+        .catch(() => {});
+
+      // #140 — thread reactions, grouped by message id.
+      getThreadReactions(selfId, peerId)
+        .then((r) => {
+          if (!mountedRef.current) return;
+          const map = {};
+          (Array.isArray(r.data) ? r.data : []).forEach((x) => {
+            const id = x.messageID ?? x.MessageID;
+            const emoji = x.emoji ?? x.Emoji;
+            if (!map[id]) map[id] = [];
+            map[id].push(emoji);
+          });
+          setReactions(map);
+        })
+        .catch(() => {});
     } catch {
       // Transient network errors are expected; the next poll retries.
     } finally {
@@ -170,7 +201,43 @@ const ChatScreen = ({ route, navigation }) => {
     }, [refresh])
   );
 
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  useEffect(() => () => {
+    mountedRef.current = false;
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+  }, []);
+
+  // #138 — ping "typing" (throttled) on input, and clear it after a pause.
+  const onChangeInput = (t) => {
+    setInput(t);
+    if (!selfId || !peerId) return;
+    const now = Date.now();
+    if (now - typingSentRef.current > 2500) {
+      typingSentRef.current = now;
+      setTyping(selfId, peerId, true).catch(() => {});
+    }
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => {
+      typingSentRef.current = 0;
+      setTyping(selfId, peerId, false).catch(() => {});
+    }, 3000);
+  };
+
+  const clearTyping = () => {
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingSentRef.current = 0;
+    if (selfId && peerId) setTyping(selfId, peerId, false).catch(() => {});
+  };
+
+  // #140 — apply an emoji reaction to the long-pressed message.
+  const applyReaction = async (emoji) => {
+    const messageId = reactTarget;
+    setReactTarget(null);
+    if (!messageId) return;
+    try {
+      await reactToMessage(messageId, selfId, emoji);
+      refresh();
+    } catch {}
+  };
 
   const handleSend = async () => {
     const text = input.trim();
@@ -181,6 +248,7 @@ const ChatScreen = ({ route, navigation }) => {
     }
     setSending(true);
     setInput('');
+    clearTyping();
     try {
       const res = await sendMessage({ senderId: selfId, receiverId: peerId, text });
       const saved = res.data;
@@ -240,9 +308,14 @@ const ChatScreen = ({ route, navigation }) => {
     const text = mText(item);
     const img = mImage(item);
     const imgUrl = img ? resolveProfileImageUrl(img) : null;
+    const msgReactions = reactions[mId(item)] || [];
     return (
       <View style={[styles.bubbleRow, mine ? styles.rowMine : styles.rowTheirs]}>
-        <View
+        <View style={{ maxWidth: '80%' }}>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onLongPress={() => setReactTarget(mId(item))}
+          delayLongPress={250}
           style={[
             styles.bubble,
             mine ? styles.bubbleMine : styles.bubbleTheirs,
@@ -278,6 +351,15 @@ const ChatScreen = ({ route, navigation }) => {
               />
             )}
           </View>
+        </TouchableOpacity>
+        {/* #140 — reaction chips under the bubble */}
+        {msgReactions.length > 0 && (
+          <View style={[styles.reactionRow, mine ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
+            {msgReactions.map((e, i) => (
+              <Text key={i} style={styles.reactionChip}>{e}</Text>
+            ))}
+          </View>
+        )}
         </View>
       </View>
     );
@@ -308,7 +390,9 @@ const ChatScreen = ({ route, navigation }) => {
           <Text style={styles.headerName} numberOfLines={1}>
             {peerName || 'Chat'}
           </Text>
-          <Text style={styles.headerSub}>TrainWise chat</Text>
+          <Text style={[styles.headerSub, peerTyping && { color: Colors.primary }]}>
+            {peerTyping ? 'typing…' : 'TrainWise chat'}
+          </Text>
         </View>
       </View>
 
@@ -350,7 +434,7 @@ const ChatScreen = ({ route, navigation }) => {
           placeholder="Message…"
           placeholderTextColor={Colors.textMuted}
           value={input}
-          onChangeText={setInput}
+          onChangeText={onChangeInput}
           multiline
           maxLength={1000}
         />
@@ -388,6 +472,28 @@ const ChatScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      {/* #140 — emoji reaction picker (long-press a bubble) */}
+      <Modal
+        visible={reactTarget != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReactTarget(null)}
+      >
+        <TouchableOpacity
+          style={styles.reactBackdrop}
+          activeOpacity={1}
+          onPress={() => setReactTarget(null)}
+        >
+          <View style={styles.reactPicker}>
+            {REACTION_EMOJIS.map((e) => (
+              <TouchableOpacity key={e} onPress={() => applyReaction(e)} style={styles.reactPick}>
+                <Text style={styles.reactPickEmoji}>{e}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -423,7 +529,9 @@ const makeStyles = (C) =>
     rowMine: { justifyContent: 'flex-end' },
     rowTheirs: { justifyContent: 'flex-start' },
     bubble: {
-      maxWidth: '78%',
+      // Width is capped by the 80%-max wrapper View around it (#140 reactions);
+      // no maxWidth here or the bubble would end up ~62% wide (double-capped).
+      alignSelf: 'stretch',
       borderRadius: 16,
       paddingHorizontal: 12,
       paddingVertical: 8,
@@ -442,6 +550,39 @@ const makeStyles = (C) =>
     metaRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end', marginTop: 3 },
     msgTime: { color: C.textMuted, fontSize: 10 },
     msgTimeMine: { color: 'rgba(255,255,255,0.75)' },
+
+    // #140 reactions
+    reactionRow: {
+      flexDirection: 'row',
+      gap: 2,
+      marginTop: -4,
+      marginBottom: 2,
+      backgroundColor: C.cardBackground,
+      borderWidth: 1,
+      borderColor: C.border,
+      borderRadius: 12,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+    },
+    reactionChip: { fontSize: 13 },
+    reactBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    reactPicker: {
+      flexDirection: 'row',
+      backgroundColor: C.cardBackground,
+      borderRadius: 30,
+      paddingHorizontal: 10,
+      paddingVertical: 10,
+      borderWidth: 1,
+      borderColor: C.border,
+      gap: 6,
+    },
+    reactPick: { paddingHorizontal: 6, paddingVertical: 4 },
+    reactPickEmoji: { fontSize: 30 },
 
     empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 80 },
     emptyTitle: { color: C.textPrimary, fontSize: 17, fontWeight: '800', marginTop: 12 },

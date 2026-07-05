@@ -9,6 +9,12 @@ namespace TrainWise.BL
     {
         private readonly SocialDAL _dal = new SocialDAL();
 
+        // ── ownership lookups (for authorizing respond-by-id endpoints) ──────
+        public (int requesterId, int addresseeId) GetFriendshipParties(int friendshipId) =>
+            _dal.GetFriendshipParties(friendshipId);
+        public (int coachUserId, int traineeUserId) GetCoachOfferParties(int offerId) =>
+            _dal.GetCoachOfferParties(offerId);
+
         // ── presence / location ──────────────────────────────────────────
         public void UpdateLastSeen(int userId)
         {

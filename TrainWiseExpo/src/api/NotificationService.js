@@ -3,6 +3,7 @@ import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { savePushToken } from '../services/api';
+import { isTypeEnabled, isQuietNow } from '../utils/notificationPrefs';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -77,8 +78,14 @@ export const registerForPushToken = async (userId) => {
   }
 };
 
-export const sendLocalNotification = async (title, body) => {
+// `type` (optional) is one of the notificationPrefs keys (e.g. 'messages',
+// 'social', 'loadWarnings'). When given, the notification is suppressed if the
+// user turned that type off; an untyped call is always allowed. Quiet hours
+// suppress every local notification regardless of type (#161).
+export const sendLocalNotification = async (title, body, type = null) => {
   try {
+    if (!(await isTypeEnabled(type))) return;
+    if (await isQuietNow()) return;
     await Notifications.scheduleNotificationAsync({
       content: {
         title,
@@ -99,12 +106,14 @@ export const sendLoadWarningIfNeeded = async (acRatio, loadLevel) => {
   if (loadLevel === 'Red' || acRatio > 1.5) {
     await sendLocalNotification(
       'TrainWise - High Load Alert',
-      `Your AC Ratio is ${acRatio.toFixed(2)}. Your body needs rest. Consider skipping training today.`
+      `Your AC Ratio is ${acRatio.toFixed(2)}. Your body needs rest. Consider skipping training today.`,
+      'loadWarnings'
     );
   } else if (loadLevel === 'Yellow' || (acRatio > 1.3 && acRatio <= 1.5)) {
     await sendLocalNotification(
       'TrainWise - Load Monitor',
-      `AC Ratio: ${acRatio.toFixed(2)}. Your training load is increasing. Monitor fatigue carefully.`
+      `AC Ratio: ${acRatio.toFixed(2)}. Your training load is increasing. Monitor fatigue carefully.`,
+      'loadWarnings'
     );
   }
 };
@@ -241,6 +250,13 @@ export const scheduleDailyReminder = async (acRatio = null, loadLevel = 'Green')
   try {
     await Notifications.cancelAllScheduledNotificationsAsync();
 
+    // cancelAll above also clears the weekly recap, so re-arm it here (this runs
+    // on every app open / Home focus, keeping the recap permanently scheduled).
+    await scheduleWeeklyRecap();
+
+    // Respect the user's per-type toggle (#161).
+    if (!(await isTypeEnabled('dailyReminder'))) return;
+
     const now = new Date();
     const lastOpenedIso = await AsyncStorage.getItem(LAST_OPENED_KEY);
     const lastWorkout = await AsyncStorage.getItem(LAST_WORKOUT_DATE_KEY);
@@ -279,6 +295,58 @@ export const scheduleDailyReminder = async (acRatio = null, loadLevel = 'Green')
     });
   } catch (error) {
     console.warn('[Notifications] Failed to schedule daily reminder:', error.message);
+  }
+};
+
+// Weekly recap (#162) — a repeating Sunday-evening summary. Content is fixed at
+// schedule time (a future-dated notification can't read live numbers), so the
+// body is generic unless caller-supplied stats are passed in. Re-armed by
+// scheduleDailyReminder on every app open. Honors the weeklyRecap pref.
+const WEEKLY_RECAP_HOUR = 19;
+const WEEKLY_RECAP_WEEKDAY = 1; // expo: 1 = Sunday
+
+export const scheduleWeeklyRecap = async (stats = null) => {
+  try {
+    if (!(await isTypeEnabled('weeklyRecap'))) return;
+    const body =
+      stats && stats.workouts != null
+        ? `Last week: ${stats.workouts} workout${stats.workouts === 1 ? '' : 's'}. Tap to see your progress. 📊`
+        : 'Your weekly training recap is ready. Tap to see your progress. 📊';
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Your week in review 📊',
+        body,
+        sound: true,
+        channelId: 'trainwise',
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+        weekday: WEEKLY_RECAP_WEEKDAY,
+        hour: WEEKLY_RECAP_HOUR,
+        minute: 0,
+      },
+    });
+  } catch (error) {
+    console.warn('[Notifications] Failed to schedule weekly recap:', error.message);
+  }
+};
+
+// #162 test helper — fires the weekly-recap notification IMMEDIATELY (bypasses
+// the Sunday schedule) so you can preview exactly what it looks like. Wired to a
+// "Send test recap" button in Settings. Ignores the weeklyRecap toggle on purpose
+// (it's an explicit user-triggered preview).
+export const sendWeeklyRecapNow = async (stats = null) => {
+  try {
+    const body =
+      stats && stats.workouts != null
+        ? `Last week: ${stats.workouts} workout${stats.workouts === 1 ? '' : 's'}. Tap to see your progress. 📊`
+        : 'Your weekly training recap is ready. Tap to see your progress. 📊';
+    await Notifications.scheduleNotificationAsync({
+      content: { title: 'Your week in review 📊', body, sound: true, channelId: 'trainwise' },
+      trigger: null, // fire now
+    });
+  } catch (error) {
+    console.warn('[Notifications] test recap failed:', error.message);
   }
 };
 

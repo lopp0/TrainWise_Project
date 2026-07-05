@@ -56,3 +56,49 @@ export const PALETTES = {
   dark: darkPalette,
   light: lightPalette,
 };
+
+/**
+ * #160 — Accent themes. Each accent overrides only the `primary` family
+ * (primary / primaryLight / primaryDark / accent) on top of whichever base
+ * mode (dark/light) is active. `default` = null means "keep the mode's own
+ * built-in accent" (pink in dark, teal in light) so existing behavior is
+ * unchanged until the user picks something else. The colors are saturated
+ * mid-tones chosen to read well on both the dark navy and light mint
+ * backgrounds. `swatch` is the dot shown in the Settings picker.
+ */
+export const ACCENTS = {
+  default: { label: 'Default', swatch: '#E91E63', colors: null },
+  pink: {
+    label: 'Pink',
+    swatch: '#E91E63',
+    colors: { primary: '#E91E63', primaryLight: '#FF4081', primaryDark: '#C2185B', accent: '#FF6090' },
+  },
+  teal: {
+    label: 'Teal',
+    swatch: '#1FB6A6',
+    colors: { primary: '#1FB6A6', primaryLight: '#5BE0D0', primaryDark: '#13897D', accent: '#34CFBE' },
+  },
+  purple: {
+    label: 'Purple',
+    swatch: '#8E44AD',
+    colors: { primary: '#8E44AD', primaryLight: '#B26FD2', primaryDark: '#6C3483', accent: '#C39BD3' },
+  },
+  blue: {
+    label: 'Blue',
+    swatch: '#2979FF',
+    colors: { primary: '#2979FF', primaryLight: '#5393FF', primaryDark: '#1565C0', accent: '#448AFF' },
+  },
+  orange: {
+    label: 'Orange',
+    swatch: '#F57C00',
+    colors: { primary: '#F57C00', primaryLight: '#FFB74D', primaryDark: '#E65100', accent: '#FFA726' },
+  },
+  green: {
+    label: 'Green',
+    swatch: '#2E9E5B',
+    colors: { primary: '#2E9E5B', primaryLight: '#5CC98A', primaryDark: '#1B7742', accent: '#43B373' },
+  },
+};
+
+export const ACCENT_NAMES = Object.keys(ACCENTS);
+export const ACCENT_LIST = ACCENT_NAMES.map((name) => ({ name, ...ACCENTS[name] }));

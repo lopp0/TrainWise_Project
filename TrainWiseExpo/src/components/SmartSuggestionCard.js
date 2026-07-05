@@ -10,9 +10,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import ActivityIcon from './ActivityIcon';
-import { getCurrentWeather } from '../api/weatherService';
+import { getCurrentWeather, getHourlyForecast } from '../api/weatherService';
 import { getDailyLoadByUser } from '../services/api';
-import { buildSmartSuggestion } from '../utils/smartWorkout';
+import { buildSmartSuggestion, bestTrainingWindow, INDOOR_ALTERNATIVES } from '../utils/smartWorkout';
 
 /**
  * Smart workout suggestion, relocated to the Home screen (item 4) directly under
@@ -25,6 +25,7 @@ const SmartSuggestionCard = ({ navigation, userId, activityTypes = [], defaultOp
   const Colors = styles._colors;
   const [weather, setWeather] = useState(null);
   const [suggestion, setSuggestion] = useState(null);
+  const [bestTime, setBestTime] = useState(null); // #151
   const [open, setOpen] = useState(defaultOpen);
 
   useEffect(() => {
@@ -54,6 +55,16 @@ const SmartSuggestionCard = ({ navigation, userId, activityTypes = [], defaultOp
         if (!alive) return;
         setSuggestion(buildSmartSuggestion({ weather: null, acRatio }));
       }
+
+      // #151 — best time to train today (best-effort; hides if the hourly
+      // forecast SKU isn't available or there are no usable daytime hours left).
+      try {
+        const hours = await getHourlyForecast();
+        if (!alive) return;
+        setBestTime(bestTrainingWindow(hours));
+      } catch {
+        // ignore — the line just won't render
+      }
     })();
     return () => {
       alive = false;
@@ -69,6 +80,42 @@ const SmartSuggestionCard = ({ navigation, userId, activityTypes = [], defaultOp
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setOpen((o) => !o);
   };
+
+  // Shared chip renderer (primary activities + #152 indoor backup row).
+  const renderChips = (names) => (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+      {names.map((name) => {
+        const match = activityTypes.find(
+          (a) => (a.typeName || '').toLowerCase() === name.toLowerCase()
+        );
+        return (
+          <TouchableOpacity
+            key={name}
+            style={styles.chip}
+            activeOpacity={0.85}
+            onPress={() =>
+              match &&
+              navigation.navigate('AddWorkout', {
+                preselectActivityTypeId: match.activityTypeID,
+                liveTab: true,
+              })
+            }
+          >
+            <ActivityIcon activityTypeId={match?.activityTypeID} typeName={name} size={16} />
+            <Text style={styles.chipText}>{name}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  );
+
+  // #152 — offer an indoor backup when the plan is outdoors but conditions
+  // aren't great (and we're not already recommending indoor).
+  const showIndoorBackup =
+    suggestion.kind === 'weather' &&
+    !suggestion.indoorPreferred &&
+    suggestion.score != null &&
+    suggestion.score < 70;
 
   return (
     <View style={styles.card}>
@@ -103,6 +150,17 @@ const SmartSuggestionCard = ({ navigation, userId, activityTypes = [], defaultOp
       {open && (
         <>
           <Text style={styles.reason}>{suggestion.reason}</Text>
+
+          {/* #151 — best time to train today */}
+          {bestTime && (
+            <View style={styles.bestTimeRow}>
+              <Ionicons name="time-outline" size={15} color={Colors.primary} />
+              <Text style={styles.bestTimeText}>
+                Best time today: <Text style={styles.bestTimeStrong}>{bestTime.label}</Text>
+              </Text>
+            </View>
+          )}
+
           {suggestion.factors.length > 0 && (
             <View style={styles.factorRow}>
               {suggestion.factors.map((f) => (
@@ -120,30 +178,15 @@ const SmartSuggestionCard = ({ navigation, userId, activityTypes = [], defaultOp
           <Text style={styles.pick}>
             {suggestion.indoorPreferred ? 'Suggested indoor activities' : 'Suggested activities'} · tap to pick
           </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
-            {suggestion.activities.map((name) => {
-              const match = activityTypes.find(
-                (a) => (a.typeName || '').toLowerCase() === name.toLowerCase()
-              );
-              return (
-                <TouchableOpacity
-                  key={name}
-                  style={styles.chip}
-                  activeOpacity={0.85}
-                  onPress={() =>
-                    match &&
-                    navigation.navigate('AddWorkout', {
-                      preselectActivityTypeId: match.activityTypeID,
-                      liveTab: true,
-                    })
-                  }
-                >
-                  <ActivityIcon activityTypeId={match?.activityTypeID} typeName={name} size={16} />
-                  <Text style={styles.chipText}>{name}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+          {renderChips(suggestion.activities)}
+
+          {/* #152 — indoor alternative when conditions aren't great */}
+          {showIndoorBackup && (
+            <>
+              <Text style={styles.pick}>Rather stay indoors? Try these instead</Text>
+              {renderChips(INDOOR_ALTERNATIVES)}
+            </>
+          )}
         </>
       )}
     </View>
@@ -174,6 +217,14 @@ const makeStyles = (Colors) => {
     emoji: { fontSize: 28 },
     title: { color: Colors.textPrimary, fontSize: 16, fontWeight: '900' },
     reason: { color: Colors.textSecondary, fontSize: 14, lineHeight: 19, marginTop: 10 },
+    bestTimeRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10,
+      backgroundColor: Colors.cardBackgroundLight, borderRadius: 10,
+      paddingHorizontal: 10, paddingVertical: 8,
+      borderWidth: 1, borderColor: Colors.border,
+    },
+    bestTimeText: { color: Colors.textSecondary, fontSize: 13, flex: 1 },
+    bestTimeStrong: { color: Colors.textPrimary, fontWeight: '800' },
     ratingPill: {
       alignItems: 'center', justifyContent: 'center',
       paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1.5,

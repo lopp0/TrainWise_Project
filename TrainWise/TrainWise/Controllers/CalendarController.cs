@@ -6,7 +6,7 @@ namespace TrainWise.Controllers
 {
     [ApiController]
     [Route("api/calendar")]
-    public class CalendarController : ControllerBase
+    public class CalendarController : BaseApiController
     {
         private readonly CalendarBL _bl = new CalendarBL();
 
@@ -14,6 +14,7 @@ namespace TrainWise.Controllers
         [HttpGet("{userId:int}")]
         public IActionResult Get(int userId, [FromQuery] DateTime from, [FromQuery] DateTime to)
         {
+            if (!CallerOwnsOrCoaches(userId)) return Forbid();   // self or their coach (assigned plans)
             try
             {
                 if (from == default) from = DateTime.Today.AddDays(-7);
@@ -28,6 +29,7 @@ namespace TrainWise.Controllers
         [HttpPost("{userId:int}")]
         public IActionResult Create(int userId, [FromBody] PlannedWorkoutRequest body)
         {
+            if (!CallerOwnsOrCoaches(userId)) return Forbid();   // self or their coach
             try
             {
                 var p = ToPlan(body);
@@ -42,6 +44,9 @@ namespace TrainWise.Controllers
         [HttpPut("{planId:int}")]
         public IActionResult Update(int planId, [FromBody] PlannedWorkoutRequest body)
         {
+            var owner = _bl.GetOwnerUserId(planId);
+            if (owner == null) return NotFound("Plan not found");
+            if (!CallerOwnsOrCoaches(owner.Value)) return Forbid();
             try
             {
                 var p = ToPlan(body);
@@ -57,6 +62,9 @@ namespace TrainWise.Controllers
         [HttpDelete("{planId:int}")]
         public IActionResult Delete(int planId)
         {
+            var owner = _bl.GetOwnerUserId(planId);
+            if (owner == null) return NotFound("Plan not found");
+            if (!CallerOwnsOrCoaches(owner.Value)) return Forbid();
             try { _bl.Delete(planId); return Ok(new { ok = true }); }
             catch (ArgumentException ex) { return BadRequest(ex.Message); }
             catch (Exception ex) { return StatusCode(500, ex.Message); }
@@ -66,6 +74,9 @@ namespace TrainWise.Controllers
         [HttpPut("{planId:int}/complete")]
         public IActionResult Complete(int planId, [FromQuery] int? linkedLogId)
         {
+            var owner = _bl.GetOwnerUserId(planId);
+            if (owner == null) return NotFound("Plan not found");
+            if (!CallerOwnsOrCoaches(owner.Value)) return Forbid();
             try { _bl.MarkComplete(planId, linkedLogId); return Ok(new { ok = true }); }
             catch (ArgumentException ex) { return BadRequest(ex.Message); }
             catch (Exception ex) { return StatusCode(500, ex.Message); }

@@ -9,6 +9,8 @@ import { navigationRef } from './src/navigation/navigationRef';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { AppAlertProvider } from './src/components/AppAlertProvider';
 import { InAppBannerProvider } from './src/components/InAppBanner';
+import WhatsNewModal from './src/components/WhatsNewModal';
+import BiometricLockOverlay from './src/components/BiometricLockOverlay';
 import { initWeekStart } from './src/constants/weekStart';
 import { loadHcTombstones } from './src/constants/hcTombstones';
 import {
@@ -26,6 +28,8 @@ const ThemedRoot = () => {
           <NavigationContainer ref={navigationRef}>
             <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
             <AppNavigator />
+            <WhatsNewModal />
+            <BiometricLockOverlay />
           </NavigationContainer>
         </InAppBannerProvider>
       </AppAlertProvider>
@@ -51,10 +55,13 @@ export default function App() {
   }, []);
 
   return (
-    <ThemeProvider>
-      <AuthProvider>
+    // AuthProvider OUTSIDE ThemeProvider: ThemeProvider re-mounts its subtree via
+    // a key on theme/accent change; keeping AuthProvider above that boundary means
+    // a color change no longer re-runs the launch/biometric check (#112 re-lock bug).
+    <AuthProvider>
+      <ThemeProvider>
         <ThemedRoot />
-      </AuthProvider>
-    </ThemeProvider>
+      </ThemeProvider>
+    </AuthProvider>
   );
 }

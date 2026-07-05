@@ -82,6 +82,83 @@ namespace TrainWise.DAL
             }
         }
 
+        // #138 — typing indicator. Upsert "from is typing to" with a fresh
+        // timestamp; the peer's poll treats a timestamp within ~6s as "typing".
+        public void SetTyping(int fromUserId, int toUserId, bool isTyping)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(@"
+MERGE dbo.MessageTyping AS t
+USING (SELECT @from AS FromUserID, @to AS ToUserID) AS s
+   ON t.FromUserID = s.FromUserID AND t.ToUserID = s.ToUserID
+WHEN MATCHED THEN UPDATE SET UpdatedAt = SYSUTCDATETIME(), IsTyping = @typing
+WHEN NOT MATCHED THEN INSERT (FromUserID, ToUserID, UpdatedAt, IsTyping)
+     VALUES (@from, @to, SYSUTCDATETIME(), @typing);", con);
+            cmd.Parameters.AddWithValue("@from", fromUserId);
+            cmd.Parameters.AddWithValue("@to", toUserId);
+            cmd.Parameters.AddWithValue("@typing", isTyping);
+            cmd.ExecuteNonQuery();
+        }
+
+        // Is @fromUserId currently typing to @toUserId? True only when flagged
+        // typing AND the ping is fresh (last 6 seconds).
+        public bool IsTyping(int fromUserId, int toUserId)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(@"
+SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM dbo.MessageTyping
+    WHERE FromUserID = @from AND ToUserID = @to AND IsTyping = 1
+      AND UpdatedAt >= DATEADD(SECOND, -6, SYSUTCDATETIME())
+) THEN 1 ELSE 0 END;", con);
+            cmd.Parameters.AddWithValue("@from", fromUserId);
+            cmd.Parameters.AddWithValue("@to", toUserId);
+            return Convert.ToInt32(cmd.ExecuteScalar()) == 1;
+        }
+
+        // #140 — toggle an emoji reaction on a message (one reaction per user per
+        // message; re-sending the same emoji removes it, a different one replaces).
+        public void ToggleReaction(int messageId, int userId, string emoji)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(@"
+IF EXISTS (SELECT 1 FROM dbo.MessageReactions WHERE MessageID = @m AND UserID = @u AND Emoji = @e)
+    DELETE FROM dbo.MessageReactions WHERE MessageID = @m AND UserID = @u;
+ELSE
+BEGIN
+    DELETE FROM dbo.MessageReactions WHERE MessageID = @m AND UserID = @u;
+    INSERT INTO dbo.MessageReactions (MessageID, UserID, Emoji) VALUES (@m, @u, @e);
+END", con);
+            cmd.Parameters.AddWithValue("@m", messageId);
+            cmd.Parameters.AddWithValue("@u", userId);
+            cmd.Parameters.AddWithValue("@e", emoji);
+            cmd.ExecuteNonQuery();
+        }
+
+        // All reactions on messages in the A<->B thread (so bubbles can show them).
+        public List<MessageReaction> GetThreadReactions(int userA, int userB)
+        {
+            var list = new List<MessageReaction>();
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(@"
+SELECT r.MessageID, r.UserID, r.Emoji
+FROM dbo.MessageReactions r
+JOIN dbo.Messages m ON m.MessageID = r.MessageID
+WHERE (m.SenderID = @a AND m.ReceiverID = @b)
+   OR (m.SenderID = @b AND m.ReceiverID = @a);", con);
+            cmd.Parameters.AddWithValue("@a", userA);
+            cmd.Parameters.AddWithValue("@b", userB);
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                list.Add(new MessageReaction
+                {
+                    MessageID = Convert.ToInt32(r["MessageID"]),
+                    UserID = Convert.ToInt32(r["UserID"]),
+                    Emoji = r["Emoji"].ToString()
+                });
+            return list;
+        }
+
         private static Message Map(SqlDataReader reader) => new Message
         {
             MessageID = (int)reader["MessageID"],

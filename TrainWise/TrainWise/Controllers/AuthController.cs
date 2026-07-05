@@ -1,10 +1,14 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using TrainWise.BL;
 
 namespace TrainWise.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [EnableRateLimiting("auth")]
+    [AllowAnonymous]
     public class AuthController : ControllerBase
     {
         private readonly UserLoginBL _bl = new UserLoginBL();
@@ -15,19 +19,25 @@ namespace TrainWise.Controllers
             try
             {
                 var user = _bl.Login(request.Email, request.Password);
-                return Ok(user);
+                // Return a signed JWT alongside the user. Response shape is
+                // { token, user } — the client reads user.* as before plus token.
+                var token = JwtService.CreateToken(user);
+                return Ok(new { token, user });
             }
-            catch (UnauthorizedAccessException ex)
+            catch (UnauthorizedAccessException)
             {
-                return Unauthorized(ex.Message);
+                // Same generic message for unknown-email and wrong-password so the
+                // endpoint can't be used to enumerate registered accounts.
+                return Unauthorized("Invalid email or password");
             }
             catch (ArgumentException ex)
             {
                 return BadRequest(ex.Message);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return StatusCode(500, ex.Message);
+                // Don't echo ex.Message — it can carry SQL / internal details.
+                return StatusCode(500, "An unexpected error occurred.");
             }
         }
     }

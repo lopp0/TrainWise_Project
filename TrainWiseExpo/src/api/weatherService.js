@@ -26,6 +26,7 @@ const API_KEY =
   '';
 
 const CACHE_KEY = '@trainwise_weather_cache';
+const HOURLY_CACHE_KEY = '@trainwise_weather_hourly_cache';
 const CACHE_MS = 60 * 60 * 1000; // 1 hour
 
 // Pull the user's coordinates (last-known is instant; fall back to a fresh
@@ -95,6 +96,64 @@ const fetchAirQuality = async (latitude, longitude) => {
   }
 };
 
+// Google Weather API — forecast/hours:lookup (GET). Returns up to `hours`
+// upcoming hourly snapshots in the SAME shape the smart engine scores on
+// (no AQI — that's current-only — so the air factor is simply skipped per hour).
+// Best-effort: any failure (e.g. the forecast SKU isn't enabled) returns [].
+const fetchHourlyForecast = async (latitude, longitude, hours = 24) => {
+  try {
+    const url =
+      'https://weather.googleapis.com/v1/forecast/hours:lookup' +
+      `?key=${API_KEY}&unitsSystem=METRIC&pageSize=${hours}&hours=${hours}` +
+      `&location.latitude=${latitude}&location.longitude=${longitude}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const json = await res.json();
+    const list = Array.isArray(json?.forecastHours) ? json.forecastHours : [];
+    return list.map((h) => ({
+      time: h?.interval?.startTime ?? null,
+      tempC: h?.temperature?.degrees ?? null,
+      feelsLikeC: h?.feelsLikeTemperature?.degrees ?? null,
+      humidity: h?.relativeHumidity ?? null,
+      windKph: h?.wind?.speed?.value ?? null,
+      uvIndex: h?.uvIndex ?? null,
+      precipProb: h?.precipitation?.probability?.percent ?? null,
+      conditionType: h?.weatherCondition?.type ?? null,
+    }));
+  } catch {
+    return [];
+  }
+};
+
+// #151 — cached hourly forecast for the "best time to train today" hint.
+export const getHourlyForecast = async () => {
+  try {
+    const raw = await AsyncStorage.getItem(HOURLY_CACHE_KEY);
+    if (raw) {
+      const c = JSON.parse(raw);
+      if (c && Date.now() - c.ts < CACHE_MS && Array.isArray(c.data)) return c.data;
+    }
+  } catch {
+    // ignore cache errors
+  }
+
+  let coords;
+  try {
+    coords = await getCoords();
+  } catch {
+    return [];
+  }
+
+  const data = await fetchHourlyForecast(coords.latitude, coords.longitude, 24);
+
+  try {
+    await AsyncStorage.setItem(HOURLY_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
+  } catch {
+    // ignore cache write errors
+  }
+  return data;
+};
+
 export const getCurrentWeather = async () => {
   // Serve from cache to keep API calls minimal.
   try {
@@ -126,4 +185,4 @@ export const getCurrentWeather = async () => {
   return data;
 };
 
-export default { getCurrentWeather };
+export default { getCurrentWeather, getHourlyForecast };

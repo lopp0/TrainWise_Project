@@ -71,6 +71,52 @@ namespace TrainWise.DAL
             }
         }
 
+        // Owner (trainee) of an injury row, for authorization. Null if absent.
+        public int? GetOwnerUserId(int injuryId)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(
+                "SELECT UserID FROM dbo.InjuriesReports WHERE InjuryID = @id", con);
+            cmd.Parameters.AddWithValue("@id", injuryId);
+            var v = cmd.ExecuteScalar();
+            return v == null || v == DBNull.Value ? (int?)null : Convert.ToInt32(v);
+        }
+
+        // #127 — daily pain-level log per injury (inline SQL; no proc).
+        public int InsertPainLog(int injuryId, int level, string? note)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(@"
+INSERT INTO dbo.InjuryPainLog (InjuryID, LoggedAt, Level, Note)
+VALUES (@i, SYSUTCDATETIME(), @l, @n);
+SELECT SCOPE_IDENTITY();", con);
+            cmd.Parameters.AddWithValue("@i", injuryId);
+            cmd.Parameters.AddWithValue("@l", level);
+            cmd.Parameters.AddWithValue("@n", (object?)note ?? DBNull.Value);
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        public List<PainLog> GetPainLogs(int injuryId)
+        {
+            var list = new List<PainLog>();
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(@"
+SELECT PainLogID, InjuryID, LoggedAt, Level, Note
+FROM dbo.InjuryPainLog WHERE InjuryID = @i ORDER BY LoggedAt ASC;", con);
+            cmd.Parameters.AddWithValue("@i", injuryId);
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                list.Add(new PainLog
+                {
+                    PainLogID = Convert.ToInt32(r["PainLogID"]),
+                    InjuryID = Convert.ToInt32(r["InjuryID"]),
+                    LoggedAt = (DateTime)r["LoggedAt"],
+                    Level = Convert.ToInt32(r["Level"]),
+                    Note = r["Note"] == DBNull.Value ? null : r["Note"].ToString()
+                });
+            return list;
+        }
+
         private InjuryReport MapInjury(SqlDataReader reader)
         {
             return new InjuryReport

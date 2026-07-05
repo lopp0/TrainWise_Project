@@ -1,4 +1,5 @@
 ﻿using Microsoft.Data.SqlClient;
+using TrainWise.BL;
 using TrainWise.BL.Models;
 
 
@@ -107,23 +108,41 @@ namespace TrainWise.DAL
             return list;
         }
 
-        public User? LoginUser(string email, string password)
+        // Look up a user by email WITHOUT comparing the password in SQL. Password
+        // verification now happens in C# (PasswordHasher) so hashes never have to
+        // round-trip through a stored proc that does a plaintext `=` comparison.
+        // Returns the full row (MapUser does not populate Password, so callers that
+        // need the stored hash use GetStoredPasswordHash below).
+        public User? GetUserByEmail(string email)
         {
-            using (SqlConnection con = Connect())
-            {
-                var param = new Dictionary<string, object>
-                {
-                    {"@Email", email},
-                    {"@Password", password}
-                };
-                using (SqlCommand cmd = CreateCommandWithStoredProcedure("sp_LoginUser", con, param))
-                using (SqlDataReader reader = cmd.ExecuteReader())
-                {
-                    if (reader.Read())
-                        return MapUser(reader);
-                }
-            }
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand("SELECT * FROM Users WHERE Email = @Email", con);
+            cmd.Parameters.AddWithValue("@Email", email);
+            using SqlDataReader reader = cmd.ExecuteReader();
+            if (reader.Read())
+                return MapUser(reader);
             return null;
+        }
+
+        // The stored password value (hash or legacy plaintext) for verification.
+        public string? GetStoredPasswordHash(int userId)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand("SELECT Password FROM Users WHERE UserID = @u", con);
+            cmd.Parameters.AddWithValue("@u", userId);
+            var v = cmd.ExecuteScalar();
+            return v == null || v == DBNull.Value ? null : v.ToString();
+        }
+
+        // Persist a (re-)hashed password. Used at signup, change-password, and the
+        // verify-and-upgrade path when a legacy plaintext row logs in successfully.
+        public void SetPasswordHash(int userId, string hash)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand("UPDATE Users SET Password = @p WHERE UserID = @u", con);
+            cmd.Parameters.AddWithValue("@u", userId);
+            cmd.Parameters.AddWithValue("@p", hash);
+            cmd.ExecuteNonQuery();
         }
 
         public User? LoginOrCreateGoogleUser(string googleId, string email, string fullName)
@@ -146,7 +165,86 @@ namespace TrainWise.DAL
             return null;
         }
 
+        // Lookup used to block a Google *sign-up* when the Google account already
+        // exists (inline SQL — no new stored proc, since the Azure DB schema is
+        // managed separately). Returns null when no user has this GoogleId.
+        public User? GetUserByGoogleId(string googleId)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand("SELECT * FROM Users WHERE GoogleId = @GoogleId", con);
+            cmd.Parameters.AddWithValue("@GoogleId", googleId);
+            using SqlDataReader reader = cmd.ExecuteReader();
+            if (reader.Read())
+                return MapUser(reader);
+            return null;
+        }
 
+
+
+        // #131 — body-measurement tracking (weight / body-fat over time). Inline
+        // SQL against the BodyMeasurements table.
+        public int InsertBodyMeasurement(int userId, double weight, double? bodyFat, DateTime date)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(@"
+INSERT INTO dbo.BodyMeasurements (UserID, MeasuredAt, Weight, BodyFat)
+VALUES (@u, @d, @w, @bf);
+SELECT SCOPE_IDENTITY();", con);
+            cmd.Parameters.AddWithValue("@u", userId);
+            cmd.Parameters.AddWithValue("@d", date);
+            cmd.Parameters.AddWithValue("@w", weight);
+            cmd.Parameters.AddWithValue("@bf", (object?)bodyFat ?? DBNull.Value);
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        public List<BodyMeasurement> GetBodyMeasurements(int userId)
+        {
+            var list = new List<BodyMeasurement>();
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(@"
+SELECT MeasurementID, UserID, MeasuredAt, Weight, BodyFat
+FROM dbo.BodyMeasurements WHERE UserID = @u ORDER BY MeasuredAt ASC;", con);
+            cmd.Parameters.AddWithValue("@u", userId);
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                list.Add(new BodyMeasurement
+                {
+                    MeasurementID = Convert.ToInt32(r["MeasurementID"]),
+                    UserID = Convert.ToInt32(r["UserID"]),
+                    MeasuredAt = (DateTime)r["MeasuredAt"],
+                    Weight = Convert.ToDouble(r["Weight"]),
+                    BodyFat = r["BodyFat"] == DBNull.Value ? (double?)null : Convert.ToDouble(r["BodyFat"])
+                });
+            return list;
+        }
+
+        // #111 — verify the current password then set a new one (inline SQL,
+        // plaintext to match the existing auth; hashing is the #167 hardening
+        // item). Returns false when the current password doesn't match or the
+        // account has no password (e.g. Google-only).
+        public bool ChangePassword(int userId, string currentPassword, string newPassword)
+        {
+            using SqlConnection con = Connect();
+            string? stored;
+            using (SqlCommand check = new SqlCommand("SELECT Password FROM Users WHERE UserID = @u", con))
+            {
+                check.Parameters.AddWithValue("@u", userId);
+                var v = check.ExecuteScalar();
+                if (v == null || v == DBNull.Value) return false;   // e.g. Google-only account
+                stored = v.ToString();
+            }
+            // Verify the current password (handles both PBKDF2 hashes and legacy plaintext).
+            if (!PasswordHasher.Verify(currentPassword, stored))
+                return false;
+
+            using (SqlCommand upd = new SqlCommand("UPDATE Users SET Password = @p WHERE UserID = @u", con))
+            {
+                upd.Parameters.AddWithValue("@u", userId);
+                upd.Parameters.AddWithValue("@p", PasswordHasher.Hash(newPassword));   // always store hashed
+                upd.ExecuteNonQuery();
+            }
+            return true;
+        }
 
         public void UpdateUserBaseline(int userId, short dailyLoad, short weeklyLoad)
         {

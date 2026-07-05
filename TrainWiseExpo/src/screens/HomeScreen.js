@@ -30,6 +30,9 @@ import DraggableChatBubble from '../components/DraggableChatBubble';
 import HomeHeader from '../components/HomeHeader';
 import WeeklySummaryCard from '../components/WeeklySummaryCard';
 import SmartSuggestionCard from '../components/SmartSuggestionCard';
+import TodayPlanCard from '../components/TodayPlanCard';
+import ConfettiOverlay from '../components/ConfettiOverlay';
+import { checkMilestones, totalsFromLogs } from '../utils/milestones';
 import ActivityIcon from '../components/ActivityIcon';
 import InjuryIcon from '../components/InjuryIcon';
 import { scheduleDailyReminder } from '../api/NotificationService';
@@ -46,6 +49,12 @@ import {
 } from '../utils/shopManager';
 import OnboardingOverlay from '../components/OnboardingOverlay';
 import { isOnboardingDone, markOnboardingDone } from '../utils/onboardingManager';
+import {
+  DASHBOARD_SECTIONS,
+  DEFAULT_DASHBOARD_LAYOUT,
+  getDashboardLayout,
+  setDashboardLayout,
+} from '../utils/dashboardLayout';
 
 const { width } = Dimensions.get('window');
 
@@ -250,6 +259,45 @@ const HomeScreen = ({ navigation }) => {
   const [injuryExpanded, setInjuryExpanded] = useState(false);   // false = row, true = grid
   const [coachPlanBadge, setCoachPlanBadge] = useState(0); // new coach-planned workouts (item 11)
 
+  // #116 — customizable dashboard: per-account order + visibility of the
+  // optional widgets, plus an edit mode toggled from the "Customize" button.
+  const [dashLayout, setDashLayout] = useState(DEFAULT_DASHBOARD_LAYOUT);
+  const [editingDash, setEditingDash] = useState(false);
+
+  // #173 — milestone celebration (confetti + toast) when a cumulative total
+  // first crosses a threshold.
+  const [celebrate, setCelebrate] = useState(null);
+
+  useEffect(() => {
+    if (!backendLogs.length) return;
+    (async () => {
+      const m = await checkMilestones(totalsFromLogs(backendLogs));
+      if (m) setCelebrate(m);
+    })();
+  }, [backendLogs]);
+
+  useEffect(() => {
+    if (userId) getDashboardLayout(userId).then(setDashLayout);
+  }, [userId]);
+
+  const persistDashLayout = (next) => {
+    setDashLayout(next);
+    setDashboardLayout(userId, next);
+  };
+  const moveSection = (index, dir) => {
+    const target = index + dir;
+    if (target < 0 || target >= dashLayout.length) return;
+    const next = dashLayout.slice();
+    [next[index], next[target]] = [next[target], next[index]];
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    persistDashLayout(next);
+  };
+  const toggleSectionVisible = (key) => {
+    const next = dashLayout.map((s) => (s.key === key ? { ...s, visible: !s.visible } : s));
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    persistDashLayout(next);
+  };
+
   const loadData = useCallback(async () => {
     if (!userId) {
       setLoading(false);
@@ -436,6 +484,73 @@ const HomeScreen = ({ navigation }) => {
     setter((o) => !o);
   };
 
+  // #116 — render a single customizable dashboard widget by key.
+  const renderDashSection = (key) => {
+    switch (key) {
+      case 'smart':
+        return (
+          <SmartSuggestionCard navigation={navigation} userId={userId} activityTypes={activityTypes} />
+        );
+      case 'recommendation':
+        return recommendation ? (
+          <TouchableOpacity
+            style={[styles.recBanner, { borderLeftColor: recommendation.color }]}
+            onPress={() => navigation.navigate('Warnings')}
+            activeOpacity={0.85}
+          >
+            <Ionicons
+              name={recommendation.icon}
+              size={26}
+              color={recommendation.color}
+              style={styles.recBannerIcon}
+            />
+            <View style={styles.recBannerTextWrap}>
+              <Text style={[styles.recBannerTitle, { color: recommendation.color }]}>
+                {recommendation.title}
+              </Text>
+              <Text style={styles.recBannerBody} numberOfLines={2}>
+                {recommendation.shortText}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+          </TouchableOpacity>
+        ) : null;
+      case 'chart':
+        return (
+          <View style={styles.chartCard}>
+            {loading ? (
+              <ActivityIndicator color={Colors.primary} style={{ paddingVertical: 40 }} />
+            ) : weeklyData.every((d) => d.load === 0) ? (
+              <Text style={styles.noDataText}>No workouts this week</Text>
+            ) : (
+              <View style={styles.chartRow}>
+                <View style={styles.yAxis}>
+                  <Text style={styles.yLabel}>{maxLoad}</Text>
+                  <Text style={styles.yLabel}>0</Text>
+                </View>
+                <WeeklyBarChart
+                  weeklyData={weeklyData}
+                  maxValue={maxLoad}
+                  onBarPress={handleBarPress}
+                  themeColors={chartThemeColors}
+                />
+              </View>
+            )}
+          </View>
+        );
+      case 'summary':
+        return !loading ? (
+          <WeeklySummaryCard
+            logs={backendLogs}
+            activityTypes={activityTypes}
+            experienceLevel={user?.experienceLevel}
+          />
+        ) : null;
+      default:
+        return null;
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
       {/* ── B-1: persistent profile header (avatar/streak/coins · network/settings) ── */}
@@ -479,6 +594,29 @@ const HomeScreen = ({ navigation }) => {
           ) : null}
         </View>
 
+        {/* ── Quick actions: interval timer (#120) + achievements (#147) ── */}
+        <View style={styles.quickRow}>
+          <TouchableOpacity
+            style={styles.quickBtn}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('Timer')}
+          >
+            <Ionicons name="timer-outline" size={16} color={Colors.primary} />
+            <Text style={styles.quickBtnText}>Rest timer</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickBtn}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('Achievements')}
+          >
+            <Ionicons name="medal-outline" size={16} color={Colors.primary} />
+            <Text style={styles.quickBtnText}>Achievements</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── #117: today's planned workout (from the training calendar) ── */}
+        <TodayPlanCard navigation={navigation} userId={userId} />
+
         {/* ── Active injuries (relocated up top, only when present) ── */}
         {activeInjuries.length > 0 && (
           <TouchableOpacity
@@ -498,6 +636,25 @@ const HomeScreen = ({ navigation }) => {
                 { backgroundColor: severityColor(Math.max(...activeInjuries.map((i) => Number(i.severity) || 0))) },
               ]}
             />
+            <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+          </TouchableOpacity>
+        )}
+
+        {/* ── #128: re-injury risk flag — load spiking while an injury is active ── */}
+        {acRatio > 1.3 && activeInjuries.length > 0 && (
+          <TouchableOpacity
+            style={styles.reinjuryCard}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('Warnings')}
+          >
+            <MaterialCommunityIcons name="alert-octagon" size={20} color={Colors.danger} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.reinjuryTitle}>Re-injury risk</Text>
+              <Text style={styles.reinjuryBody} numberOfLines={2}>
+                Load is spiking (AC {acRatio.toFixed(2)}) while an injury is still active. Ease off
+                to avoid a setback.
+              </Text>
+            </View>
             <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
           </TouchableOpacity>
         )}
@@ -574,66 +731,81 @@ const HomeScreen = ({ navigation }) => {
           )}
         </View>
 
-        {/* ── Smart suggestion (relocated from AddWorkout — item 4) ── */}
-        <SmartSuggestionCard
-          navigation={navigation}
-          userId={userId}
-          activityTypes={activityTypes}
-        />
-
-        {/* ── Load recommendation banner (part of the dashboard) ── */}
-        {recommendation && (
+        {/* ── #116: customizable dashboard widgets (reorder + hide) ── */}
+        <View style={styles.customizeRow}>
           <TouchableOpacity
-            style={[styles.recBanner, { borderLeftColor: recommendation.color }]}
-            onPress={() => navigation.navigate('Warnings')}
-            activeOpacity={0.85}
+            style={styles.customizeBtn}
+            activeOpacity={0.8}
+            onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setEditingDash((e) => !e);
+            }}
           >
             <Ionicons
-              name={recommendation.icon}
-              size={26}
-              color={recommendation.color}
-              style={styles.recBannerIcon}
+              name={editingDash ? 'checkmark' : 'options-outline'}
+              size={15}
+              color={Colors.primary}
             />
-            <View style={styles.recBannerTextWrap}>
-              <Text style={[styles.recBannerTitle, { color: recommendation.color }]}>
-                {recommendation.title}
-              </Text>
-              <Text style={styles.recBannerBody} numberOfLines={2}>
-                {recommendation.shortText}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+            <Text style={styles.customizeText}>{editingDash ? 'Done' : 'Customize'}</Text>
           </TouchableOpacity>
-        )}
-
-        {/* ── Home Screen Dashboard: weekly load chart (kept as-is) ── */}
-        <View style={styles.chartCard}>
-          {loading ? (
-            <ActivityIndicator color={Colors.primary} style={{ paddingVertical: 40 }} />
-          ) : weeklyData.every((d) => d.load === 0) ? (
-            <Text style={styles.noDataText}>No workouts this week</Text>
-          ) : (
-            <View style={styles.chartRow}>
-              {/* Y-axis labels */}
-              <View style={styles.yAxis}>
-                <Text style={styles.yLabel}>{maxLoad}</Text>
-                <Text style={styles.yLabel}>0</Text>
-              </View>
-              {/* Bars */}
-              <WeeklyBarChart
-                weeklyData={weeklyData}
-                maxValue={maxLoad}
-                onBarPress={handleBarPress}
-                themeColors={chartThemeColors}
-              />
-            </View>
-          )}
         </View>
 
-        {/* ── B-8: This week at a glance (under the dashboard) ── */}
-        {!loading && (
-          <WeeklySummaryCard logs={backendLogs} activityTypes={activityTypes} />
-        )}
+        {dashLayout.map((section, index) => {
+          const content = renderDashSection(section.key);
+          if (!editingDash) {
+            return section.visible && content ? (
+              <View key={section.key}>{content}</View>
+            ) : null;
+          }
+          // Edit mode: show every section (even hidden) with a control bar.
+          return (
+            <View
+              key={section.key}
+              style={[styles.dashEditWrap, !section.visible && styles.dashEditHidden]}
+            >
+              <View style={styles.dashEditBar}>
+                <Text style={styles.dashEditLabel} numberOfLines={1}>
+                  {DASHBOARD_SECTIONS[section.key]}
+                </Text>
+                <View style={styles.dashEditBtns}>
+                  <TouchableOpacity
+                    onPress={() => moveSection(index, -1)}
+                    disabled={index === 0}
+                    style={styles.dashEditIcon}
+                  >
+                    <Ionicons
+                      name="arrow-up"
+                      size={18}
+                      color={index === 0 ? Colors.textMuted : Colors.primary}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => moveSection(index, 1)}
+                    disabled={index === dashLayout.length - 1}
+                    style={styles.dashEditIcon}
+                  >
+                    <Ionicons
+                      name="arrow-down"
+                      size={18}
+                      color={index === dashLayout.length - 1 ? Colors.textMuted : Colors.primary}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => toggleSectionVisible(section.key)}
+                    style={styles.dashEditIcon}
+                  >
+                    <Ionicons
+                      name={section.visible ? 'eye' : 'eye-off'}
+                      size={18}
+                      color={section.visible ? Colors.primary : Colors.textMuted}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              {section.visible && content}
+            </View>
+          );
+        })}
 
         {/* ── Add Injury (open by default: compact row, chevron expands to grid) ── */}
         <View style={styles.section}>
@@ -737,6 +909,16 @@ const HomeScreen = ({ navigation }) => {
         visible={showOnboarding}
         onFinish={handleOnboardingFinish}
       />
+
+      {/* #173 — milestone celebration */}
+      {celebrate && (
+        <>
+          <ConfettiOverlay onDone={() => setCelebrate(null)} />
+          <View pointerEvents="none" style={styles.milestoneToast}>
+            <Text style={styles.milestoneText}>{celebrate.label}</Text>
+          </View>
+        </>
+      )}
     </SafeAreaView>
   );
 };
@@ -854,6 +1036,32 @@ const makeStyles = (C) => StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  // #128 — re-injury risk banner (high AC ratio + an active injury)
+  reinjuryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: C.cardBackground,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: C.danger,
+    borderWidth: 1,
+    borderColor: C.danger,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    marginTop: 12,
+  },
+  reinjuryTitle: {
+    color: C.danger,
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  reinjuryBody: {
+    color: C.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
+  },
   cardRowSmall: {
     paddingVertical: 6,
     gap: 8,
@@ -950,6 +1158,110 @@ const makeStyles = (C) => StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     textAlign: 'center',
+  },
+
+  // ── Quick actions row (#120 timer, #147 achievements)
+  quickRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  quickBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: C.cardBackground,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  quickBtnText: {
+    color: C.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  // #173 milestone toast
+  milestoneToast: {
+    position: 'absolute',
+    top: '42%',
+    alignSelf: 'center',
+    backgroundColor: C.cardBackground,
+    borderWidth: 2,
+    borderColor: C.primary,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    zIndex: 9500,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  milestoneText: {
+    color: C.textPrimary,
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+
+  // ── #116 customizable dashboard
+  customizeRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 14,
+    marginBottom: -4,
+  },
+  customizeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.cardBackground,
+  },
+  customizeText: {
+    color: C.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  dashEditWrap: {
+    marginTop: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.primary,
+    borderStyle: 'dashed',
+    padding: 8,
+  },
+  dashEditHidden: {
+    opacity: 0.55,
+    borderColor: C.border,
+  },
+  dashEditBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 6,
+  },
+  dashEditLabel: {
+    flex: 1,
+    color: C.textPrimary,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  dashEditBtns: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  dashEditIcon: {
+    padding: 6,
   },
 
   // ── Chart (dashboard)

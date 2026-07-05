@@ -12,6 +12,9 @@ namespace TrainWise.BL
             _userDal = new UserDAL();
         }
 
+        // Owner (trainee UserID) of an injury row, for authorization.
+        public int? GetOwnerUserId(int injuryId) => _dal.GetOwnerUserId(injuryId);
+
         public int Create(InjuryReport ir)
         {
             if (ir.UserID <= 0)
@@ -56,6 +59,20 @@ namespace TrainWise.BL
                 throw new ArgumentException("InjuryID must be positive");
 
             _dal.MarkRecovered(injuryId);
+        }
+
+        // #127 — daily pain-level tracking.
+        public int AddPainLog(int injuryId, int level, string? note)
+        {
+            if (injuryId <= 0) throw new ArgumentException("InjuryID must be positive");
+            if (level < 1 || level > 10) throw new ArgumentException("Pain level must be between 1 and 10");
+            return _dal.InsertPainLog(injuryId, level, note);
+        }
+
+        public List<PainLog> GetPainLogs(int injuryId)
+        {
+            if (injuryId <= 0) throw new ArgumentException("InjuryID must be positive");
+            return _dal.GetPainLogs(injuryId);
         }
     }
 }

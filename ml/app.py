@@ -15,14 +15,35 @@ Endpoints (<id> = trainee Users.UserID):
     GET /api/ml/trainee/<id>/forecast[?month=YYYY-MM]
     GET /api/ml/trainee/<id>/forecast/history
 """
+import re
+
 from flask import Flask, jsonify, request
 
 import config
 import db
+import auth
 import features
 import forecast
 
 app = Flask(__name__)
+
+
+@app.before_request
+def enforce_auth():
+    # Off by default (ML_AUTH_ENFORCE unset) → no behaviour change. When on, every
+    # trainee endpoint needs the same signed token the C# API issues, and the
+    # caller may only read a trainee they are or coach. /health stays public.
+    if not config.ML_AUTH_ENFORCE:
+        return None
+    if request.method == "OPTIONS" or request.path == "/health":
+        return None
+    uid = auth.verify_token(request.headers.get("Authorization"))
+    if uid is None:
+        return jsonify({"error": "Unauthorized"}), 401
+    trainee_id = (request.view_args or {}).get("trainee_id")
+    if trainee_id is not None and not auth.may_view(uid, int(trainee_id)):
+        return jsonify({"error": "Forbidden"}), 403
+    return None
 
 
 @app.after_request
@@ -39,47 +60,65 @@ def health():
     return jsonify({"status": "ok", "db": db.ping()})
 
 
+def _clamp_days(raw, default):
+    """Bound the window so a huge/negative ?days= can't blow up the date range
+    (a pd.date_range of millions of days is an OOM DoS)."""
+    try:
+        d = int(raw) if raw is not None else default
+    except (TypeError, ValueError):
+        d = default
+    return max(1, min(d, 400))
+
+
+# Generic error body — never echo str(exc) to the client (it can leak SQL text,
+# the DB/server name, or file paths). The detail stays in the server log.
+_ERR = "An unexpected error occurred."
+
+
 @app.get("/api/ml/trainee/<int:trainee_id>/pmc")
 def pmc(trainee_id):
-    days = request.args.get("days", default=42, type=int)
+    days = _clamp_days(request.args.get("days"), 42)
     try:
         return jsonify({"traineeId": trainee_id, "series": features.pmc_series(trainee_id, days)})
-    except Exception as exc:
+    except Exception:
         app.logger.exception("pmc failed")
-        return jsonify({"error": str(exc), "series": []}), 500
+        return jsonify({"error": _ERR, "series": []}), 500
 
 
 @app.get("/api/ml/trainee/<int:trainee_id>/acwr")
 def acwr(trainee_id):
-    days = request.args.get("days", default=28, type=int)
+    days = _clamp_days(request.args.get("days"), 28)
     try:
         data = features.acwr_series(trainee_id, days)
         data["traineeId"] = trainee_id
         return jsonify(data)
-    except Exception as exc:
+    except Exception:
         app.logger.exception("acwr failed")
-        return jsonify({"error": str(exc), "series": []}), 500
+        return jsonify({"error": _ERR, "series": []}), 500
 
 
 @app.get("/api/ml/trainee/<int:trainee_id>/forecast")
 def forecast_endpoint(trainee_id):
     month = request.args.get("month", default=None, type=str)
+    # Basic shape guard so a malformed month can't reach the parser.
+    if month is not None and not re.fullmatch(r"\d{4}-\d{2}", month):
+        return jsonify({"error": "month must be formatted YYYY-MM"}), 400
     try:
         result = forecast.get_forecast(trainee_id, month)
         status = 404 if result.get("error") else 200
         return jsonify(result), status
-    except Exception as exc:
+    except Exception:
         app.logger.exception("forecast failed")
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": _ERR}), 500
 
 
 @app.get("/api/ml/trainee/<int:trainee_id>/forecast/history")
 def forecast_history(trainee_id):
     try:
         return jsonify({"traineeId": trainee_id, "months": forecast.read_history(trainee_id)})
-    except Exception as exc:
+    except Exception:
         app.logger.exception("forecast history failed")
-        return jsonify({"error": str(exc), "months": []}), 500
+        return jsonify({"error": _ERR, "months": []}), 500
 
 
 if __name__ == "__main__":

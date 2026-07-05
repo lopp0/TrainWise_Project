@@ -16,6 +16,15 @@ SQL_DATABASE = os.environ.get("TRAINWISE_SQL_DATABASE", "TrainWise")
 HOST = "0.0.0.0"          # bind on all interfaces so the phone can reach it over the LAN
 PORT = int(os.environ.get("TRAINWISE_ML_PORT", "8000"))
 
+# ---- Auth (mirror the C# JWT) ----------------------------------------------
+# When ML_AUTH_ENFORCE=true the service requires the SAME signed token the C#
+# API issues (so set JWT_KEY to the exact value used on Azure). Default OFF so
+# the local service keeps working during rollout / without PyJWT installed.
+JWT_KEY = os.environ.get("JWT_KEY")
+JWT_ISSUER = os.environ.get("JWT_ISSUER", "TrainWise")
+JWT_AUDIENCE = os.environ.get("JWT_AUDIENCE", "TrainWiseApp")
+ML_AUTH_ENFORCE = os.environ.get("ML_AUTH_ENFORCE", "").lower() == "true"
+
 # ---- Model artifacts (exported by the notebook) ----------------------------
 MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
 FORECAST_MODEL_PATH = os.path.join(MODELS_DIR, "forecast_model.pkl")

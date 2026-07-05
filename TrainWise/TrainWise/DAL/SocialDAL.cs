@@ -244,5 +244,30 @@ namespace TrainWise.DAL
             }
             return list;
         }
+
+        // ── ownership lookups (for authorizing respond-by-id endpoints) ──────
+        // The two parties on a friend request. (0,0) if the id doesn't exist.
+        public (int requesterId, int addresseeId) GetFriendshipParties(int friendshipId)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(
+                "SELECT RequesterID, AddresseeID FROM dbo.Friendships WHERE FriendshipID = @id", con);
+            cmd.Parameters.AddWithValue("@id", friendshipId);
+            using var r = cmd.ExecuteReader();
+            if (r.Read()) return (Convert.ToInt32(r["RequesterID"]), Convert.ToInt32(r["AddresseeID"]));
+            return (0, 0);
+        }
+
+        // The two parties on a coach offer. (0,0) if the id doesn't exist.
+        public (int coachUserId, int traineeUserId) GetCoachOfferParties(int offerId)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(
+                "SELECT CoachUserID, TraineeUserID FROM dbo.CoachOffers WHERE OfferID = @id", con);
+            cmd.Parameters.AddWithValue("@id", offerId);
+            using var r = cmd.ExecuteReader();
+            if (r.Read()) return (Convert.ToInt32(r["CoachUserID"]), Convert.ToInt32(r["TraineeUserID"]));
+            return (0, 0);
+        }
     }
 }

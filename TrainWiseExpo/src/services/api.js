@@ -1,13 +1,8 @@
 import axios from 'axios';
-
-// Azure-hosted backend (C# API + SQL). MUST stay in sync with src/api/api.js —
-// if these two differ, half the app (login/profile) works while the other
-// half (coach, QR connect, upload, chat) fails with "Network Error".
-// Reachable from anywhere over HTTPS, so no LAN IP / adb-reverse is needed.
-// NOTE: the Python ML service (mlApi.js, port 8000) is separate and still local.
-// Local alternatives if running the backend on the PC again:
-//   LAN: http://<PC-IP>:5249/api    USB: http://127.0.0.1:5249/api (+ adb reverse tcp:5249 tcp:5249)
-const API_BASE_URL = 'https://trainwise01-api-djcfcvcedth8hjgp.israelcentral-01.azurewebsites.net/api';
+import { getAuthToken } from '../api/authToken';
+// Single source of truth for the backend URL — flip BACKEND_MODE in
+// src/config/backend.js to switch the whole app between Local‑LAN and Azure.
+import { API_BASE_URL } from '../config/backend';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -17,12 +12,33 @@ const api = axios.create({
   },
 });
 
+// Attach the bearer token to every request when the user is logged in.
+api.interceptors.request.use((config) => {
+  const token = getAuthToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
 // ==================== USERS ====================
 export const getUserById = (userId) =>
   api.get(`/users/${userId}`);
 
 export const updateUser = (userId, data) =>
   api.put(`/users/${userId}`, data);
+
+// #111 — change password (backend verifies the current one).
+export const changePassword = (userId, currentPassword, newPassword) =>
+  api.put(`/users/${userId}/password`, { currentPassword, newPassword });
+
+// #131 — body-measurement tracking (weight / body-fat over time).
+export const getBodyMeasurements = (userId) =>
+  api.get(`/users/${userId}/measurements`);
+export const addBodyMeasurement = (userId, { weight, bodyFat = null, date = new Date() }) =>
+  api.post(`/users/${userId}/measurements`, {
+    weight,
+    bodyFat,
+    date: date instanceof Date ? date.toISOString() : date,
+  });
 
 // Permanently deletes the user and every row referencing them. Backend
 // sp_DeleteUser must clean up child tables (ActivityLogs, DailyLoad,
@@ -59,11 +75,14 @@ export const uploadProfileImage = async (userId, localUri) => {
   const timeoutId = setTimeout(() => controller.abort(), 60000);
   let response;
   try {
+    const _t = getAuthToken();
     response = await fetch(url, {
       method: 'POST',
       body: form,
       // Intentionally no Content-Type header — RN sets it to
       // multipart/form-data with the proper boundary automatically.
+      // Attach the bearer token manually since fetch bypasses the axios interceptor.
+      headers: _t ? { Authorization: `Bearer ${_t}` } : undefined,
       signal: controller.signal,
     });
   } finally {
@@ -115,6 +134,16 @@ export const calculateDailyLoad = (userId, date = new Date()) =>
     date: date instanceof Date ? date.toISOString() : date,
   });
 
+// Day-by-day trend series with BOTH AC-ratio methods (classic rolling + EWMA)
+// plus a summary block (monotony/strain, intensity mix). Coach-readable for
+// linked trainees. Falls back to utils/loadSeries when the backend predates it.
+export const getLoadAnalytics = (userId, days = 56) =>
+  api.get(`/dailyload/user/${userId}/analytics`, {
+    // end = the DEVICE's calendar date: Azure runs on UTC, so between local
+    // midnight and 03:00 the server's "today" is still yesterday.
+    params: { days, end: new Date().toLocaleDateString('en-CA') },
+  });
+
 // ==================== RECOMMENDATIONS ====================
 export const getRecommendationsByUser = (userId) =>
   api.get(`/recommendation/user/${userId}`);
@@ -137,6 +166,19 @@ export const getActiveInjuriesByUser = (userId) =>
 
 export const markInjuryRecovered = (injuryId) =>
   api.put(`/injuryreport/${injuryId}/recover`);
+
+// #127 — daily pain-level (1-10) tracking per injury, for the recovery trend.
+export const getPainLogs = (injuryId) =>
+  api.get(`/injuryreport/${injuryId}/pain`);
+export const addPainLog = (injuryId, level, note = null) =>
+  api.post(`/injuryreport/${injuryId}/pain`, { level, note });
+
+// #124 — per-workout note + photo. The photo is uploaded via uploadChatImage
+// (returns a /images path), then stored alongside the note here.
+export const getWorkoutNotes = (activityId) =>
+  api.get(`/activitylog/${activityId}/notes`);
+export const setWorkoutNotes = (activityId, { notes = null, photoPath = null } = {}) =>
+  api.put(`/activitylog/${activityId}/notes`, { notes, photoPath });
 
 // ==================== RECORDS / BADGES (A-5) ====================
 export const getRecords = (userId) => api.get(`/records/${userId}`);
@@ -168,10 +210,25 @@ export const deleteBoardPost = (postId, userId) =>
   api.delete(`/board/${postId}`, { params: { userId } });
 export const toggleBoardLike = (postId, userId) =>
   api.post(`/board/${postId}/like/${userId}`, {});
-export const getLeaderboard = ({ country = 'IL', metric = 'load_weekly', limit = 50 } = {}) =>
-  api.get('/board/leaderboard', { params: { country, metric, limit } });
+// #170 — scope can be 'global' (default) or 'friends'. When 'friends', pass the
+// viewer's id so the backend ranks only the viewer + their accepted friends.
+export const getLeaderboard = ({
+  country = 'IL',
+  metric = 'load_weekly',
+  limit = 50,
+  scope = 'global',
+  viewerId = null,
+} = {}) =>
+  api.get('/board/leaderboard', { params: { country, metric, limit, scope, viewerId } });
 export const setLeaderboardOptIn = (userId, on) =>
   api.put(`/board/leaderboard/optin/${userId}`, null, { params: { on } });
+
+// #171 — kudos ("cheers") on a workout (ActivityLog). Toggle on/off; returns
+// { count, kudoed } so the button reflects the viewer's own kudos state.
+export const toggleKudos = (logId, fromUserId) =>
+  api.post(`/board/kudos/${logId}/${fromUserId}`, {});
+export const getKudos = (logId, viewerId) =>
+  api.get(`/board/kudos/${logId}`, { params: { viewerId } });
 
 // ==================== TRAINING CALENDAR (A-4) ====================
 // from/to are 'YYYY-MM-DD' strings.
@@ -244,7 +301,11 @@ export const uploadChatImage = async (localUri) => {
   const timeoutId = setTimeout(() => controller.abort(), 60000);
   let response;
   try {
-    response = await fetch(url, { method: 'POST', body: form, signal: controller.signal });
+    const _t = getAuthToken();
+    response = await fetch(url, {
+      method: 'POST', body: form, signal: controller.signal,
+      headers: _t ? { Authorization: `Bearer ${_t}` } : undefined,
+    });
   } finally {
     clearTimeout(timeoutId);
   }
@@ -271,6 +332,20 @@ export const markMessagesSeen = (senderId, receiverId) =>
 // Unread-message count addressed to this user (chat badge).
 export const getUnreadMessageCount = (userId) =>
   api.get(`/messages/unread/${userId}`);
+
+// #138 — typing indicator. The sender pings while typing; the peer polls.
+// Kept cheap (foreground-only, throttled in ChatScreen) to limit Azure burn.
+export const setTyping = (fromUserId, toUserId, isTyping) =>
+  api.put(`/messages/typing/${fromUserId}/${toUserId}`, { isTyping });
+export const getTyping = (selfId, peerId) =>
+  api.get(`/messages/typing/${peerId}/${selfId}`);
+
+// #140 — emoji reactions on a message (toggle: same emoji again removes it).
+export const reactToMessage = (messageId, userId, emoji) =>
+  api.post(`/messages/${messageId}/react/${userId}`, { emoji });
+// All reactions across a thread (so the bubbles can render them).
+export const getThreadReactions = (userA, userB) =>
+  api.get(`/messages/reactions/${userA}/${userB}`);
 
 // ==================== GOALS & PREFERENCES ====================
 export const getAllTrainingGoals = () =>

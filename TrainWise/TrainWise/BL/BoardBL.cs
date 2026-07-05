@@ -41,11 +41,43 @@ namespace TrainWise.BL
             _dal.SetLeaderboardOptIn(userId, on);
         }
 
-        public List<LeaderboardEntry> GetLeaderboard(string country, string metric, int limit)
+        public List<LeaderboardEntry> GetLeaderboard(string country, string metric, int limit,
+            string scope = "global", int viewerId = 0)
         {
             if (string.IsNullOrWhiteSpace(country)) country = "IL";
             if (limit <= 0 || limit > 200) limit = 50;
-            return _dal.GetLeaderboard(country, metric ?? "load_weekly", limit);
+            return _dal.GetLeaderboard(country, metric ?? "load_weekly", limit, scope ?? "global", viewerId);
+        }
+
+        // #171 — toggle kudos on a workout, push-notify the owner on add,
+        // and return the fresh count + the viewer's kudos state.
+        public (int count, bool kudoed) ToggleKudos(int logId, int fromUserId)
+        {
+            if (logId <= 0 || fromUserId <= 0) throw new ArgumentException("Invalid ids");
+            bool kudoed = _dal.ToggleKudos(logId, fromUserId);
+            if (kudoed)
+            {
+                try
+                {
+                    int ownerId = _dal.GetActivityLogOwner(logId);
+                    if (ownerId > 0 && ownerId != fromUserId)
+                    {
+                        var udal = new UserDAL();
+                        var giver = udal.GetUserById(fromUserId);
+                        var token = udal.GetPushToken(ownerId);
+                        PushSender.Send(token, "New kudos 👏",
+                            $"{giver?.FullName ?? "Someone"} cheered your workout!");
+                    }
+                }
+                catch { /* best-effort notify */ }
+            }
+            return _dal.GetKudos(logId, fromUserId);
+        }
+
+        public (int count, bool kudoed) GetKudos(int logId, int viewerId)
+        {
+            if (logId <= 0) throw new ArgumentException("Invalid log id");
+            return _dal.GetKudos(logId, viewerId);
         }
     }
 }

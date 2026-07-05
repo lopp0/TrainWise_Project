@@ -2,6 +2,36 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Documentation sync (MANDATORY, read every session)
+
+The repo has a public‑facing documentation suite (added 2026‑06‑24, lives on the `main` branch). It
+MUST stay in lockstep with the code. **Every single time** we add, delete, change, or modify ANYTHING
+in this project (a feature, a controller/endpoint, a DB table/migration/seed, a screen, a config value,
+a deploy step, a dependency, the architecture), update the relevant file(s) below **as part of the same
+change** so the docs never drift from reality. A code change that affects any of these is NOT "done"
+until the matching doc is updated.
+
+Files to keep current:
+- [README.md](README.md) — overview, feature bullets, architecture diagram, tech stack, project layout, roadmap.
+- [docs/SETUP.md](docs/SETUP.md) — local + Azure setup, migration run‑order, prerequisites, gotchas.
+- [docs/DEPLOY.md](docs/DEPLOY.md) — Azure publish, APK build, mode switching, resource table.
+- [docs/SECURITY.md](docs/SECURITY.md) — auth, secrets, safe‑push checklist, hardening backlog.
+- [docs/featureslist.md](docs/featureslist.md) — grouped, presentation‑ready feature inventory.
+- [docs/features.md](docs/features.md) — technical inventory + the COMPLETE API surface (controllers/routes).
+- [docs/PROJECT_SCOPE_FLOWCHART.md](docs/PROJECT_SCOPE_FLOWCHART.md) — system / user‑journey / data‑flow diagrams.
+
+Trigger map (when X changes, update Y):
+- Add/change a **controller or endpoint** → `docs/features.md` (API surface) AND `docs/featureslist.md`.
+- Add/alter a **DB table, migration, or seed** → `docs/SETUP.md` (run‑order) AND `docs/features.md` (data layer).
+- Add/rename a **screen, service, or component** → `docs/featureslist.md` (and `README.md` if it is a headline feature).
+- Ship a **"Planned / Not yet implemented"** item → move it OUT of the Planned bucket in `README.md` + `docs/featureslist.md`.
+- Change **run / deploy / config / secret handling** → `docs/SETUP.md` / `docs/DEPLOY.md` / `docs/SECURITY.md`.
+- Change the **tech stack, versions, or folder layout** → `README.md` (tech‑stack + project‑layout tables).
+
+Rules:
+- Keep the docs accurate to what is REAL — never document a feature that does not exist (honesty over polish).
+- The docs are on `main`; when syncing them to GitHub, follow the safe‑push checklist in `docs/SECURITY.md`.
+
 ## Repository layout
 
 Two cooperating projects in one folder, no shared root package manager:
@@ -254,6 +284,16 @@ Single root in [NavigationStack.js](TrainWiseExpo/src/navigation/NavigationStack
 
 Use `useFocusEffect` (not `useEffect`) on tab-switched screens so deletes on the Health tab propagate when the user returns Home.
 
+## Load analytics (rolling + EWMA trend, 2026-07-05)
+
+Day-by-day AC-ratio trend with TWO methods, shown on the trainee Load tab and inside a foldable "Load trend & analysis" card on CoachTraineeDetail:
+- **C# is the source of truth**: `BL/LoadAnalyticsBL.cs` → `GET api/dailyload/user/{id}/analytics?days=56&end=YYYY-MM-DD` (gate `CallerOwnsOrCoaches`; reuses `sp_GetActivityLogsForLoad` with a wide window via `DailyLoadDAL.GetActivityLogsForRange` — **no SQL migration**). Client must pass `end` = device-local date because Azure runs UTC (00:00-03:00 Israel drift).
+- Methods: classic rolling (Gabbett 2016, official — drives status/recommendations) and **bias-corrected EWMA** (Williams 2017 + the Adam zero-init correction, Kingma & Ba 2015; λ = 2/(N+1), t counts from first logged session). Correction is REQUIRED: without it a new user's first workout falsely reads Red on EWMA.
+- Both use the same cold-start floor pre-baseline (rolling: weekly bootstrap 150/280/420; EWMA: bootstrap/7 because EWMA is daily-scale) and `LoadCalculationBL.DetermineLoadLevel` (now `internal static`).
+- Summary block: Foster 1998 monotony/strain, duration-weighted intensity mix (RPE 1-3/4-6/7-10), rest days.
+- Frontend: `components/LoadAnalyticsSection.js` (method toggle persisted at `@trainwise_acwr_method`, weekly volume, intensity, variety) + `components/AcwrTrendChart.js` (custom react-native-svg — chart-kit cannot shade the sweet-spot band). `utils/loadSeries.js` is the **on-device mirror fallback** when the endpoint is missing/offline — any change to LoadAnalyticsBL math MUST be mirrored there (same rule as utils/acwr.js).
+- Chart Y-axis is labeled at the thresholds (0.8/1.3/1.5), zones labeled in plain language; ratios clamp at 3 for scale sanity.
+
 ## Time / timezone
 
 The backend stores times exactly as sent (no timezone conversion). The frontend sends UTC via `toISOString()`. Display layers must convert back to local using `toLocaleTimeString('en-US', { ..., timeZone: 'Asia/Jerusalem' })` — do not change the storage format to "fix" displayed times.
@@ -316,6 +356,43 @@ Updated 2026-06-09 after a Google key was leaked via a push (see `tasks/lessons.
   restriction 403s the REST calls). `.env.example` documents the vars; `.env` is gitignored.
 - **OpenAI key**: `EXPO_PUBLIC_OPENAI_API_KEY` in `.env` (baked into the APK in plaintext
   like all `EXPO_PUBLIC_` vars; don't distribute the APK publicly).
+
+### Other live secrets + safe-push checklist (added 2026-06-24)
+
+- **`TrainWise/TrainWise/appsettings.json` is the second live secret** (after the Google
+  key). Its **working copy carries the Azure SQL password** (`...User ID=TrainWiseAdmin;
+  Password=<REDACTED>;...`) for whatever Azure session is active, but the **committed
+  version on `Lirone's-Branch` has only the clean LOCAL string**
+  (`Data Source=Lirone\SQLEXPRESS;...;Integrated Security=True`, no password). It is a
+  **tracked** file, so `.gitignore` can't protect it — a blind `git add -A` WILL stage the
+  password. **Always** do: `git add -A` → `git restore --staged TrainWise/TrainWise/appsettings.json`,
+  then verify with `git show <commit>:TrainWise/TrainWise/appsettings.json` (must show the
+  local string). Never edit the working file to "fix" it — it's the user's local Azure config.
+- **Never commit these** (already in `.gitignore` as of 2026-06-24): `sql/full_data_insert.sql`
+  + `sql/export_all_data.sql` (full live-DB dumps with REAL user emails + password column
+  values), `Python Course ML/` (~70MB unrelated ML-course homework), `tasks/design_backups/`
+  (duplicate copies of source — git history is the backup), `ml/models/*.pkl` (regenerable
+  by the notebook; `ml/models/` keeps only `.gitkeep`). `TrainWiseExpo/android/` (incl.
+  `google-services.json`, the Firebase config) is git-ignored wholesale, so native secrets
+  never leak. The repo needs only **schema** (`TWDB.sql` / `TrainWiseV2.sql` / migrations) +
+  `seed_reference_data.sql` — any `*_data_insert` / `*dump*` file is runtime data, not schema.
+- **Safe-push procedure** (the project owner is extremely sensitive about this after the
+  Google-key leak): (1) `git fetch` + compare local vs `origin/<branch>` to scope the push;
+  (2) scan the WORKING tree for secrets with the Grep tool (ripgrep skips gitignored files);
+  (3) add any junk/PII/secret files to `.gitignore`; (4) `git add -A` then `git restore
+  --staged` the appsettings.json (and any other tracked-with-local-secret file); (5) scan the
+  **staged diff** AND the **committed tree** (`git grep -nEi "<patterns>" <commit>` — scan the
+  COMMIT, not the working tree, or the staged-out password gives false alarms) for:
+  `AIza` `sk-` `AKIA` `ghp_` `xox` `ya29.` `-----BEGIN` `private_key` `client_secret`
+  `Password=<literal>` `database.windows.net` `Data Source=` `Server=tcp:`; (6) only then commit
+  + push to the user's own feature branch.
+- **Not blocking** (present in history, NOT usable credentials): the public Azure API URL
+  (`trainwise01-api-…azurewebsites.net` — baked into the APK anyway), the Azure SQL **server
+  hostname + admin username** (`trainwiseadmin.database.windows.net` / `TrainWiseAdmin`, in
+  docs/comments — useless without the password + the Azure firewall allowlist), and the **demo
+  seed accounts** (`demo1234` on **non-routable `@trainwise.demo`** emails in
+  `sql/2026-06-08_add_social.sql` — intentional fake data). Distinguish a usable live credential
+  (BLOCK) from a throwaway demo on a fake domain (DISCLOSE, don't block).
 
 ## Building & distributing the APK
 

@@ -39,6 +39,8 @@ import PersonalRecordsScreen from '../screens/PersonalRecordsScreen';
 import WorkoutBoardScreen from '../screens/WorkoutBoardScreen';
 import LeaderboardScreen from '../screens/LeaderboardScreen';
 import TrainingCalendarScreen from '../screens/TrainingCalendarScreen';
+import TimerScreen from '../screens/TimerScreen';
+import AchievementsScreen from '../screens/AchievementsScreen';
 
 
 
@@ -89,6 +91,8 @@ const HomeStack = () => {
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="PersonalRecords" component={PersonalRecordsScreen} />
       <Stack.Screen name="TrainingCalendar" component={TrainingCalendarScreen} />
+      <Stack.Screen name="Timer" component={TimerScreen} />
+      <Stack.Screen name="Achievements" component={AchievementsScreen} />
     </Stack.Navigator>
   );
 };

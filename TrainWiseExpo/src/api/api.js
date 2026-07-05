@@ -1,18 +1,14 @@
 import axios from 'axios';
+import { getAuthToken } from './authToken';
+// Single source of truth for the backend URL — flip BACKEND_MODE in
+// src/config/backend.js to switch the whole app between Local‑LAN and Azure.
+import { API_BASE_URL } from '../config/backend';
 
 /**
  * Shared axios instance for all API calls to the TrainWise backend.
- * No JWT token system - uses session-based auth with userId.
+ * Attaches the signed JWT (when present) so the backend can verify identity.
  */
-
-// API Configuration
-// Azure-hosted backend (C# API + SQL). Works from anywhere over HTTPS, so no
-// LAN IP / adb-reverse juggling is needed for the API any more. Keep in sync
-// with services/api.js. NOTE: the Python ML service (services/mlApi.js, port
-// 8000) is NOT on Azure; it still runs locally.
-// Local alternatives if you ever run the backend on the PC again:
-//   LAN:  http://<PC-IP>:5249/api      USB:  http://127.0.0.1:5249/api (+ adb reverse tcp:5249 tcp:5249)
-const BASE_URL = 'https://trainwise01-api-djcfcvcedth8hjgp.israelcentral-01.azurewebsites.net/api';
+const BASE_URL = API_BASE_URL;
 const API_TIMEOUT = 30000; // 30 seconds
 
 // Create axios instance with default config
@@ -22,6 +18,13 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+});
+
+// Attach the bearer token to every request when the user is logged in.
+apiClient.interceptors.request.use((config) => {
+  const token = getAuthToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
 });
 
 // ============================================================================
@@ -46,6 +49,43 @@ export const login = async (email, password) => {
     throw new Error(
       error.response?.data || 'Login failed. Please check your credentials.'
     );
+  }
+};
+
+/**
+ * Google Sign-In: send the Google ID token (from the native picker) to the
+ * backend, which verifies it and returns the existing-or-created user.
+ * `isSignUp: true` (Sign-Up screen) makes the backend block an already-existing
+ * Google account (409); false/omitted (Login screen) logs in / links / creates.
+ * @param {{ idToken: string, email?: string, fullName?: string, isSignUp?: boolean }} payload
+ */
+export const googleLogin = async ({ idToken, email, fullName, isSignUp = false }) => {
+  try {
+    const response = await apiClient.post('/Users/google-login', {
+      idToken,
+      email,
+      fullName,
+      isSignUp,
+    });
+    return response.data;
+  } catch (error) {
+    if (!error.response) {
+      // No HTTP response — network/timeout/unreachable backend.
+      throw new Error(`Cannot reach the server (${error.message}).`);
+    }
+    const { status, data } = error.response;
+    let detail;
+    if (typeof data === 'string' && data.trim()) {
+      detail = data;
+    } else if (data?.errors && typeof data.errors === 'object') {
+      // ASP.NET ValidationProblemDetails — surface the field errors.
+      detail = Object.entries(data.errors)
+        .map(([f, e]) => `${f}: ${Array.isArray(e) ? e.join(', ') : e}`)
+        .join('; ');
+    } else {
+      detail = data?.title || data?.detail || data?.message || 'unknown error';
+    }
+    throw new Error(`Google sign-in failed (${status}): ${detail}`);
   }
 };
 

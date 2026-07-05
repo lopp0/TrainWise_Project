@@ -116,6 +116,54 @@ END", con);
             return Convert.ToInt32(cmd.ExecuteScalar()) == 1;
         }
 
+        // #171 — toggle a kudos ("cheer") on a workout (ActivityLog). Returns
+        // true if it's now kudoed by the user, false if removed.
+        public bool ToggleKudos(int logId, int fromUserId)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(@"
+IF EXISTS (SELECT 1 FROM dbo.WorkoutKudos WHERE LogID = @l AND FromUserID = @u)
+BEGIN
+    DELETE FROM dbo.WorkoutKudos WHERE LogID = @l AND FromUserID = @u;
+    SELECT 0;
+END
+ELSE
+BEGIN
+    INSERT INTO dbo.WorkoutKudos (LogID, FromUserID) VALUES (@l, @u);
+    SELECT 1;
+END", con);
+            cmd.Parameters.AddWithValue("@l", logId);
+            cmd.Parameters.AddWithValue("@u", fromUserId);
+            return Convert.ToInt32(cmd.ExecuteScalar()) == 1;
+        }
+
+        // #171 — kudos count for a workout + whether the viewer kudoed it.
+        public (int count, bool kudoed) GetKudos(int logId, int viewerId)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(@"
+SELECT COUNT(*) AS Cnt,
+       CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.WorkoutKudos WHERE LogID = @l AND FromUserID = @v)
+                 THEN 1 ELSE 0 END AS BIT) AS Mine
+FROM dbo.WorkoutKudos WHERE LogID = @l;", con);
+            cmd.Parameters.AddWithValue("@l", logId);
+            cmd.Parameters.AddWithValue("@v", viewerId);
+            using var r = cmd.ExecuteReader();
+            if (r.Read())
+                return (Int(r, "Cnt"), r["Mine"] != DBNull.Value && Convert.ToBoolean(r["Mine"]));
+            return (0, false);
+        }
+
+        // Owner (UserID) of a workout, for the kudos push notification.
+        public int GetActivityLogOwner(int logId)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand("SELECT UserID FROM dbo.ActivityLogs WHERE ActivityID = @l", con);
+            cmd.Parameters.AddWithValue("@l", logId);
+            var v = cmd.ExecuteScalar();
+            return v == null || v == DBNull.Value ? 0 : Convert.ToInt32(v);
+        }
+
         public void SetLeaderboardOptIn(int userId, bool on)
         {
             using SqlConnection con = Connect();
@@ -126,7 +174,8 @@ END", con);
             cmd.ExecuteNonQuery();
         }
 
-        public List<LeaderboardEntry> GetLeaderboard(string country, string metric, int limit)
+        public List<LeaderboardEntry> GetLeaderboard(string country, string metric, int limit,
+            string scope = "global", int viewerId = 0)
         {
             // Whitelist metric -> aggregate expression. ALL metrics are weekly
             // (last 7 days) so the four leaderboards are directly comparable and
@@ -144,6 +193,17 @@ END", con);
                     break;
             }
 
+            // #170 — friends-only scope restricts to the viewer + their accepted
+            // friends and drops the country filter (friends are friends anywhere).
+            bool friends = string.Equals(scope, "friends", StringComparison.OrdinalIgnoreCase) && viewerId > 0;
+            string countryFilter = friends ? "" : "AND ISNULL(u.Country, 'IL') = @country";
+            string scopeFilter = friends
+                ? @"AND (u.UserID = @viewer OR u.UserID IN (
+                        SELECT AddresseeID FROM dbo.Friendships WHERE RequesterID = @viewer AND Status = 'accepted'
+                        UNION
+                        SELECT RequesterID FROM dbo.Friendships WHERE AddresseeID = @viewer AND Status = 'accepted'))"
+                : "";
+
             var list = new List<LeaderboardEntry>();
             using SqlConnection con = Connect();
             using SqlCommand cmd = new SqlCommand($@"
@@ -152,12 +212,13 @@ SELECT TOP (@limit)
        {agg} AS MetricValue
 FROM dbo.Users u
 JOIN dbo.ActivityLogs al ON al.UserID = u.UserID {dateFilter}
-WHERE u.IsOnLeaderboard = 1 AND ISNULL(u.Country, 'IL') = @country
+WHERE u.IsOnLeaderboard = 1 {countryFilter} {scopeFilter}
 GROUP BY u.UserID, u.FullName, u.ProfileImagePath, u.EquippedBadge, u.EquippedTitle, u.EquippedFrame, u.ExperienceLevel
 HAVING {agg} > 0
 ORDER BY MetricValue DESC;", con);
             cmd.Parameters.AddWithValue("@country", country);
             cmd.Parameters.AddWithValue("@limit", limit);
+            if (friends) cmd.Parameters.AddWithValue("@viewer", viewerId);
             using var r = cmd.ExecuteReader();
             int rank = 0;
             while (r.Read())
