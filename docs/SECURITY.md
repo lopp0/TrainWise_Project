@@ -171,7 +171,7 @@ Run **every time** before committing/pushing:
 - **2026‑06‑09 — Google API key leaked via push.** A literal `AIza…` key lived in `app.json` +
   `weatherService.js` and was pushed. Resolution: key moved to `.env`, `app.json` reduced to a
   placeholder, native key injected via `app.config.js`, scan pattern list expanded, and the key **rotated**.
-- **2026‑07‑02 — weak Azure SQL password (`TrainWise01`) in the `appsettings.json` working copy.** Flagged
+- **2026‑07‑02 — weak, reused Azure SQL password (redacted here) in the `appsettings.json` working copy.** Flagged
   by the security audit (Finding 1, CVSS 9.8). The DB secret was externalized to Azure config; the working
   file is kept out of every commit via the checklist above; **the password must still be rotated and
   treated as burned** (see backlog).
