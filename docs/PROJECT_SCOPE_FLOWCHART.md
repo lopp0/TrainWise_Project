@@ -19,7 +19,7 @@ heart), and how the project ships. Companion to [`features.md`](features.md) and
   │                          └───────────────┬────────────────────────────┘
   │                                          │
   │   axios (services/api.js + api/api.js)   │ axios (services/mlApi.js)
-  │   session-based · JSON/HTTPS             │ JSON/HTTP over LAN
+  │   JWT bearer · JSON/HTTPS                │ JSON/HTTP over LAN
   ▼                                          ▼
 ┌──────────────────────────────────┐   ┌──────────────────────────────────┐
 │  TrainWise/  ASP.NET Core 8 API   │   │  ml/  Python (Flask) service     │

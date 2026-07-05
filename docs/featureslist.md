@@ -9,7 +9,7 @@
 
 ## Auth & Accounts
 1. Welcome / landing screen — first entry point for guests
-2. Login — email + password sign‑in (`POST /api/auth/login`, validated by `sp_LoginUser`)
+2. Login — email + password sign‑in (`POST /api/auth/login`, PBKDF2‑verified, returns a JWT bearer token)
 3. Two‑step registration — basic info + gender, then preferences + terms (`SignUpScreen` → `SignUpFinal`),
    with a **reCAPTCHA** gate whose token is **verified server‑side** (`CaptchaVerifier` → Google
    `siteverify`) before the account is created
@@ -139,7 +139,27 @@
 97. Core **training‑load algorithm** in `BL/LoadCalculationBL.cs` (acute, chronic, AC ratio, warning level)
 98. Static file serving for uploaded images
 99. Swagger / OpenAPI explorer (development only)
-100. Seeded reference data + 13 dated migration scripts
+100. Seeded reference data + 15+ dated migration scripts (through `2026-07-02_security_hardening.sql`)
+
+## Security & Auth Hardening (2026‑07‑02 audit)
+110. **JWT bearer auth** — signed token issued on login / signup / google‑login; bearer interceptor on every client call
+111. **Per‑object ownership checks** — a logged‑in user can't act on another user's data (IDOR/BOLA closed); `GET /api/users` → 403
+112. **PBKDF2 password hashing** — salted, verify‑and‑upgrade from the old plaintext; constant‑time login (no user enumeration)
+113. **Rate limiting** — auth endpoints (10/min/IP) + a global backstop
+114. **Upload validation** — magic‑byte sniff + size cap + GUID (non‑enumerable) filenames
+115. **Server‑side verification** — Google **ID token** + **reCAPTCHA** checked on the backend
+116. **DB secret externalized to env** + **optional ML‑service JWT** (`ml/auth.py`, gated by `ML_AUTH_ENFORCE`)
+
+## Load Analytics & Extras
+117. **Rolling load analytics** — `GET /api/dailyload/user/{id}/analytics` + `LoadAnalyticsSection` / `AcwrTrendChart`
+118. **Achievements + milestones** — `AchievementsScreen`, `utils/achievements`, `utils/milestones`
+119. **Workout timer** — `TimerScreen`
+120. **Body‑measurement / weight tracker** — `WeightTracker`, `GET/POST /api/users/{id}/measurements`
+121. **Pain tracker** — per‑injury pain logs (`GET/POST /api/injuryreport/{id}/pain`, `PainTracker`)
+122. **Message reactions + typing indicator** — `POST /api/messages/{id}/react`, `PUT/GET /api/messages/typing`
+123. **Workout‑board kudos** — `POST /api/board/kudos/{logId}/{userId}`
+124. **Change password** (`PUT /api/users/{id}/password`) + **activity notes** (`GET/PUT /api/activitylog/{id}/notes`)
+125. **What's‑new modal + changelog**, theme scheduling, streak freeze, and optional biometric lock
 
 ## External Services & Integrations
 > Each row is one external dependency.
@@ -165,7 +185,6 @@ Empty placeholders for future work — present in comparable projects, **not** b
 - **Static analysis** — CodeQL + `npm audit` / `dotnet list package --vulnerable` gates
 - **Cloud ML** — deploy the Python service to Azure so the coach forecast works without the PC
 - **iOS app** — the Expo iOS shell is unmaintained (Android only)
-- **Hardened auth** — salted password hashing + token‑based sessions + rate limiting
 - **Content‑safety moderation** — screening of user‑generated text / images
 - **Web / PWA client** — TrainWise is native‑only
 - **Persistent AI chat history** — currently in‑memory per screen visit

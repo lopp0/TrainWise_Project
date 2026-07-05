@@ -52,13 +52,19 @@ The current Azure target (as of the last redeploy) is:
   or the App Service can't reach the DB.
 - **Auth env vars** (App Service → **Configuration → Application settings**, read from the environment,
   never hardcoded):
+  - `JWT_KEY` — **required in prod**: HS256 signing key (≥ 32 chars) for JWT auth. If unset, tokens use a
+    random per‑process key and die on restart. `AUTH_ENFORCE=true` makes a valid token **required** on
+    every non‑anonymous endpoint (flip on only after the token‑sending APK is live). `JWT_ISSUER` /
+    `JWT_AUDIENCE` / `JWT_EXPIRY_DAYS` optional.
   - `RECAPTCHA_SECRET` — reCAPTCHA secret key for `CaptchaVerifier`. Leave **unset** to keep signup
     verification disabled (fail‑open); set it only once the app ships the matching site key.
   - `GOOGLE_WEB_CLIENT_ID` *(optional)* — expected audience for Google ID‑token verification (defaults to
     the project's public web client ID).
   - `FIREBASE_CREDENTIALS_JSON` — service‑account JSON for FCM push (`PushSender`).
 - **Schema parity** — run every `sql/` migration against Azure SQL too (SSMS → connect to
-  `<your-sql-server>.database.windows.net`). The schema must match local SQL Express.
+  `<your-sql-server>.database.windows.net`). The schema must match local SQL Express. **Run
+  `2026-07-02_security_hardening.sql` (it widens `Users.Password` for the PBKDF2 hash) BEFORE publishing
+  the hashing code**, or new logins truncate.
 - **Swagger** — `Program.cs` gates Swagger to `IsDevelopment()`. If you need the API explorer on the
   live URL for triage, temporarily relax that gate (and revert after).
 

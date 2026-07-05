@@ -88,6 +88,8 @@ cd TrainWise_Project
    2026-06-19_add_workout_board.sql
    2026-06-21_add_board_image.sql
    2026-06-21_add_push_token.sql
+   2026-06-28_add_green_batch.sql
+   2026-07-02_security_hardening.sql   # widens Users.Password for the PBKDF2 hash — run BEFORE the new backend code
    ```
 
 > **`seed_reference_data.sql` is mandatory.** `TWDB.sql` creates schema + procs only — the lookup
@@ -119,6 +121,11 @@ Open `TrainWise/TrainWise.sln` in **Visual Studio 2022** and press the green **p
 **For Local‑LAN testing on the phone**, the launch profile must bind to `http://0.0.0.0:5249` (not
 `localhost`), the Windows Firewall must allow inbound TCP **5249** on the **Private** profile, and the
 active WiFi must be classified **Private**. See [Things that trip people up](#things-that-trip-people-up).
+
+> **Auth env vars (optional locally).** The API issues JWTs (`BL/JwtService.cs`). Local dev works with no
+> config — an unset `JWT_KEY` uses a random per‑process key and `AUTH_ENFORCE` defaults off (tokenless
+> calls still allowed). For token enforcement, set `JWT_KEY` (≥ 32 chars) and `AUTH_ENFORCE=true`. In
+> Azure these live in App Service → Configuration. See [SECURITY.md](SECURITY.md).
 
 ### Step 5 — Point the app at your backend
 
