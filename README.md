@@ -64,7 +64,7 @@ the Python ML service runs **locally** (see the note below the diagram).
 │  TrainWiseExpo/  —  React Native 0.81 / Expo SDK 54  (Android APK)   │
 │  Context + axios · React Navigation · expo-maps · Health Connect     │
 └───────────────┬─────────────────────────────────────┬───────────────┘
-                │ JSON / HTTPS (session-based)         │ JSON / HTTP (LAN)
+                │ JSON / HTTPS (JWT bearer)            │ JSON / HTTP (LAN)
 ┌───────────────▼─────────────────────────┐   ┌────────▼───────────────┐
 │  TrainWise/  —  ASP.NET Core 8 Web API   │   │  ml/  —  Python (Flask) │
 │  Controllers → BL → DAL → DBservice      │   │  PMC · ACWR · forecast  │
@@ -104,7 +104,7 @@ the Python ML service runs **locally** (see the note below the diagram).
 | **Database** | Microsoft SQL Server — Azure SQL (prod) / SQL Server Express (local) · stored procedures |
 | **ML** | Python 3.10+ · Flask · pandas · NumPy · scikit‑learn · matplotlib / seaborn · pyodbc |
 | **Cloud** | Azure App Service · Azure SQL Database (Israel Central) |
-| **Auth** | Session‑based (no JWT) — credentials validated server‑side via `sp_LoginUser`; **native Google Sign‑In** with the Google **ID token verified server‑side**; **reCAPTCHA** on signup verified server‑side |
+| **Auth** | **JWT bearer** (HS256, `AUTH_ENFORCE` rollout) + per‑object ownership checks · **PBKDF2**‑hashed passwords (verify‑and‑upgrade) · **native Google Sign‑In** with the ID token verified server‑side · **reCAPTCHA** on signup · rate‑limited auth |
 | **External APIs** | Google Maps SDK · Google Weather API · Google Air Quality API · OpenAI (in‑app AI chat + injury advice) · Firebase Cloud Messaging (push) · Google Health Connect |
 
 ---
@@ -211,6 +211,10 @@ TrainWise_Project/
 - **Pre‑push secret scan** — before any push, scan the staged diff + committed tree for `AIza`, `sk-`,
   `Password=`, `Data Source=`, etc. (a Google key was once leaked via a push — see the lessons log).
 
+- **Auth hardening (2026‑07‑02 audit)** — JWT bearer auth + per‑object ownership checks (IDOR closed),
+  PBKDF2‑hashed passwords, rate‑limited login/signup, magic‑byte‑validated uploads with GUID filenames, and
+  server‑side Google ID‑token + reCAPTCHA verification. Full write‑up: `tasks/security_audit_2026_07_02.md`.
+
 See **[docs/SECURITY.md](docs/SECURITY.md)** for the full security posture, the safe‑push checklist,
 and the hardening backlog.
 
@@ -243,8 +247,10 @@ future work:
 - **Cloud ML** — deploy `ml/app.py` to Azure (pymssql + Azure SQL) so the coach forecast works without
   the PC running.
 - **iOS build** — the Expo iOS shell is unmaintained; Android only today.
-- **Hardened auth** — salted password hashing + token‑based sessions (today: session‑based, validated
-  in `sp_LoginUser`).
+- **Auth follow‑ups** — the core auth hardening (JWT bearer, PBKDF2 hashing, ownership checks, rate
+  limiting, upload validation) is **done** (see [docs/SECURITY.md](docs/SECURITY.md)); remaining: rotate
+  the old Azure SQL password, move the JWT to `expo-secure-store`, add refresh tokens + HSTS, tighten CORS.
+- **OpenAI key server‑side** — proxy the in‑app AI calls through the backend (today it's bundled in the APK).
 
 ---
 
