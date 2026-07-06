@@ -243,10 +243,8 @@ future work:
   manually from VS 2022).
 - **Automated secret scanning** — a `gitleaks` pre‑commit hook + CI secret scan (today the pre‑push
   scan is manual).
-- **Static analysis** — CodeQL + dependency audit gates.
 - **Cloud ML** — deploy `ml/app.py` to Azure (pymssql + Azure SQL) so the coach forecast works without
   the PC running.
-- **iOS build** — the Expo iOS shell is unmaintained; Android only today.
 - **Auth follow‑ups** — the core auth hardening (JWT bearer, PBKDF2 hashing, ownership checks, rate
   limiting, upload validation) is **done** (see [docs/SECURITY.md](docs/SECURITY.md)); remaining: rotate
   the old Azure SQL password, move the JWT to `expo-secure-store`, add refresh tokens + HSTS, tighten CORS.
