@@ -6,7 +6,7 @@ import axios from 'axios';
  * אין JWT — מבוסס session עם userId.
  */
 
-const BASE_URL = 'https://trainwise01-api-djcfcvcedth8hjgp.israelcentral-01.azurewebsites.net/api';
+const BASE_URL = 'https://trainwise01-api-djcfcvcedth8hjgp.israelcentral-01.azurewebsites.net';
 // timeout של 30 שניות לכל בקשה
 const API_TIMEOUT = 30000;
 
@@ -56,9 +56,11 @@ export const registerUser = async (payload) => {
     const response = await apiClient.post('/api/Users', payload);
     return response.data;
   } catch (error) {
-    throw new Error(
-      error.response?.data || 'Registration failed. Please try again.'
-    );
+    const msg =
+      typeof error.response?.data === 'string'
+        ? error.response.data
+        : JSON.stringify(error.response?.data) || error.message;
+    throw new Error(msg || 'Registration failed. Please try again.');
   }
 };
 

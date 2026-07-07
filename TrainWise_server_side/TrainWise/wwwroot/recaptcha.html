@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #ffffff;
+    }
+  </style>
+</head>
+<body>
+  <div
+    class="g-recaptcha"
+    data-sitekey="6LcAKyYtAAAAABG4KwQzM-LW0fyKlHqHMgYDm-hR"
+    data-callback="onSuccess"
+    data-expired-callback="onExpire">
+  </div>
+  <script>
+    function onSuccess(token) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'success', token: token }));
+    }
+    function onExpire() {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'expire' }));
+    }
+  </script>
+</body>
+</html>
