@@ -20,7 +20,7 @@ export const BACKEND_MODE = 'local'; // 'local' | 'azure'  ← flip this to swit
 
 // PC LAN IP for local mode. DHCP can change it — re-check with
 // `ipconfig | findstr IPv4` and update here if API calls start timing out.
-const LOCAL_PC_IP = '192.168.1.118';
+const LOCAL_PC_IP = '192.168.1.239';
 
 const AZURE_URL = 'https://trainwise01-api-djcfcvcedth8hjgp.israelcentral-01.azurewebsites.net/api';
 const LOCAL_URL = `http://${LOCAL_PC_IP}:5249/api`;

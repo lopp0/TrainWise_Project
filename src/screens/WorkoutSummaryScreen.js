@@ -1,17 +1,82 @@
-// מסך סיכום אימון — מציג את תוצאות האימון שנרשם זה עתה
-import React from 'react';
-// רכיבי UI בסיסיים
-import {View, Text, StyleSheet, ScrollView, TouchableOpacity} from 'react-native';
-// ייבוא צבעים, גופנים וריווחים מהתמה
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image,
+  ActivityIndicator, Alert,
+} from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import {Colors, Fonts, Spacing} from '../theme/colors';
-// קומפוננטים משותפים
+import { useThemedStyles } from '../theme/useThemedStyles';
 import ScreenHeader from '../components/ScreenHeader';
 import Card from '../components/Card';
 import PrimaryButton from '../components/PrimaryButton';
+import { useAuth } from '../api/AuthContext';
+import {
+  getWorkoutNotes, setWorkoutNotes, uploadChatImage,
+  getKudos, toggleKudos, resolveProfileImageUrl,
+} from '../services/api';
 
 const WorkoutSummaryScreen = ({navigation, route}) => {
-  // שליפת נתוני הסיכום מהפרמטרים שהועברו מ-AddWorkoutScreen
-  // אם אין פרמטרים — ערכי ברירת מחדל לדמו
+  const styles = useThemedStyles(makeStyles);
+  const { userId } = useAuth();
+  // #124/#171 need the workout's log id; callers pass it as route.params.logId
+  // (falls back to summary.activityId). When absent, those cards stay hidden.
+  const logId = route?.params?.logId ?? route?.params?.summary?.activityId ?? null;
+  const ownerId = route?.params?.ownerId ?? null;
+  const isOwnWorkout = ownerId == null || ownerId === userId;
+
+  const [notes, setNotes] = useState('');
+  const [photoPath, setPhotoPath] = useState(null);
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [kudos, setKudos] = useState({ count: 0, kudoed: false });
+
+  const loadExtras = useCallback(async () => {
+    if (!logId) return;
+    try {
+      const res = await getWorkoutNotes(logId);
+      setNotes(res.data?.notes ?? '');
+      setPhotoPath(res.data?.photoPath ?? null);
+    } catch {}
+    try {
+      const k = await getKudos(logId, userId);
+      setKudos({ count: k.data?.count ?? 0, kudoed: !!k.data?.kudoed });
+    } catch {}
+  }, [logId, userId]);
+
+  useEffect(() => { loadExtras(); }, [loadExtras]);
+
+  const pickPhoto = async () => {
+    try {
+      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
+      if (res.canceled || !res.assets?.length) return;
+      const up = await uploadChatImage(res.assets[0].uri);
+      setPhotoPath(up.path);
+    } catch (e) {
+      Alert.alert('Upload failed', e.message || 'Could not upload the photo.');
+    }
+  };
+
+  const saveNotes = async () => {
+    if (!logId) return;
+    setSavingNotes(true);
+    try {
+      await setWorkoutNotes(logId, { notes, photoPath });
+      Alert.alert('Saved', 'Your note has been saved.');
+    } catch (e) {
+      Alert.alert('Error', e.response?.data || 'Could not save the note.');
+    } finally {
+      setSavingNotes(false);
+    }
+  };
+
+  const onToggleKudos = async () => {
+    if (!logId) return;
+    try {
+      const res = await toggleKudos(logId, userId);
+      setKudos({ count: res.data?.count ?? kudos.count, kudoed: !!res.data?.kudoed });
+    } catch {}
+  };
+
   const summary = route?.params?.summary || {
     activityName: 'Running',
     duration: 45,
@@ -25,7 +90,6 @@ const WorkoutSummaryScreen = ({navigation, route}) => {
     recommendation: 'Good balanced session. Keep your current rhythm.',
   };
 
-  // מחזיר צבע לפי רמת העומס: Red/Yellow/Green
   const getLevelColor = (level) => {
     if (level === 'Red') return Colors.red;
     if (level === 'Yellow') return Colors.yellow;
@@ -34,7 +98,6 @@ const WorkoutSummaryScreen = ({navigation, route}) => {
 
   return (
     <View style={styles.container}>
-      {/* כותרת המסך עם כפתור חזרה */}
       <ScreenHeader
         title="Workout Summary"
         subtitle="Your session results"
@@ -42,35 +105,30 @@ const WorkoutSummaryScreen = ({navigation, route}) => {
       />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* כרטיס פרטי האימון */}
+        {/* Session Info */}
         <Card>
           <Text style={styles.cardTitle}>Session Details</Text>
-          {/* שורת סוג הפעילות */}
           <View style={styles.row}>
             <Text style={styles.label}>Activity</Text>
             <Text style={styles.value}>{summary.activityName}</Text>
           </View>
-          {/* שורת משך האימון */}
           <View style={styles.row}>
             <Text style={styles.label}>Duration</Text>
             <Text style={styles.value}>{summary.duration} min</Text>
           </View>
-          {/* שורת רמת המאמץ */}
           <View style={styles.row}>
             <Text style={styles.label}>Exertion</Text>
             <Text style={styles.value}>{summary.exertion}/10</Text>
           </View>
-          {/* שורת עומס הסשן — מודגשת בצבע מותג */}
           <View style={styles.row}>
             <Text style={styles.label}>Session Load</Text>
             <Text style={styles.valuePrimary}>{summary.sessionLoad}</Text>
           </View>
         </Card>
 
-        {/* כרטיס הערכת עומס */}
+        {/* Load Level */}
         <Card>
           <Text style={styles.cardTitle}>Load Assessment</Text>
-          {/* badge צבעוני של רמת העומס */}
           <View style={styles.levelContainer}>
             <View
               style={[
@@ -80,33 +138,28 @@ const WorkoutSummaryScreen = ({navigation, route}) => {
               <Text style={styles.levelText}>{summary.loadLevel}</Text>
             </View>
           </View>
-          {/* רשת מדדים: Acute/Chronic/AC Ratio/Stress */}
           <View style={styles.metricsGrid}>
-            {/* עומס חריף (7 ימים) */}
             <View style={styles.metric}>
               <Text style={styles.metricLabel}>Acute Load</Text>
               <Text style={styles.metricValue}>
-                {Math.round(summary.acuteLoad)}
+                {summary.acuteLoad != null ? Math.round(summary.acuteLoad) : '—'}
               </Text>
               <Text style={styles.metricSub}>7-day</Text>
             </View>
-            {/* עומס כרוני (28 ימים) */}
             <View style={styles.metric}>
               <Text style={styles.metricLabel}>Chronic Load</Text>
               <Text style={styles.metricValue}>
-                {Math.round(summary.chronicLoad)}
+                {summary.chronicLoad != null ? Math.round(summary.chronicLoad) : '—'}
               </Text>
               <Text style={styles.metricSub}>28-day</Text>
             </View>
-            {/* יחס AC — acute/chronic */}
             <View style={styles.metric}>
               <Text style={styles.metricLabel}>AC Ratio</Text>
               <Text style={styles.metricValue}>
-                {summary.acRatio.toFixed(2)}
+                {summary.acRatio != null ? Number(summary.acRatio).toFixed(2) : '—'}
               </Text>
               <Text style={styles.metricSub}>acute/chronic</Text>
             </View>
-            {/* ציון סטרס 0-100 */}
             <View style={styles.metric}>
               <Text style={styles.metricLabel}>Stress</Text>
               <Text style={styles.metricValue}>{summary.stressScore}</Text>
@@ -115,21 +168,86 @@ const WorkoutSummaryScreen = ({navigation, route}) => {
           </View>
         </Card>
 
-        {/* כרטיס המלצה לאימון הבא */}
+        {/* Recommendation */}
         <Card>
           <Text style={styles.cardTitle}>Recommendation</Text>
           <Text style={styles.recommendationText}>{summary.recommendation}</Text>
         </Card>
+
+        {/* #171 — kudos / cheers */}
+        {logId && (
+          <Card>
+            <Text style={styles.cardTitle}>Kudos</Text>
+            <View style={styles.kudosRow}>
+              <Text style={styles.kudosCount}>
+                {kudos.count} {kudos.count === 1 ? 'cheer' : 'cheers'}
+              </Text>
+              {!isOwnWorkout && (
+                <TouchableOpacity
+                  style={[styles.kudosBtn, kudos.kudoed && styles.kudosBtnActive]}
+                  onPress={onToggleKudos}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons
+                    name={kudos.kudoed ? 'hand-right' : 'hand-right-outline'}
+                    size={18}
+                    color={kudos.kudoed ? '#fff' : Colors.primary}
+                  />
+                  <Text style={[styles.kudosBtnText, kudos.kudoed && { color: '#fff' }]}>
+                    {kudos.kudoed ? 'Cheered' : 'Give kudos'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </Card>
+        )}
+
+        {/* #124 — per-workout note + photo */}
+        {logId && isOwnWorkout && (
+          <Card>
+            <Text style={styles.cardTitle}>Notes & Photo</Text>
+            <TextInput
+              style={styles.notesInput}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="How did it feel? Add a note…"
+              placeholderTextColor={Colors.textMuted}
+              multiline
+            />
+            {photoPath ? (
+              <Image
+                source={{ uri: resolveProfileImageUrl(photoPath) }}
+                style={styles.notesPhoto}
+                resizeMode="cover"
+              />
+            ) : null}
+            <View style={styles.notesActions}>
+              <TouchableOpacity style={styles.photoBtn} onPress={pickPhoto} activeOpacity={0.85}>
+                <Ionicons name="image-outline" size={18} color={Colors.primary} />
+                <Text style={styles.photoBtnText}>{photoPath ? 'Change photo' : 'Add photo'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveNotesBtn, savingNotes && { opacity: 0.6 }]}
+                onPress={saveNotes}
+                disabled={savingNotes}
+                activeOpacity={0.85}
+              >
+                {savingNotes ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.saveNotesText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </Card>
+        )}
       </ScrollView>
 
-      {/* כפתורי פעולה תחתיים */}
       <View style={styles.bottomActions}>
-        {/* חזרה לדשבורד */}
         <PrimaryButton
           title="Back to Dashboard"
           onPress={() => navigation.navigate('Warnings')}
         />
-        {/* הוספת אימון נוסף */}
         <TouchableOpacity
           style={styles.secondaryButton}
           onPress={() => navigation.navigate('AddWorkout')}>
@@ -140,8 +258,7 @@ const WorkoutSummaryScreen = ({navigation, route}) => {
   );
 };
 
-// סגנונות המסך
-const styles = StyleSheet.create({
+const makeStyles = (Colors) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -155,7 +272,6 @@ const styles = StyleSheet.create({
     fontWeight: Fonts.bold,
     marginBottom: Spacing.md,
   },
-  // שורת label + value
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -172,13 +288,11 @@ const styles = StyleSheet.create({
     fontSize: Fonts.bodySize,
     fontWeight: Fonts.semiBold,
   },
-  // ערך מודגש בצבע מותג
   valuePrimary: {
     color: Colors.primary,
     fontSize: Fonts.subtitleSize,
     fontWeight: Fonts.bold,
   },
-  // מיכל ה-badge של רמת העומס — ממורכז
   levelContainer: {
     alignItems: 'center',
     marginVertical: Spacing.md,
@@ -189,12 +303,11 @@ const styles = StyleSheet.create({
     borderRadius: 30,
   },
   levelText: {
-    color: '#000',              // שחור על רקע צבעוני — קריא
+    color: '#000',
     fontSize: 22,
     fontWeight: Fonts.bold,
     letterSpacing: 2,
   },
-  // רשת 2x2 של מדדים
   metricsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -202,7 +315,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.md,
   },
   metric: {
-    width: '48%',               // שני עמודות
+    width: '48%',
     backgroundColor: Colors.inputBackground,
     borderRadius: 10,
     padding: Spacing.md,
@@ -229,6 +342,40 @@ const styles = StyleSheet.create({
     fontSize: Fonts.bodySize,
     lineHeight: 22,
   },
+  // #171 kudos
+  kudosRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  kudosCount: { color: Colors.textPrimary, fontSize: Fonts.bodySize, fontWeight: Fonts.bold },
+  kudosBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 8,
+  },
+  kudosBtnActive: { backgroundColor: Colors.primary },
+  kudosBtnText: { color: Colors.primary, fontWeight: Fonts.bold, fontSize: Fonts.captionSize + 1 },
+  // #124 notes + photo
+  notesInput: {
+    backgroundColor: Colors.inputBackground,
+    borderRadius: 10,
+    padding: Spacing.md,
+    color: Colors.textPrimary,
+    borderWidth: 1,
+    borderColor: Colors.inputBorder,
+    fontSize: Fonts.bodySize,
+    minHeight: 70,
+    textAlignVertical: 'top',
+  },
+  notesPhoto: { width: '100%', height: 180, borderRadius: 10, marginTop: Spacing.sm },
+  notesActions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md },
+  photoBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.inputBorder, borderRadius: 10, paddingVertical: Spacing.md,
+  },
+  photoBtnText: { color: Colors.primary, fontWeight: Fonts.semiBold, fontSize: Fonts.bodySize },
+  saveNotesBtn: {
+    flex: 1, backgroundColor: Colors.primary, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.md,
+  },
+  saveNotesText: { color: '#fff', fontWeight: Fonts.bold, fontSize: Fonts.bodySize },
   bottomActions: {
     paddingVertical: Spacing.md,
     borderTopWidth: 1,

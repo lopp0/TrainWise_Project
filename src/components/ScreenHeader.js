@@ -1,63 +1,53 @@
-// כותרת מסך אחידה — מציגה כותרת, כיתוב וכפתור חזרה אופציונלי
 import React from 'react';
-// View לקונטיינר, Text לטקסטים, StyleSheet לסגנונות, TouchableOpacity לכפתור
 import {View, Text, StyleSheet, TouchableOpacity} from 'react-native';
-// ייבוא צבעים, גופנים וריווחים מהתמה
-import {Colors, Fonts, Spacing} from '../theme/colors';
+import {Fonts, Spacing} from '../theme/colors';
+import { useThemedStyles } from '../theme/useThemedStyles';
 
-// ScreenHeader — props:
-// title: כותרת ראשית
-// subtitle: כיתוב קטן מתחת (אופציונלי)
-// onBack: פונקציה לחזרה — אם קיימת, מציגה כפתור "<" משמאל
 const ScreenHeader = ({title, subtitle, onBack}) => {
+  const styles = useThemedStyles(makeStyles);
   return (
-    // קונטיינר הכותרת
     <View style={styles.container}>
-      {/* כפתור חזרה מוצג רק אם onBack הועברה */}
       {onBack && (
         <TouchableOpacity style={styles.backButton} onPress={onBack}>
-          {/* "<" כסמל חזרה */}
           <Text style={styles.backText}>{'<'}</Text>
         </TouchableOpacity>
       )}
-      {/* כותרת ראשית */}
       <Text style={styles.title}>{title}</Text>
-      {/* כיתוב משני — מוצג רק אם subtitle קיים */}
       {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
     </View>
   );
 };
 
-// סגנונות הכותרת
-const styles = StyleSheet.create({
+const makeStyles = (Colors) => StyleSheet.create({
   container: {
-    paddingTop: Spacing.xl,          // ריווח עליון גדול
-    paddingBottom: Spacing.md,       // ריווח תחתון
-    paddingHorizontal: Spacing.lg,   // ריווח צדדי
-    alignItems: 'center',            // מרכוז אופקי של הכותרת
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    alignItems: 'center',
+    backgroundColor: Colors.background,
   },
   backButton: {
-    position: 'absolute',            // ממוקם מחוץ לזרימה הרגילה
-    left: Spacing.md,                // צמוד לשמאל
-    top: Spacing.xl,                 // גובה זהה לכותרת
-    padding: Spacing.sm,             // אזור לחיצה גדול יותר
+    position: 'absolute',
+    left: Spacing.md,
+    top: Spacing.xl,
+    padding: Spacing.sm,
   },
   backText: {
-    color: Colors.primary,           // צבע מותג
-    fontSize: 24,                    // גודל בולט
+    color: Colors.primary,
+    fontSize: 24,
     fontWeight: Fonts.bold,
   },
   title: {
-    fontSize: Fonts.titleSize,       // גודל כותרת ראשית (28px)
+    fontSize: Fonts.titleSize,
     fontWeight: Fonts.bold,
-    color: Colors.primary,           // צבע מותג
+    color: Colors.primary,
     textAlign: 'center',
-    fontStyle: 'italic',             // נטוי לפי סגנון האפליקציה
+    fontStyle: 'italic',
   },
   subtitle: {
-    fontSize: Fonts.captionSize,     // גודל קטן (12px)
+    fontSize: Fonts.captionSize,
     color: Colors.textSecondary,
-    marginTop: Spacing.xs,           // ריווח קטן מהכותרת
+    marginTop: Spacing.xs,
     textAlign: 'center',
   },
 });

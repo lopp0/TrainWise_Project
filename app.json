@@ -32,7 +32,8 @@
             "minSdkVersion": 26
           }
         }
-      ]
+      ],
+      "@react-native-google-signin/google-signin"
     ]
   }
 }

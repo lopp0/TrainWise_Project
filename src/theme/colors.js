@@ -1,60 +1,60 @@
-// מנהל הצבעים הגלובלי של האפליקציה — singleton שניתן לשנות בזמן ריצה
-import { darkPalette, lightPalette, PALETTES } from './palettes';
+import { darkPalette, lightPalette, PALETTES, ACCENTS } from './palettes';
 
 /**
- * `Colors` מיוצא כ-singleton ניתן-לשינוי כדי שמסכים שכבר ייבאו
- * `import { Colors } from '../theme/colors'` ימשיכו לעבוד ללא רפקטור.
- * applyTheme() משנה את האובייקט במקומו; ThemeProvider כופה re-render
- * מלא על כל העץ כדי שהמסכים יקבלו את הערכים החדשים.
+ * `Colors` is exported as a mutable singleton so that the dozen+ screens
+ * that already do `import { Colors } from '../theme/colors'` keep working
+ * without a refactor. `applyTheme()` mutates the same object in place; the
+ * ThemeProvider then forces a tree re-render via a key change so all
+ * screens pick up the new values.
  */
-// אתחול ה-Colors עם פלטת ברירת המחדל (כהה)
 export const Colors = { ...darkPalette };
 
-// שמירת שם התמה הפעילה כרגע
 let _activeTheme = 'dark';
-// מאזינים שיקבלו הודעה כשהתמה משתנה
+let _activeAccent = 'default';
 const _listeners = new Set();
 
-// מחזיר את שם התמה הפעילה ('dark' / 'light')
 export const getActiveTheme = () => _activeTheme;
+export const getActiveAccent = () => _activeAccent;
 
-// מחיל פלטת צבעים חדשה על ה-Colors singleton
-export const applyTheme = (themeName) => {
-  // מצא את הפלטה המתאימה; אם שם לא מוכר — חוזר לכהה
+/**
+ * Applies a theme. `themeName` is the base mode ('dark' | 'light').
+ * `accentName` is optional (#160): when provided it becomes the active accent;
+ * when omitted the current accent is kept (so a mode flip preserves the accent).
+ * The accent only overrides the primary color family on top of the mode palette.
+ */
+export const applyTheme = (themeName, accentName) => {
   const palette = PALETTES[themeName] || darkPalette;
-  // מחיקת כל המפתחות הקיימים כדי לנקות את האובייקט
+  if (accentName !== undefined) {
+    _activeAccent = ACCENTS[accentName] ? accentName : 'default';
+  }
+  const accentColors = ACCENTS[_activeAccent]?.colors || null;
   Object.keys(Colors).forEach((k) => delete Colors[k]);
-  // העתקת הצבעים החדשים לאותו אובייקט (אותה הרפרנס בזיכרון)
   Object.assign(Colors, palette);
-  // עדכון שם התמה הפעילה
+  if (accentColors) Object.assign(Colors, accentColors);
   _activeTheme = palette === lightPalette ? 'light' : 'dark';
-  // הודעה לכל המאזינים
   _listeners.forEach((fn) => fn(_activeTheme));
 };
 
-// מאפשר לרכיבים להירשם לשינויי תמה — מחזיר פונקציית ביטול הרישום
 export const subscribeTheme = (fn) => {
   _listeners.add(fn);
   return () => _listeners.delete(fn);
 };
 
-// קבועי גופן — גדלים ומשקלים שבים בכל האפליקציה
 export const Fonts = {
-  titleSize: 28,    // גודל כותרות ראשיות
-  subtitleSize: 18, // גודל כותרות משניות
-  bodySize: 15,     // גודל טקסט גוף
-  captionSize: 12,  // גודל כיתוב קטן
-  bold: '700',      // משקל מודגש
-  semiBold: '600',  // משקל חצי-מודגש
-  regular: '400',   // משקל רגיל
+  titleSize: 28,
+  subtitleSize: 18,
+  bodySize: 15,
+  captionSize: 12,
+  bold: '700',
+  semiBold: '600',
+  regular: '400',
 };
 
-// קבועי ריווח — px ביחידות React Native
 export const Spacing = {
-  xs: 4,   // ריווח זעיר
-  sm: 8,   // ריווח קטן
-  md: 16,  // ריווח בינוני
-  lg: 24,  // ריווח גדול
-  xl: 32,  // ריווח גדול מאוד
-  xxl: 48, // ריווח ענק
+  xs: 4,
+  sm: 8,
+  md: 16,
+  lg: 24,
+  xl: 32,
+  xxl: 48,
 };

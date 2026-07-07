@@ -1,66 +1,115 @@
-// ניהול תמת האפליקציה (כהה/בהיר) עם שמירה קבועה ב-AsyncStorage
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-// AsyncStorage לשמירת בחירת התמה בין הפעלות
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// applyTheme מחיל את הפלטה החדשה; getActiveTheme מחזיר את התמה הנוכחית
-import { applyTheme, getActiveTheme } from './colors';
+import { applyTheme, getActiveTheme, getActiveAccent } from './colors';
+import { ACCENTS } from './palettes';
+import {
+  getThemeSchedule,
+  setThemeSchedule,
+  scheduledTheme,
+  THEME_SCHEDULE_DEFAULTS,
+} from '../utils/themeSchedule';
 
-// המפתח לשמירת התמה ב-AsyncStorage
 const STORAGE_KEY = 'trainwise.theme';
+const ACCENT_KEY = 'trainwise.accent';
 
-// יצירת ה-Context עם ערכי ברירת מחדל — theme='dark', setTheme ריק
 const ThemeContext = createContext({
   theme: 'dark',
   setTheme: () => {},
+  accent: 'default',
+  setAccent: () => {},
+  autoTheme: THEME_SCHEDULE_DEFAULTS,
+  updateAutoTheme: () => {},
 });
 
-// ThemeProvider — עוטף את כל האפליקציה ומספק גישה לתמה
 export const ThemeProvider = ({ children }) => {
-  // שמירת שם התמה הפעילה כ-state — מאפשרת re-render בשינוי
   const [theme, setThemeState] = useState(getActiveTheme());
+  const [accent, setAccentState] = useState(getActiveAccent());
+  const [autoTheme, setAutoThemeState] = useState(THEME_SCHEDULE_DEFAULTS);
 
-  // טוען את התמה השמורה מ-AsyncStorage בעת עלייה ראשונה
+  // Hydrate persisted theme + accent + schedule on mount.
   useEffect(() => {
     (async () => {
       try {
-        // קריאת הערך השמור
-        const saved = await AsyncStorage.getItem(STORAGE_KEY);
-        // רק ערכים חוקיים ('light' / 'dark') יתקבלו
-        if (saved === 'light' || saved === 'dark') {
-          // מחיל את הפלטה על Colors singleton
-          applyTheme(saved);
-          // עדכון ה-state לטריגור re-render
-          setThemeState(saved);
-        }
+        const savedTheme = await AsyncStorage.getItem(STORAGE_KEY);
+        const savedAccent = await AsyncStorage.getItem(ACCENT_KEY);
+        const sched = await getThemeSchedule();
+        const t = savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : getActiveTheme();
+        const a = ACCENTS[savedAccent] ? savedAccent : 'default';
+        // When the auto-schedule is on, it wins over the saved mode at launch.
+        const effectiveTheme = sched.enabled ? scheduledTheme(sched) : t;
+        applyTheme(effectiveTheme, a);
+        setThemeState(effectiveTheme);
+        setAccentState(a);
+        setAutoThemeState(sched);
       } catch {}
     })();
   }, []);
 
-  // פונקציית שינוי תמה — מאובטחת ומשמרת ב-AsyncStorage
   const setTheme = useCallback(async (next) => {
-    // וידוא שהערך חוקי — כל ערך שאינו 'light' הופך ל-'dark'
     const safe = next === 'light' ? 'light' : 'dark';
-    // עדכון Colors singleton
-    applyTheme(safe);
-    // עדכון ה-state
+    applyTheme(safe); // keeps the current accent
     setThemeState(safe);
     try {
-      // שמירה קבועה ב-AsyncStorage
       await AsyncStorage.setItem(STORAGE_KEY, safe);
     } catch {}
   }, []);
 
-  // שינוי ה-key על ה-Fragment גורם ל-React לפרוק ולהרכיב מחדש את כל העץ.
-  // זה מבטיח שמסכים שקראו את Colors בזמן render יקבלו את הפלטה החדשה,
-  // גם אם אינם מחוברים ישירות ל-Context. עלות: re-mount מלא בכל החלפת תמה
-  // — מקובל כי זה מתרחש רק בפעולת משתמש יזומה.
+  const setAccent = useCallback(async (next) => {
+    const safe = ACCENTS[next] ? next : 'default';
+    applyTheme(getActiveTheme(), safe);
+    setAccentState(safe);
+    try {
+      await AsyncStorage.setItem(ACCENT_KEY, safe);
+    } catch {}
+  }, []);
+
+  // #179 — update the auto-dark schedule and apply it immediately.
+  const updateAutoTheme = useCallback(async (patch) => {
+    const next = await setThemeSchedule(patch);
+    setAutoThemeState(next);
+    if (next.enabled) {
+      const want = scheduledTheme(next);
+      if (want !== getActiveTheme()) {
+        applyTheme(want);
+        setThemeState(want);
+      }
+    }
+  }, []);
+
+  // While auto-theme is enabled, re-check on a 60s tick + whenever the app
+  // returns to the foreground, flipping the mode when the window boundary
+  // is crossed.
+  useEffect(() => {
+    if (!autoTheme.enabled) return undefined;
+    const apply = () => {
+      const want = scheduledTheme(autoTheme);
+      if (want !== getActiveTheme()) {
+        applyTheme(want);
+        setThemeState(want);
+      }
+    };
+    apply();
+    const timer = setInterval(apply, 60000);
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') apply();
+    });
+    return () => {
+      clearInterval(timer);
+      sub.remove();
+    };
+  }, [autoTheme.enabled, autoTheme.darkStart, autoTheme.darkEnd]);
+
+  // The `key` on the wrapper forces every descendant to re-mount when the
+  // theme OR accent switches. That way screens which destructured Colors at
+  // render time pick up the new palette without needing per-component context
+  // wiring. The cost (one full re-render on toggle) is acceptable for a
+  // user-initiated settings change.
   return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
-      {/* ה-key משנה את ה-Fragment ומאלץ re-mount מלא של כל הצאצאים */}
-      <React.Fragment key={theme}>{children}</React.Fragment>
+    <ThemeContext.Provider value={{ theme, setTheme, accent, setAccent, autoTheme, updateAutoTheme }}>
+      <React.Fragment key={`${theme}:${accent}`}>{children}</React.Fragment>
     </ThemeContext.Provider>
   );
 };
 
-// Hook נוח לגישה ל-ThemeContext מכל קומפוננט
 export const useTheme = () => useContext(ThemeContext);

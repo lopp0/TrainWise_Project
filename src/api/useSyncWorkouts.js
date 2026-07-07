@@ -1,23 +1,16 @@
-// Hook לניהול סנכרון Health Connect — state, הרשאות ופעולות סנכרון
 import { useState, useCallback, useRef } from 'react';
-// userId ו-deviceId מה-AuthContext
 import { useAuth } from './AuthContext';
-// הפונקציה הראשית לסנכרון HC → Backend
 import { syncWorkoutsToBackend } from './SyncService';
-// פונקציות HC לבדיקת ובקשת הרשאות
 import {
   requestPermissions,
   checkPermissions,
   initializeHealthConnect,
 } from './HealthConnectService';
 
-// מספר ההרשאות הנדרשות (ExerciseSession, HeartRate, Distance, ActiveCalories, TotalCalories)
 const REQUIRED_PERM_COUNT = 5;
 
-// ממיר שגיאת הרשאות לטקסט ידידותי למשתמש
 const classifyPermissionError = (err) => {
   const msg = (err && err.message) || '';
-  // בדיקת מילות מפתח בהודעת השגיאה
   if (/not available|SDK|unavailable/i.test(msg)) {
     return 'Health Connect is not available on this device.';
   }
@@ -29,37 +22,41 @@ const classifyPermissionError = (err) => {
 
 /**
  * useSyncWorkouts
- *
- * Hook המאחד לוגיקת סנכרון HC ומנהל את ה-state שלה.
- * מספק: isSyncing, triggerSync, requestHCPermissions, checkHCPermissions ועוד.
+ * 
+ * Custom hook that wraps SyncService and Health Connect operations.
+ * Manages sync state, loading, errors, and provides a convenient interface.
+ * 
+ * @example
+ * const { isSyncing, lastSyncTime, syncResult, error, triggerSync, requestHCPermissions } = useSyncWorkouts();
+ * 
+ * // Request permissions first
+ * await requestHCPermissions();
+ * 
+ * // Then trigger sync
+ * await triggerSync();
  */
 export const useSyncWorkouts = () => {
-  // userId ו-deviceId של המשתמש המחובר
   const { userId, deviceId } = useAuth();
-
-  // האם סנכרון בתהליך כרגע
+  
   const [isSyncing, setIsSyncing] = useState(false);
-  // זמן הסנכרון האחרון המוצלח
   const [lastSyncTime, setLastSyncTime] = useState(null);
-  // תוצאת הסנכרון האחרון
   const [syncResult, setSyncResult] = useState(null);
-  // הודעת שגיאה אחרונה
   const [error, setError] = useState(null);
-  // האם הרשאות HC ניתנו
   const [permissionsGranted, setPermissionsGranted] = useState(false);
-
-  // מונה ניסיונות סנכרון — ref כדי לא לגרום re-render
+  
+  // Track sync attempts for retry logic if needed
   const syncAttempts = useRef(0);
 
   /**
-   * requestHCPermissions — מציג למשתמש בקשת הרשאות Health Connect.
-   * @returns {Promise<boolean>} true אם כל ההרשאות ניתנו
+   * Request Health Connect permissions.
+   * Shows the permission dialog to the user.
+   * 
+   * @returns {Promise<boolean>} true if permissions granted
    */
   const requestHCPermissions = useCallback(async () => {
     try {
       setError(null);
       console.log('[useSyncWorkouts] step 1: initializeHealthConnect');
-      // אתחול מודול HC — בודק שה-SDK זמין
       const isAvailable = await initializeHealthConnect();
       if (!isAvailable) {
         setError('Health Connect is not available on this device.');
@@ -68,11 +65,9 @@ export const useSyncWorkouts = () => {
       }
 
       console.log('[useSyncWorkouts] step 2: requestPermissions');
-      // בקשת הרשאות — פותח את מסך הרשאות HC
       const permResult = await requestPermissions();
       console.log('[useSyncWorkouts] step 3: granted =', permResult.granted);
 
-      // בדיקה שהתקבלו מספיק הרשאות
       const allGranted =
         Array.isArray(permResult.granted) &&
         permResult.granted.length >= REQUIRED_PERM_COUNT;
@@ -94,13 +89,13 @@ export const useSyncWorkouts = () => {
   }, []);
 
   /**
-   * checkHCPermissions — בדיקה אם ההרשאות כבר קיימות (ללא הצגת dialog).
-   * @returns {Promise<boolean>} true אם כל ההרשאות קיימות
+   * Check if Health Connect permissions are already granted.
+   * 
+   * @returns {Promise<boolean>} true if all permissions granted
    */
   const checkHCPermissions = useCallback(async () => {
     try {
       const permStatus = await checkPermissions();
-      // בדיקה שיש לפחות 5 הרשאות
       const allGranted = permStatus.granted.length >= 5;
       setPermissionsGranted(allGranted);
       return allGranted;
@@ -112,49 +107,52 @@ export const useSyncWorkouts = () => {
   }, []);
 
   /**
-   * triggerSync — מפעיל את תהליך הסנכרון המלא.
-   * דורש userId ו-deviceId מה-AuthContext.
-   * @param {number} lookbackDays - מספר ימים לאחור לסנכרון (ברירת מחדל 7)
+   * Trigger the sync process.
+   * Requires userId and deviceId from AuthContext.
+   * 
+   * @param {number} lookbackDays - Optional: number of days to sync (default 7)
+   * @returns {Promise<Object>} Sync result
+   * @throws {Error} If userId or deviceId not available
    */
   const triggerSync = useCallback(
     async (lookbackDays = 7) => {
       try {
-        // וידוא שיש משתמש ומכשיר מחובר
         if (!userId || !deviceId) {
           throw new Error(
             'User ID or Device ID not available. Please ensure user is logged in.'
           );
         }
 
-        // סימון תחילת סנכרון
         setIsSyncing(true);
         setError(null);
         setSyncResult(null);
-        // הגדלת מונה הניסיונות
         syncAttempts.current += 1;
 
         console.log(`[Sync #${syncAttempts.current}] Starting sync...`);
 
-        // הפעלת הסנכרון הראשי
         const result = await syncWorkoutsToBackend(userId, deviceId, lookbackDays);
 
         setSyncResult(result);
 
         if (result.success) {
-          // עדכון זמן הסנכרון האחרון
           setLastSyncTime(new Date());
           console.log(`✓ Sync successful: ${result.synced} workouts synced`);
         } else {
-          // חילוץ שגיאה ראשונה מהתוצאה
           const errorMsg =
             result.errors?.[0]?.error || 'Sync completed with errors';
           setError(errorMsg);
-          console.error('Sync failed:', errorMsg);
+          // Match the SyncService classification: network errors are
+          // recoverable, not red-banner material.
+          const isNetwork = /network|timeout|econn|fetch/i.test(errorMsg);
+          if (isNetwork) {
+            console.warn('[Sync] backend unreachable:', errorMsg);
+          } else {
+            console.error('Sync failed:', errorMsg);
+          }
         }
 
         return result;
       } catch (err) {
-        // שגיאה כללית — יצירת תוצאת כישלון
         const errorMsg = err.message || 'Sync failed';
         setError(errorMsg);
         setSyncResult({
@@ -164,8 +162,13 @@ export const useSyncWorkouts = () => {
           errors: [{ step: 'general', error: errorMsg }],
           workouts: [],
         });
-        console.error('Sync error:', err);
-
+        const isNetwork = /network|timeout|econn|fetch/i.test(errorMsg);
+        if (isNetwork) {
+          console.warn('[Sync] backend unreachable:', errorMsg);
+        } else {
+          console.error('Sync error:', err);
+        }
+        
         return {
           success: false,
           synced: 0,
@@ -174,20 +177,23 @@ export const useSyncWorkouts = () => {
           workouts: [],
         };
       } finally {
-        // בכל מקרה — סימון סיום סנכרון
         setIsSyncing(false);
       }
     },
     [userId, deviceId]
   );
 
-  // איפוס תוצאת הסנכרון ושגיאה ללא איפוס מצב ההרשאות
+  /**
+   * Clear stored sync result and error.
+   */
   const clearSyncState = useCallback(() => {
     setSyncResult(null);
     setError(null);
   }, []);
 
-  // איפוס מלא של כל ה-state לערכי ברירת מחדל
+  /**
+   * Reset all sync state to initial values.
+   */
   const resetSync = useCallback(() => {
     setIsSyncing(false);
     setLastSyncTime(null);
@@ -197,22 +203,21 @@ export const useSyncWorkouts = () => {
     syncAttempts.current = 0;
   }, []);
 
-  // החזרת כל ה-state והפונקציות לשימוש בקומפוננטים
   return {
     // State
-    isSyncing,              // האם סנכרון פעיל
-    lastSyncTime,           // זמן סנכרון אחרון
-    syncResult,             // תוצאת סנכרון אחרון
-    error,                  // שגיאה אחרונה
-    permissionsGranted,     // האם יש הרשאות HC
-    syncAttempts: syncAttempts.current, // מספר ניסיונות
-
+    isSyncing,
+    lastSyncTime,
+    syncResult,
+    error,
+    permissionsGranted,
+    syncAttempts: syncAttempts.current,
+    
     // Methods
-    triggerSync,            // הפעלת סנכרון
-    requestHCPermissions,   // בקשת הרשאות
-    checkHCPermissions,     // בדיקת הרשאות קיימות
-    clearSyncState,         // ניקוי תוצאה ושגיאה
-    resetSync,              // איפוס מלא
+    triggerSync,
+    requestHCPermissions,
+    checkHCPermissions,
+    clearSyncState,
+    resetSync,
   };
 };
 

@@ -1,44 +1,79 @@
-// ניהול אימות משתמש — שמירת session, login, logout ועדכון פרטים
 import React, { createContext, useState, useEffect, useCallback } from 'react';
-// AsyncStorage לשמירת אובייקט המשתמש בין הפעלות
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// פונקציית login מ-API
 import { login as apiLogin } from './api';
+import { setActiveUserId } from '../utils/activeUser';
+import { setAuthToken, clearAuthToken, loadAuthToken } from './authToken';
+import { isBiometricEnabled, isBiometricSupported } from '../utils/biometric';
+
+// Auth responses are now { token, user }. Older builds/paths may still return a
+// bare user object, so tolerate both shapes.
+const unwrapAuthResponse = (data) => ({
+  token: data?.token ?? null,
+  user: data?.user ?? data,
+});
+
+// Map a backend user payload (from email/password OR Google login) to the shape
+// we persist. Shared so both login paths produce an identical stored user.
+const normalizeUser = (userData, deviceId) => ({
+  userId: userData.userID || userData.userId,
+  deviceId,
+  fullName: userData.fullName,
+  email: userData.email,
+  userName: userData.userName,
+  isCoach: userData.isCoach,
+  // Default true so users created before the IsTrainee column existed still see
+  // the trainee UI. Coach-only is a deliberate opt-in.
+  isTrainee: userData.isTrainee ?? true,
+  profileImagePath: userData.profileImagePath ?? null,
+  activityLevel: userData.activityLevel,
+  height: userData.height,
+  weight: userData.weight,
+  birthYear: userData.birthYear,
+  gender: userData.gender,
+  deviceType: userData.deviceType,
+  experienceLevel: userData.experienceLevel,
+  baseLineDailyLoad: userData.baseLineDailyLoad,
+  baseLineWeeklyLoad: userData.baseLineWeeklyLoad,
+  isBaselineEstablished: userData.isBaselineEstablished,
+  healthDeclaration: userData.healthDeclaration,
+  confirmTerms: userData.confirmTerms,
+});
 
 /**
  * AuthContext
- *
- * מספק session-based authentication ל-TrainWise.
- * מאחסן אובייקט משתמש ב-Context וב-AsyncStorage לשמירה בין הפעלות.
- * אין JWT tokens — משתמש ב-userId מהאובייקט השמור לכל קריאות API.
+ * 
+ * Provides session-based authentication for TrainWise.
+ * Stores user object in context and AsyncStorage for persistence across app restarts.
+ * No JWT tokens - uses userId from stored User object for API calls.
  */
 
-// יצירת ה-Context
 export const AuthContext = createContext();
 
 /**
- * AuthProvider — עוטף את האפליקציה ומספק מצב אימות ומתודות.
- * שימוש: עטוף ב-App.js:
- * <AuthProvider><NavigationStack /></AuthProvider>
+ * AuthProvider - Wraps the app and provides auth state and methods.
+ * 
+ * @component
+ * @example
+ * // In App.js:
+ * <AuthProvider>
+ *   <NavigationStack />
+ * </AuthProvider>
  */
 export const AuthProvider = ({ children }) => {
-  // אובייקט המשתמש המחובר (null = לא מחובר)
   const [user, setUser] = useState(null);
-  // האם האפליקציה בתהליך טעינה ראשונית מ-AsyncStorage
   const [isLoading, setIsLoading] = useState(true);
-  // הודעת שגיאה אחרונה
   const [error, setError] = useState(null);
+  // #112 — when biometric unlock is enabled, the restored session starts
+  // `locked` and a full-screen overlay (rendered in App.js) blocks the app
+  // until authenticateAsync succeeds. Fresh logins are never locked.
+  const [locked, setLocked] = useState(false);
 
-  // המפתח לשמירת אובייקט המשתמש ב-AsyncStorage
   const STORAGE_KEY = '@trainwise_user';
-  // המפתח לשמירת ID ייחודי של המכשיר
   const DEVICE_ID_KEY = '@trainwise_device_id';
 
-  // יצירת / קריאת device ID ייחודי — משמש לזיהוי המכשיר בצד השרת
   const getOrCreateDeviceId = async () => {
     let id = await AsyncStorage.getItem(DEVICE_ID_KEY);
     if (!id) {
-      // יצירת ID אקראי בפורמט: dev-timestamp-random
       id = `dev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
       await AsyncStorage.setItem(DEVICE_ID_KEY, id);
     }
@@ -46,24 +81,33 @@ export const AuthProvider = ({ children }) => {
   };
 
   /**
-   * bootstrapAsync — משחזר משתמש מ-AsyncStorage בעת הפעלת האפליקציה.
-   * אם נמצא משתמש שמור אך חסר deviceId — מוסיף אחד.
+   * Initialize auth - restore user from AsyncStorage if available.
+   * Called on app startup.
    */
   const bootstrapAsync = useCallback(async () => {
     try {
       setIsLoading(true);
-      // קריאת האובייקט השמור
       const savedUser = await AsyncStorage.getItem(STORAGE_KEY);
+      // Restore the bearer token so API calls are authenticated after a restart.
+      await loadAuthToken();
 
       if (savedUser) {
         const parsed = JSON.parse(savedUser);
-        // בדיקה אם חסר deviceId (ייתכן במשתמשים ישנים לפני הוספת הפיצ'ר)
         if (!parsed.deviceId) {
           parsed.deviceId = await getOrCreateDeviceId();
-          // שמירת הגרסה המעודכנת
           await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
         }
+        // Scope device-local stores (coins/items/streak) to this account
+        // BEFORE any screen reads them.
+        setActiveUserId(parsed.userId);
         setUser(parsed);
+        // #112 — gate re-entry on biometrics when the user enabled it AND the
+        // device still has biometrics enrolled (else don't lock them out).
+        try {
+          if ((await isBiometricEnabled()) && (await isBiometricSupported())) {
+            setLocked(true);
+          }
+        } catch {}
       }
     } catch (error) {
       console.error('Failed to restore user session:', error);
@@ -74,44 +118,29 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   /**
-   * login — כניסה עם אימייל וסיסמה.
-   * קורא ל-API, מנרמל שמות שדות, שומר ב-AsyncStorage ומעדכן את ה-Context.
+   * Login user with email and password.
+   * Calls backend API, stores user object, and updates context.
+   * 
+   * @param {string} email - User email
+   * @param {string} password - User password
+   * @returns {Promise<Object>} User object if successful
+   * @throws {Error} If login fails
    */
   const login = useCallback(async (email, password) => {
     try {
       setIsLoading(true);
       setError(null);
 
-      // קריאת ה-API לאימות
-      const userData = await apiLogin(email, password);
-      // קבלת / יצירת deviceId
+      const { token, user: userData } = unwrapAuthResponse(await apiLogin(email, password));
       const deviceId = await getOrCreateDeviceId();
+      const normalizedUser = normalizeUser(userData, deviceId);
 
-      // נרמול שמות שדות — השרת מחזיר userID (גדול), אנו שומרים userId (קטן)
-      const normalizedUser = {
-        userId: userData.userID || userData.userId,
-        deviceId,
-        fullName: userData.fullName,
-        email: userData.email,
-        userName: userData.userName,
-        isCoach: userData.isCoach,
-        activityLevel: userData.activityLevel,
-        height: userData.height,
-        weight: userData.weight,
-        birthYear: userData.birthYear,
-        gender: userData.gender,
-        deviceType: userData.deviceType,
-        experienceLevel: userData.experienceLevel,
-        baseLineDailyLoad: userData.baseLineDailyLoad,
-        baseLineWeeklyLoad: userData.baseLineWeeklyLoad,
-        isBaselineEstablished: userData.isBaselineEstablished,
-        healthDeclaration: userData.healthDeclaration,
-        confirmTerms: userData.confirmTerms,
-      };
-
-      // שמירה קבועה ב-AsyncStorage לשחזור בהפעלה הבאה
+      // Store the signed token FIRST so any follow-up request is authenticated.
+      await setAuthToken(token);
+      // Persist to AsyncStorage
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedUser));
 
+      setActiveUserId(normalizedUser.userId);
       setUser(normalizedUser);
       return normalizedUser;
     } catch (err) {
@@ -124,16 +153,42 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   /**
-   * logout — ניתוק המשתמש.
-   * מוחק מ-AsyncStorage ומאפס את ה-Context.
+   * Establish a session from a backend user object returned by Google sign-in
+   * (POST /api/users/google-login). Same normalize + persist as `login`, but the
+   * credential check already happened (server verified the Google ID token).
+   */
+  const loginWithGoogleUser = useCallback(async (userData) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const { token, user: u } = unwrapAuthResponse(userData);
+      const deviceId = await getOrCreateDeviceId();
+      const normalizedUser = normalizeUser(u, deviceId);
+      await setAuthToken(token);
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedUser));
+      setActiveUserId(normalizedUser.userId);
+      setUser(normalizedUser);
+      return normalizedUser;
+    } catch (err) {
+      setError(err.message || 'Google login failed');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  /**
+   * Logout user.
+   * Clears stored user and resets context state.
    */
   const logout = useCallback(async () => {
     try {
       setIsLoading(true);
-      // מחיקת האובייקט מה-AsyncStorage
       await AsyncStorage.removeItem(STORAGE_KEY);
-      // איפוס ה-state
+      await clearAuthToken();
+      setActiveUserId(null);
       setUser(null);
+      setLocked(false);
       setError(null);
     } catch (err) {
       console.error('Error during logout:', err);
@@ -144,14 +199,14 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   /**
-   * updateUser — עדכון אובייקט המשתמש בזיכרון ובאחסון.
-   * משמש לאחר עדכון פרופיל מ-SettingsScreen.
+   * Update user object in context and AsyncStorage.
+   * Used when user info changes (e.g., profile update).
+   * 
+   * @param {Object} updatedUser - Updated user object
    */
   const updateUser = useCallback(async (updatedUser) => {
     try {
-      // מיזוג הנתונים הקיימים עם הנתונים החדשים
       const mergedUser = { ...user, ...updatedUser };
-      // שמירה ב-AsyncStorage
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(mergedUser));
       setUser(mergedUser);
     } catch (err) {
@@ -160,41 +215,51 @@ export const AuthProvider = ({ children }) => {
     }
   }, [user]);
 
-  // הפעלת bootstrapAsync בעת עליית הקומפוננט
+  // Bootstrap on mount
   useEffect(() => {
     bootstrapAsync();
   }, [bootstrapAsync]);
 
-  // אובייקט הערכים שיועברו לכל הצאצאים דרך ה-Context
+  // #112 — called by the lock overlay once biometric auth succeeds.
+  const unlock = useCallback(() => setLocked(false), []);
+
   const value = {
     // State
-    user,                          // אובייקט המשתמש המלא
-    userId: user?.userId,          // ID בלבד לנוחות
-    deviceId: user?.deviceId,      // device ID
-    isLoggedIn: !!user,            // boolean — האם מחובר
-    isLoading,                     // האם טוען
-    error,                         // הודעת שגיאה
+    user,
+    userId: user?.userId,
+    deviceId: user?.deviceId, // May be added later
+    isLoggedIn: !!user,
+    isLoading,
+    locked,
+    error,
 
     // Methods
     login,
+    loginWithGoogleUser,
     logout,
     updateUser,
+    unlock,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 /**
- * useAuth — hook לגישה ל-AuthContext.
- * זורק שגיאה אם משתמשים מחוץ ל-AuthProvider.
+ * Custom hook to access auth context.
+ * 
+ * @example
+ * const { user, userId, login, logout, isLoggedIn } = useAuth();
+ * 
+ * @returns {Object} Auth context value
+ * @throws {Error} If hook is not used within AuthProvider
  */
 export const useAuth = () => {
   const context = React.useContext(AuthContext);
-
+  
   if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
-
+  
   return context;
 };
 

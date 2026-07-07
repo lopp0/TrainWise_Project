@@ -27,9 +27,10 @@ export const getGPTResponse = async (messages) => {
 
     return response.data.choices[0].message.content;
   } catch (error) {
-    const detail = error?.response?.data?.error?.message || error?.message || "Unknown error";
-    const status = error?.response?.status;
-    console.error("[openai.js] OpenAI request failed:", status, detail);
-    return `Error ${status ? `(${status})` : ""}: ${detail}`;
+    console.error(
+      "[openai.js] OpenAI request failed:",
+      error?.response?.data || error.message,
+    );
+    return "Something went wrong. Please try again.";
   }
 };

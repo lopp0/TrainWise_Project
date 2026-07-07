@@ -13,19 +13,35 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
+import { useThemedStyles } from '../theme/useThemedStyles';
 import { getGPTResponse } from '../api/openai';
 
-const SYSTEM_PROMPT = `You are TrainWise AI, a specialized fitness assistant built into the TrainWise training app.
-You ONLY answer questions about workouts, training plans, exercise technique, injury prevention, and injury recovery.
-If the user asks about anything unrelated to fitness, workouts, or injuries, politely decline and redirect them to ask a fitness-related question.
-Keep responses concise, practical, and motivating. Use bullet points when listing multiple items.`;
+const SYSTEM_PROMPT = `You are TrainWise AI, a sports and injury assistant built into the TrainWise training app.
+
+You ONLY respond to questions in these categories:
+- Sports injuries (diagnosis, symptoms, causes, when to see a doctor)
+- Injury recovery and rehabilitation exercises
+- Injury prevention and warm-up routines
+- Workout instructions, form, and technique
+- Workout plans and training advice
+- Sports performance and athletic discussion
+
+If the user asks about ANYTHING outside these categories (nutrition, general health, lifestyle, non-sport topics, etc.), respond with:
+"I'm only able to help with sports injuries, injury recovery, and workout-related questions. Try asking me about an injury or your training!"
+
+Rules:
+- Never give a medical diagnosis — always recommend seeing a professional for serious injuries.
+- Keep responses concise and practical.
+- Use bullet points when listing multiple items.
+- Be motivating and supportive in tone.`;
 
 const AIChatScreen = ({ navigation }) => {
+  const styles = useThemedStyles(makeStyles);
   const [messages, setMessages] = useState([
     {
       id: '0',
       role: 'assistant',
-      content: "Hi! I'm TrainWise AI 💪\nAsk me anything about your training, recovery, or injuries!",
+      content: "Hi! I'm TrainWise AI 💪\nAsk me about sports injuries, injury recovery, or workout instructions and I'll help you out!",
     },
   ]);
   const [inputText, setInputText] = useState('');
@@ -61,7 +77,7 @@ const AIChatScreen = ({ navigation }) => {
       <View style={[styles.msgRow, isUser ? styles.userRow : styles.aiRow]}>
         {!isUser && (
           <View style={styles.aiAvatar}>
-            <Ionicons name="fitness" size={14} color="#ff2d6f" />
+            <Ionicons name="fitness" size={14} color={Colors.primary} />
           </View>
         )}
         <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
@@ -124,7 +140,7 @@ const AIChatScreen = ({ navigation }) => {
             value={inputText}
             onChangeText={setInputText}
             placeholder="Ask about your training..."
-            placeholderTextColor="#444"
+            placeholderTextColor={Colors.textMuted}
             multiline
             maxLength={500}
             returnKeyType="default"
@@ -146,10 +162,10 @@ const AIChatScreen = ({ navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (Colors) => StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#0d1117',
+    backgroundColor: Colors.background,
   },
   flex: {
     flex: 1,
@@ -163,7 +179,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#1e2530',
+    borderBottomColor: Colors.border,
   },
   headerCenter: {
     flexDirection: 'row',
@@ -174,12 +190,12 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#ff2d6f',
+    backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerTitle: {
-    color: '#fff',
+    color: Colors.textPrimary,
     fontSize: 17,
     fontWeight: '800',
   },
@@ -206,9 +222,9 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#161b22',
+    backgroundColor: Colors.cardBackground,
     borderWidth: 1,
-    borderColor: '#ff2d6f',
+    borderColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 2,
@@ -220,13 +236,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   userBubble: {
-    backgroundColor: '#ff2d6f',
+    backgroundColor: Colors.primary,
     borderBottomRightRadius: 4,
   },
   aiBubble: {
-    backgroundColor: '#161b22',
+    backgroundColor: Colors.cardBackgroundLight,
     borderWidth: 1,
-    borderColor: '#2d333b',
+    borderColor: Colors.border,
     borderBottomLeftRadius: 4,
   },
   bubbleText: {
@@ -237,7 +253,7 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   aiBubbleText: {
-    color: '#e0e0e0',
+    color: Colors.textPrimary,
   },
 
   // Typing indicator
@@ -249,7 +265,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   typingText: {
-    color: '#666',
+    color: Colors.textMuted,
     fontSize: 13,
     fontStyle: 'italic',
   },
@@ -261,18 +277,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: '#1e2530',
+    borderTopColor: Colors.border,
     gap: 10,
   },
   input: {
     flex: 1,
-    backgroundColor: '#161b22',
+    backgroundColor: Colors.inputBackground,
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#2d333b',
+    borderColor: Colors.inputBorder,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    color: '#fff',
+    color: Colors.textPrimary,
     fontSize: 15,
     maxHeight: 120,
   },
@@ -280,12 +296,12 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#ff2d6f',
+    backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   sendBtnDisabled: {
-    backgroundColor: '#3a1a24',
+    backgroundColor: Colors.cardBackgroundLight,
   },
 });
 

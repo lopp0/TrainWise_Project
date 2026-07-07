@@ -1,4 +1,3 @@
-// מסך ברוכים הבאים — הכניסה הראשונה לאפליקציה, עם טקסט מעוקל סביב הלוגו
 import React from 'react';
 import {
   View,
@@ -8,54 +7,36 @@ import {
   Image,
   Dimensions,
 } from 'react-native';
-// SafeAreaView מגן מפני notch
 import { SafeAreaView } from 'react-native-safe-area-context';
-// שליטה בשורת הסטטוס
 import { StatusBar } from 'expo-status-bar';
+import { Colors } from '../theme/colors';
+import { useThemedStyles } from '../theme/useThemedStyles';
+import { useTheme } from '../theme/ThemeContext';
 
-// רוחב המסך לחישוב פקסמים
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// רדיוס עיגול הטקסט המעוקל — כ-118px מהמרכז
 const CIRCLE_RADIUS = 118;
-// גודל הלוגו במרכז
 const LOGO_SIZE = 160;
-// גודל גופן האותיות המעוקלות
 const FONT_SIZE = 14;
-// גודל הקונטיינר: רדיוס + גופן + padding × 2
 const CONTAINER_SIZE = (CIRCLE_RADIUS + FONT_SIZE + 14) * 2;
 
-/**
- * CurvedText — קומפוננט שמציג טקסט מעוקל סביב מעגל.
- * @param {string} text - הטקסט להצגה
- * @param {number} radius - רדיוס הקשת
- * @param {boolean} curveUp - true = מעל המרכז, false = מתחת
- */
-function CurvedText({ text, radius, curveUp }) {
-  // פיצול לתווים בודדים — כל תו ימוקם בנפרד על הקשת
+function CurvedText({ text, radius, curveUp, color = '#00e6c3' }) {
   const chars = text.split('');
-  // הצעד הזוויתי בין תווים — מבוסס על רוחב גופן משוער
   const charStep = (FONT_SIZE * 0.62) / radius;
-  // הזווית הכוללת של כל הטקסט
   const totalAngle = charStep * chars.length;
-  // מרכז הקונטיינר
   const cx = CONTAINER_SIZE / 2;
   const cy = CONTAINER_SIZE / 2;
 
-  // זווית התחלה — מרכוז הטקסט על הקשת
   const startAngle = curveUp
-    ? -Math.PI / 2 - totalAngle / 2   // מעל: מתחיל מ-90° שמאלה
-    : Math.PI / 2 - totalAngle / 2;   // מתחת: מתחיל מ-90° ימינה
+    ? -Math.PI / 2 - totalAngle / 2
+    : Math.PI / 2 - totalAngle / 2;
 
   return (
     <>
       {chars.map((char, i) => {
-        // זווית התו ה-i
         const angle = startAngle + charStep * (i + 0.5);
-        // מיקום x, y על הקשת (קואורדינטות קרטזיות)
         const px = cx + radius * Math.cos(angle);
         const py = cy + radius * Math.sin(angle);
-        // סיבוב התו כדי שיהיה ישיר לרדיוס (90°/270°)
         const rotDeg = curveUp
           ? (angle * 180) / Math.PI + 90
           : (angle * 180) / Math.PI - 90;
@@ -66,12 +47,11 @@ function CurvedText({ text, radius, curveUp }) {
             style={{
               position: 'absolute',
               left: px - FONT_SIZE * 0.32,
-              // כוונון אנכי: טקסט עליון מוצב מעל, תחתון — מתחת
               top: curveUp ? py - FONT_SIZE : py,
               fontSize: FONT_SIZE,
-              color: '#00e6c3',       // מנטה בהיר
+              color,
               fontWeight: '700',
-              transform: [{ rotate: `${rotDeg}deg` }],  // סיבוב לפי הזווית
+              transform: [{ rotate: `${rotDeg}deg` }],
             }}
           >
             {char}
@@ -82,32 +62,29 @@ function CurvedText({ text, radius, curveUp }) {
   );
 }
 
-// מסך ברוכים הבאים
 const WelcomeScreen = ({ navigation }) => {
+  const styles = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
+  const curveColor = Colors.primaryLight;
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <StatusBar style="light" />
+      <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
 
-      {/* כותרת "Trainwise" עם אפקט echo (שתי שכבות) */}
       <View style={styles.titleWrapper}>
-        {/* שכבת הצל — סגולה, מוזזת */}
         <Text style={[styles.titleBase, styles.titleEcho]} numberOfLines={1}>
           Trainwise
         </Text>
-        {/* שכבת החזית — ורוד */}
         <Text style={[styles.titleBase, styles.titleFront]} numberOfLines={1}>
           Trainwise
         </Text>
       </View>
 
-      {/* עיגול הלוגו עם הטקסט המעוקל */}
       <View
         style={[
           styles.circleContainer,
           { width: CONTAINER_SIZE, height: CONTAINER_SIZE },
         ]}
       >
-        {/* לוגו במרכז — ממורכז בחישוב מפורש */}
         <Image
           source={require('../../assets/images/wowowow.png')}
           style={[
@@ -121,13 +98,10 @@ const WelcomeScreen = ({ navigation }) => {
           ]}
           resizeMode="contain"
         />
-        {/* טקסט עליון מעוקל */}
-        <CurvedText text="Protect your health" radius={CIRCLE_RADIUS} curveUp={true} />
-        {/* טקסט תחתון מעוקל */}
-        <CurvedText text="and your safety" radius={CIRCLE_RADIUS} curveUp={false} />
+        <CurvedText text="Protect your health" radius={CIRCLE_RADIUS} curveUp={true} color={curveColor} />
+        <CurvedText text="and your safety" radius={CIRCLE_RADIUS} curveUp={false} color={curveColor} />
       </View>
 
-      {/* כפתור הרשמה */}
       <TouchableOpacity
         style={styles.signUpButton}
         activeOpacity={0.82}
@@ -136,7 +110,6 @@ const WelcomeScreen = ({ navigation }) => {
         <Text style={styles.signUpText}>Sign Up</Text>
       </TouchableOpacity>
 
-      {/* שורת מעבר לכניסה */}
       <View style={styles.signInRow}>
       <Text style={styles.signInPrompt}>ALREADY HAVE AN ACCOUNT?  SIGN IN </Text>
       <TouchableOpacity activeOpacity={0.75} onPress={() => navigation.navigate('Login')} >
@@ -147,56 +120,47 @@ const WelcomeScreen = ({ navigation }) => {
   );
 };
 
-// סגנונות מסך הברכה
-const styles = StyleSheet.create({
+const makeStyles = (Colors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#13173d',     // רקע כחול כהה
+    backgroundColor: Colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
-  // עטיפת הכותרת — padding להתאמת גודל
   titleWrapper: {
     paddingBottom: 8,
     paddingRight: 8,
     marginBottom: 16,
   },
-  // בסיס הכותרת
   titleBase: {
     fontSize: 52,
     fontWeight: '900',
     fontStyle: 'italic',
     letterSpacing: 1.5,
   },
-  // שכבת הצל — סגולה, מוזזת ימינה ולמטה
   titleEcho: {
-    color: '#c524e6',
+    color: Colors.primaryDark,
     position: 'absolute',
     top: 6,
     left: 6,
   },
-  // שכבת החזית — ורוד
   titleFront: {
-    color: '#ff2c60',
+    color: Colors.primary,
   },
-  // קונטיינר עיגול הלוגו — מיקום יחסי לאלמנטים מוחלטים
   circleContainer: {
     position: 'relative',
     marginBottom: 28,
   },
-  // הלוגו — מיקום מוחלט במרכז הקונטיינר
   logo: {
     position: 'absolute',
   },
-  // כפתור הרשמה
   signUpButton: {
-    backgroundColor: '#ff2c60',
+    backgroundColor: Colors.primary,
     borderWidth: 6,
-    borderColor: '#c524e6',
+    borderColor: Colors.primaryDark,
     borderRadius: 32,
     paddingVertical: 14,
-    // רוחב יחסי למסך
     paddingHorizontal: SCREEN_WIDTH * 0.18,
     marginBottom: 18,
     shadowColor: '#000',
@@ -212,7 +176,6 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
   },
-  // שורת "יש לי חשבון"
   signInRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -220,13 +183,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   signInPrompt: {
-    color: '#ff2c60',
+    color: Colors.primary,
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.4,
   },
   signInHere: {
-    color: '#ffffff',
+    color: Colors.textPrimary,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.4,
