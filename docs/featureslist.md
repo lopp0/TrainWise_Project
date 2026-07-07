@@ -91,7 +91,7 @@
 61. **Personal records** — auto‑detected on workout save (`PersonalRecords`)
 62. Badges awarded from user stats
 63. Public **workout board** — posts with photos + likes (`WorkoutBoard`)
-64. **Weekly leaderboard** (opt‑in) ranked by load (`Leaderboard`)
+64. **Weekly leaderboard** (opt‑in) ranked by load, with a **Global / Friends** scope toggle (`Leaderboard`)
 65. **Training calendar** — plan workouts, log exertion on completion (`TrainingCalendar`)
 66. Cosmetics **shop** + equip (avatar cosmetics on profiles)
 67. Activity streaks
@@ -142,37 +142,37 @@
 100. Seeded reference data + 15+ dated migration scripts (through `2026-07-02_security_hardening.sql`)
 
 ## Security & Auth Hardening (2026‑07‑02 audit)
-110. **JWT bearer auth** — signed token issued on login / signup / google‑login; bearer interceptor on every client call
-111. **Per‑object ownership checks** — a logged‑in user can't act on another user's data (IDOR/BOLA closed); `GET /api/users` → 403
-112. **PBKDF2 password hashing** — salted, verify‑and‑upgrade from the old plaintext; constant‑time login (no user enumeration)
-113. **Rate limiting** — auth endpoints (10/min/IP) + a global backstop
-114. **Upload validation** — magic‑byte sniff + size cap + GUID (non‑enumerable) filenames
-115. **Server‑side verification** — Google **ID token** + **reCAPTCHA** checked on the backend
-116. **DB secret externalized to env** + **optional ML‑service JWT** (`ml/auth.py`, gated by `ML_AUTH_ENFORCE`)
+101. **JWT bearer auth** — signed token issued on login / signup / google‑login; bearer interceptor on every client call
+102. **Per‑object ownership checks** — a logged‑in user can't act on another user's data (IDOR/BOLA closed); `GET /api/users` → 403
+103. **PBKDF2 password hashing** — salted, verify‑and‑upgrade from the old plaintext; constant‑time login (no user enumeration)
+104. **Rate limiting** — auth endpoints (10/min/IP) + a global backstop
+105. **Upload validation** — magic‑byte sniff + size cap + GUID (non‑enumerable) filenames
+106. **Server‑side verification** — Google **ID token** + **reCAPTCHA** checked on the backend
+107. **DB secret externalized to env** + **optional ML‑service JWT** (`ml/auth.py`, gated by `ML_AUTH_ENFORCE`)
 
 ## Load Analytics & Extras
-117. **Rolling load analytics** — `GET /api/dailyload/user/{id}/analytics` + `LoadAnalyticsSection` / `AcwrTrendChart`
-118. **Achievements + milestones** — `AchievementsScreen`, `utils/achievements`, `utils/milestones`
-119. **Workout timer** — `TimerScreen`
-120. **Body‑measurement / weight tracker** — `WeightTracker`, `GET/POST /api/users/{id}/measurements`
-121. **Pain tracker** — per‑injury pain logs (`GET/POST /api/injuryreport/{id}/pain`, `PainTracker`)
-122. **Message reactions + typing indicator** — `POST /api/messages/{id}/react`, `PUT/GET /api/messages/typing`
-123. **Workout‑board kudos** — `POST /api/board/kudos/{logId}/{userId}`
-124. **Change password** (`PUT /api/users/{id}/password`) + **activity notes** (`GET/PUT /api/activitylog/{id}/notes`)
-125. **What's‑new modal + changelog**, theme scheduling, streak freeze, and optional biometric lock
+108. **Rolling + EWMA load analytics** — `GET /api/dailyload/user/{id}/analytics` (timezone‑aware) + `LoadAnalyticsSection` / `AcwrTrendChart`
+109. **Achievements + milestones** — `AchievementsScreen`, `utils/achievements`, `utils/milestones`
+110. **Workout timer** — `TimerScreen`
+111. **Body‑measurement / weight tracker** — `WeightTracker`, `GET/POST /api/users/{id}/measurements`
+112. **Pain tracker** — per‑injury pain logs (`GET/POST /api/injuryreport/{id}/pain`, `PainTracker`)
+113. **Message reactions + typing indicator** — `POST /api/messages/{id}/react`, `PUT/GET /api/messages/typing`
+114. **Workout‑board kudos** — `POST /api/board/kudos/{logId}/{userId}`
+115. **Change password** (`PUT /api/users/{id}/password`) + **activity notes** (`GET/PUT /api/activitylog/{id}/notes`)
+116. **What's‑new modal + changelog**, theme scheduling, streak freeze, and optional biometric lock
 
 ## External Services & Integrations
 > Each row is one external dependency.
 
-101. Azure App Service — hosts the C# API
-102. Azure SQL Database — primary datastore (`TrainWiseDB`)
-103. Google Maps SDK — map rendering + routes
-104. Google Weather API — weather factors (separate SKU)
-105. Google Air Quality API — AQI factor (separate SKU)
-106. OpenAI — in‑app AI chat + injury advice
-107. Firebase Cloud Messaging — push notifications
-108. Google Health Connect — workout import (Android)
-109. Google Sign‑In / OAuth — social login
+117. Azure App Service — hosts the C# API
+118. Azure SQL Database — primary datastore (`TrainWiseDB`)
+119. Google Maps SDK — map rendering + routes
+120. Google Weather API — weather factors (separate SKU)
+121. Google Air Quality API — AQI factor (separate SKU)
+122. OpenAI — in‑app AI chat + injury advice
+123. Firebase Cloud Messaging — push notifications
+124. Google Health Connect — workout import (Android)
+125. Google Sign‑In / OAuth — social login
 
 ---
 

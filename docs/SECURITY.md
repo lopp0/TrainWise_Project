@@ -24,7 +24,7 @@ raise it directly with the project owner — do not open a public issue with rep
 - **Two‑stage rollout switch (`AUTH_ENFORCE`)** — the server validates tokens whenever present and, once
   `AUTH_ENFORCE=true` in Azure config, **requires** them (tokenless callers get 401). This let already‑
   installed APKs keep working during migration; `[AllowAnonymous]` is only on login / signup /
-  google‑login / health.
+  google‑login (the ML service's `/health` endpoint is likewise public).
 - **Per‑object ownership checks** (`Controllers/BaseApiController.cs`: `CallerMayAct`,
   `CallerOwnsOrCoaches`, `CallerOwnsCoachId`) stop a logged‑in user from acting on another user's data by
   passing a different id — closing the IDOR / BOLA class across Users, Messages, Board, Social, Calendar,

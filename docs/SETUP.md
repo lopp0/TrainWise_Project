@@ -13,14 +13,17 @@ TrainWise has two cooperating projects in one repo and an optional ML service:
 
 ## Backend modes (read this first)
 
-TrainWise runs in **one of two backend modes**. Switching is a config change, not a code change.
+TrainWise runs in **one of two backend modes**. Switching is a **one‑line** config change, not a code change.
 
 | Mode | Backend runs… | Phone reaches it via… | Cost | Trade‑off |
 |---|---|---|---|---|
-| **Azure** (current) | Azure App Service | the public internet (HTTPS) | cloud | Works anywhere; the ML/forecast screen still needs the local Python service |
+| **Azure** | Azure App Service | the public internet (HTTPS) | cloud | Works anywhere; the ML/forecast screen still needs the local Python service |
 | **Local‑LAN** | VS 2022 on your PC | the PC's LAN IP over WiFi (HTTP) | free | PC must be on and on the same WiFi; the IP shifts on DHCP renewal |
 
-The C# code is identical in both modes. Only the two `BASE_URL`s and the DB connection string change.
+The **active mode is whatever `BACKEND_MODE` says in `TrainWiseExpo/src/config/backend.js`** — the
+central switch both axios clients import their `API_BASE_URL` from, so they can never drift apart.
+The C# code is identical in both modes. Only `backend.js` and the DB connection string change (plus
+an APK rebuild — the URL is baked in at build time).
 
 ---
 
@@ -39,8 +42,9 @@ You don't need to run the C# API or SQL at all to poke at the live backend.
 > will **not** work against Azure alone — that data comes from the local Python ML service (Option B,
 > step 7). Everything else (login, workouts, chat, coach, social) works from anywhere.
 
-To use the live backend from the app, make sure both axios clients point at the Azure URL (they do by
-default — see [Configuration](#configuration)), then build/run the Expo app (step 6).
+To use the live backend from the app, set `BACKEND_MODE = 'azure'` in
+`TrainWiseExpo/src/config/backend.js` (check the file for the current value — the project flips
+between modes), then build/run the Expo app (step 6).
 
 ---
 
@@ -129,10 +133,11 @@ active WiFi must be classified **Private**. See [Things that trip people up](#th
 
 ### Step 5 — Point the app at your backend
 
-Set the **same** `BASE_URL` in both files (see [Configuration](#configuration)):
+Open `TrainWiseExpo/src/config/backend.js` (see [Configuration](#configuration)):
 
-- Azure: `https://trainwise01-api-…azurewebsites.net/api`
-- Local‑LAN: `http://<your-PC-LAN-IP>:5249/api`  (find it with `ipconfig | findstr IPv4`)
+- Azure: set `BACKEND_MODE = 'azure'` (uses the `https://trainwise01-api-…azurewebsites.net/api` URL).
+- Local‑LAN: set `BACKEND_MODE = 'local'` and update `LOCAL_PC_IP` to your PC's LAN IP
+  (find it with `ipconfig | findstr IPv4`).
 
 ### Step 6 — Run the frontend
 
@@ -184,8 +189,8 @@ If that works, you're set up.
 
 | What | Where | Notes |
 |---|---|---|
-| Backend API base | `TrainWiseExpo/src/api/api.js` **and** `TrainWiseExpo/src/services/api.js` | Both `BASE_URL`s must be **identical**. A mismatch makes only some screens fail with "Network Error" |
-| ML service base | `TrainWiseExpo/src/services/mlApi.js` | `ML_BASE_URL`; track the PC's LAN IP in Local mode |
+| Backend API base | `TrainWiseExpo/src/config/backend.js` | `BACKEND_MODE` (`'local'` \| `'azure'`) + `LOCAL_PC_IP`. Both axios clients (`src/api/api.js`, `src/services/api.js`) import `API_BASE_URL` from here, so they can't drift apart |
+| ML service base | `TrainWiseExpo/src/services/mlApi.js` | `ML_BASE_URL` — still hardcoded separately (does **not** yet read `backend.js`'s `LOCAL_ML_URL`); track the PC's LAN IP in Local mode |
 | DB connection | `TrainWise/TrainWise/appsettings.json` | Local string by default; Azure overrides via the Connection strings blade |
 | Frontend secrets | `TrainWiseExpo/.env` (gitignored) | Google + OpenAI keys; `EXPO_PUBLIC_*` are inlined into the bundle |
 | Native Maps key | injected by `TrainWiseExpo/app.config.js` from `.env` | `app.json` keeps an empty placeholder — never a literal key |
@@ -193,7 +198,7 @@ If that works, you're set up.
 | Google Sign‑In | Firebase project `trainwise-ef6aa` → Authentication → enable **Google**; register the release‑keystore **SHA‑1** on the Android app; place `google-services.json` at `android/app/` (gitignored) | web client ID from that project lives in `src/constants/google.js` (public) |
 | Release keystore | `android/app/trainwise-release.keystore` (+ passwords in `android/app/build.gradle`) | gitignored; **back it up** — needed to sign every build |
 
-> Since both `BASE_URL`s already include `/api`, endpoint paths must **not** start with `/api`
+> Since `API_BASE_URL` already includes `/api`, endpoint paths must **not** start with `/api`
 > (write `apiClient.post('/Users', …)`, not `/api/Users`).
 
 ---
@@ -212,12 +217,13 @@ TrainWise/       ASP.NET Core 8 Web API
     appsettings.json
 TrainWiseExpo/   React Native + Expo (Android)
   src/
-    screens/       one file per screen (30)
+    config/backend.js  BACKEND_MODE switch ('local' | 'azure') — the single API_BASE_URL source
+    screens/       one file per screen (31 files, incl. the HomeRouter switcher)
     services/api.js  PRIMARY axios client — most backend HTTP goes here
     services/mlApi.js  axios client for the Python ML service
     api/           legacy axios client + Auth/Health/Messages/Social contexts + Health Connect
+    navigation/     single root NavigationStack (tabs: Home / Load / Health / Connect)
     components/     reusable UI (Card, ComboBox, PrimaryButton, ScreenHeader, Avatar, …)
-    navigation/     single root NavigationStack (tabs: Home / Health / Connect / Profile)
     theme/          useThemedStyles + colors/palettes (light/dark)
     constants/ utils/  weekStart, ACWR helpers, badges, smartWorkout, serverDate, …
 ml/              Flask service (app.py) + features/forecast/risk + notebook + models
@@ -248,13 +254,16 @@ JS‑only change → Metro reload (`r`). Native change (`android/`, `app.json`, 
 ## Things that trip people up
 
 ### "The phone gets Network Error on every call" (Local‑LAN)
-The PC's DHCP IP changed. Run `ipconfig | findstr IPv4`, then update the `BASE_URL` in **both**
-`src/api/api.js` and `src/services/api.js` (and `ML_BASE_URL` in `src/services/mlApi.js`). Long‑term
-fix: reserve a static IP at the router, or use `http://<hostname>.local:5249/api` (mDNS).
+The PC's DHCP IP changed. Run `ipconfig | findstr IPv4`, then update `LOCAL_PC_IP` in
+`src/config/backend.js` (and `ML_BASE_URL` in `src/services/mlApi.js` — it's hardcoded separately)
+and rebuild the APK. Long‑term fix: reserve a static IP at the router, or use
+`http://<hostname>.local:5249/api` (mDNS).
 
 ### "Only some screens get Network Error"
-Classic `api.js` vs `services/api.js` **IP/host mismatch**. The two axios clients drifted to different
-`BASE_URL`s. Make them identical.
+Historically this was the two axios clients drifting to different `BASE_URL`s — impossible since they
+both import `API_BASE_URL` from `src/config/backend.js`. If it happens now, the split is
+`backend.js` (login/workouts fine) vs `mlApi.js` (coach analytics offline): the ML client still
+carries its **own** hardcoded IP, so update both when the PC's IP shifts.
 
 ### "Local API works on the PC but not from the phone"
 Run these in order: `netstat -an | findstr 5249` (must show `0.0.0.0:5249 LISTENING`), then open

@@ -87,9 +87,9 @@ the Python ML service runs **locally** (see the note below the diagram).
 
 | Layer | Path | Responsibility |
 |---|---|---|
-| **Database** | [`sql/`](sql) | SQL Server schema + stored procedures (`TWDB.sql` / `TrainWiseV2.sql`), 13 dated migration scripts, and `seed_reference_data.sql` (lookup data) |
+| **Database** | [`sql/`](sql) | SQL Server schema + stored procedures (`TWDB.sql` / `TrainWiseV2.sql`), 15 dated migration scripts (through `2026-07-02_security_hardening.sql`), and `seed_reference_data.sql` (lookup data) |
 | **Backend** | [`TrainWise/`](TrainWise) | ASP.NET Core 8 Web API — 22 controllers, three‑layer `Controllers → BL → DAL → DBservice`, raw ADO.NET (no EF Core) |
-| **Frontend** | [`TrainWiseExpo/`](TrainWiseExpo) | React Native 0.81 / Expo SDK 54 app (Android), 30 screens, `src/{api,services,components,navigation,theme,constants,utils}` |
+| **Frontend** | [`TrainWiseExpo/`](TrainWiseExpo) | React Native 0.81 / Expo SDK 54 app (Android), 31 screen files (incl. the HomeRouter switcher), `src/{api,services,config,components,navigation,theme,constants,utils}` |
 | **ML service** | [`ml/`](ml) | Python / Flask coach‑analytics microservice (PMC, ACWR, monthly forecast, injury‑risk), pandas / scikit‑learn |
 | **AI context** | [`CLAUDE.md`](CLAUDE.md) · [`tasks/`](tasks) | Deep architecture notes, conventions, and the running lessons log |
 
@@ -164,18 +164,22 @@ python app.py               # serves on http://0.0.0.0:8000
 
 ## Configuration
 
-TrainWise runs in **one of two backend modes** — switching is a config change, not a code change
-(full detail in [docs/SETUP.md](docs/SETUP.md) and [docs/DEPLOY.md](docs/DEPLOY.md)):
+TrainWise runs in **one of two backend modes** — switching is a **one‑line** config change, not a code
+change (full detail in [docs/SETUP.md](docs/SETUP.md) and [docs/DEPLOY.md](docs/DEPLOY.md)):
 
-- **Azure mode (current)** — both axios clients point at the Azure App Service URL. The phone reaches
-  the backend over the public internet; no LAN, no firewall.
+- **Azure mode** — the app points at the Azure App Service URL. The phone reaches the backend over the
+  public internet; no LAN, no firewall.
 - **Local‑LAN mode** — the backend runs in VS 2022 on the PC, the phone reaches it over WiFi via the
   PC's LAN IP. Zero cloud cost, but the PC must be on and on the same WiFi.
 
+The active mode is whatever `BACKEND_MODE` says in **`TrainWiseExpo/src/config/backend.js`** — the
+central switch both axios clients import their `API_BASE_URL` from (so they can never drift apart).
+Flip it, rebuild the APK (the URL is baked in at build time), done.
+
 | What | Where | Notes |
 |---|---|---|
-| Backend API base | `TrainWiseExpo/src/api/api.js` **and** `TrainWiseExpo/src/services/api.js` | Both `BASE_URL`s must be **identical** (an IP/host mismatch makes only some screens fail) |
-| ML service base | `TrainWiseExpo/src/services/mlApi.js` | `ML_BASE_URL` — must track the PC's LAN IP in Local mode |
+| Backend API base | `TrainWiseExpo/src/config/backend.js` | `BACKEND_MODE` (`'local'` \| `'azure'`) + `LOCAL_PC_IP`; both axios clients import `API_BASE_URL` from here |
+| ML service base | `TrainWiseExpo/src/services/mlApi.js` | `ML_BASE_URL` — still hardcoded separately; must track the PC's LAN IP in Local mode |
 | DB connection | `TrainWise/TrainWise/appsettings.json` | Local string is `Data Source=…\SQLEXPRESS;…;Integrated Security=True`. In Azure the App Service **Connection strings** blade overrides it |
 | Secrets (frontend) | `TrainWiseExpo/.env` (gitignored) | Google key + OpenAI key; `EXPO_PUBLIC_*` vars are inlined into the bundle (see [Security](#security-highlights)) |
 
@@ -189,7 +193,7 @@ TrainWise_Project/
 ├─ CLAUDE.md                 deep architecture notes + conventions (AI/agent context)
 ├─ docs/                     SETUP · DEPLOY · SECURITY · features · featureslist · scope flowchart
 ├─ tasks/                    session logs + the running lessons.md (self-learning notes)
-├─ sql/                      schema (TWDB.sql / TrainWiseV2.sql) · 13 migrations · seed_reference_data.sql
+├─ sql/                      schema (TWDB.sql / TrainWiseV2.sql) · 15 migrations · seed_reference_data.sql
 ├─ TrainWise/                ASP.NET Core 8 Web API (TrainWise.sln)
 │   └─ TrainWise/            Controllers / BL / DAL / Models / Program.cs / appsettings.json
 ├─ TrainWiseExpo/            React Native + Expo app

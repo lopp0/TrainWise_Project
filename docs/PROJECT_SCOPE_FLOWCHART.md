@@ -13,7 +13,7 @@ heart), and how the project ships. Companion to [`features.md`](features.md) and
                               │            TrainWiseExpo (Android)         │
                               │     React Native 0.81 / Expo SDK 54        │
                               │                                            │
-  ┌── tabs ──────────────────┤  Home · Health · Connect · Profile         │
+  ┌── tabs ──────────────────┤  Home · Load · Health · Connect            │
   │                          │  + AddWorkout · Injury · Chat · Coach ·     │
   │                          │    Stats · Warnings · Shop · Calendar · …   │
   │                          └───────────────┬────────────────────────────┘
@@ -90,17 +90,22 @@ the weekly leaderboard, plan the next week on the calendar.
   ActivityLogController ─► ActivityLogBL ─► ActivityLogDAL ─► sp_InsertActivityLog
         │                         (sets calculatedLoadForSession = duration × exertion)
         ▼
-  Client calls POST /api/dailyload/user/{id}/calculate  { date: editedDay }
-                                    POST .../calculate   { date: today }
+  Client calls POST /api/dailyload/user/{id}/calculate  { date: editedDay, tzOffsetMinutes }
+                                    POST .../calculate   { date: today,    tzOffsetMinutes }
         │
         ▼
   DailyLoadController ─► LoadCalculationBL
+        │   (confirmed sessions only — pending HC imports never count;
+        │    days bucketed in the caller's timezone via tzOffsetMinutes)
         │   acute   = sum(session loads in trailing 7 days)
-        │   chronic = sum(28-day window ending at the day) / 4     (coupled ACWR)
+        │   chronic = sum(28-day window) / min(4, covered/7)   (coupled ACWR;
+        │             covered-days ramp — floored at the experience bootstrap
+        │             until 7 active days in the window)
         │   AC ratio = acute / chronic
         │   warning  = ratio < 0.8  → Green
         │              0.8 ≤ ratio ≤ 1.3 → Yellow
         │              ratio > 1.3  → Red
+        │              (active injury tightens Red to ≥ 1.2, no gap)
         ▼
   DailyLoad rows persisted ──► Home + Warnings read ActivityLogs (not stale DailyLoad)
                                 to draw per-day bars + the displayed-week status
@@ -117,7 +122,7 @@ the weekly leaderboard, plan the next week on the calendar.
 ```
   Today (manual):
     backend change ─► VS 2022 → Publish (TrainWise01-api profile) ─► Azure App Service (auto-restart)
-    app change     ─► point both BASE_URLs ─► npx expo run:android --variant release ─► app-release.apk
+    app change     ─► set BACKEND_MODE (src/config/backend.js) ─► npx expo run:android --variant release ─► app-release.apk
     schema change  ─► run the sql/ migration in SSMS against BOTH Azure SQL and local SQL Express
     ML change      ─► restart ml/app.py locally (not deployed)
 

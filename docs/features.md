@@ -14,8 +14,8 @@ color‑coded warning level. Around that core sit a coach dashboard, chat, a soc
 weather‑aware suggestions, and an ML forecast.
 
 - **Backend** — ASP.NET Core 8, raw ADO.NET (no EF), SQL Server stored procedures, three‑layer
-  `Controllers → BL → DAL → DBservice`. **JWT bearer auth** with per‑object ownership checks. On Azure
-  App Service + Azure SQL.
+  `Controllers → BL → DAL → DBservice`. **JWT bearer auth** with per‑object ownership checks. An xUnit
+  project (`TrainWise.Tests`) pins the load‑window math. Deployable to Azure App Service + Azure SQL.
 - **Frontend** — React Native 0.81 / Expo SDK 54 (Android), token‑based auth (bearer interceptor on both
   axios clients), two axios clients.
 - **ML** — a separate Python / Flask service for coach analytics (local), with optional shared‑JWT auth.
@@ -49,7 +49,8 @@ weather‑aware suggestions, and an ML forecast.
   google‑login return `{ token, user }`; both axios clients + the raw‑`fetch` uploads + `mlApi.js` attach
   `Authorization: Bearer` (`src/api/authToken.js`).
 - **`AUTH_ENFORCE` rollout** — the server validates tokens when present and (once `AUTH_ENFORCE=true` in
-  Azure) requires them. `[AllowAnonymous]` only on login / signup / google‑login / health.
+  Azure) requires them. `[AllowAnonymous]` only on login / signup / google‑login (the ML service's
+  `/health` is likewise public).
 - **Per‑object ownership** (`Controllers/BaseApiController.cs`: `CallerMayAct`, `CallerOwnsOrCoaches`,
   `CallerOwnsCoachId`, owner‑lookup helpers in the DAL) gate self‑scoped and resource‑id‑keyed endpoints
   so a token can't act on another user's data.
@@ -87,7 +88,7 @@ subject to the JWT ownership gate above.
 ### Workouts & Load
 **`ActivityLogController`** — `api/activitylog` — `GET /user/{userId}` · `POST /` · `PUT /` · `DELETE /{id}` · `GET /{id}/notes` · `PUT /{id}/notes`
 **`ActivityTypeController`** — `api/activitytype` — `GET /` (20 seeded types)
-**`DailyLoadController`** — `api/dailyload` — `GET /user/{userId}` · `GET /user/{userId}/analytics` (rolling load analytics) · `POST /user/{userId}/calculate` (body: `{ "date": "<ISO>" }`)
+**`DailyLoadController`** — `api/dailyload` — `GET /user/{userId}` · `GET /user/{userId}/analytics` (rolling + EWMA load analytics; `?days=&end=&tzOffsetMinutes=` — tz shifts session bucketing to the caller's local calendar day) · `POST /user/{userId}/calculate` (body: `{ "date": "<ISO>", "tzOffsetMinutes": 180 }` — tz optional, default 0)
 **`LoadParametersController`** — `api/loadparameters` — `GET /` (tuning row)
 
 ### Injuries
@@ -121,8 +122,10 @@ subject to the JWT ownership gate above.
 ### Gamification
 **`RecordsController`** — `api/records` — `GET /{userId}` · `POST /check/{userId}`
 **`WorkoutBoardController`** — `api/board`
-- `GET /` · `POST /` · `DELETE /{postId}` · `POST /{postId}/like/{userId}` · `GET /leaderboard` · `PUT /leaderboard/optin/{userId}`
-- `POST /kudos/{logId}/{userId}` · `GET /kudos/{logId}` — kudos on a workout
+- `GET /` · `POST /` · `DELETE /{postId}` · `POST /{postId}/like/{userId}`
+- `GET /leaderboard?country=IL&metric=load_weekly&limit=50&scope=global|friends&viewerId=` — the
+  **friends scope** (#170) ranks only the viewer's accepted friends · `PUT /leaderboard/optin/{userId}?on=true`
+- `POST /kudos/{logId}/{userId}` · `GET /kudos/{logId}?viewerId=` — kudos on a workout (count + viewer's state)
 
 **`CalendarController`** — `api/calendar`
 - `GET /{userId}` · `POST /{userId}` · `PUT /{planId}` · `DELETE /{planId}` · `PUT /{planId}/complete`
@@ -140,6 +143,9 @@ default off) validates the same token the C# API issues + a self‑or‑linked�
 - `GET /api/ml/trainee/<id>/acwr` — ACWR series with safe‑zone band (`?days=` clamped 1..400)
 - `GET /api/ml/trainee/<id>/forecast[?month=YYYY-MM]` — monthly regression forecast (appends a snapshot to `MonthlyForecasts`)
 - `GET /api/ml/trainee/<id>/forecast/history` — past monthly snapshots
+
+`pmc`, `acwr`, and `forecast` all accept `?tzOffsetMinutes=` (the phone's UTC offset) so workouts
+bucket to the user's local calendar day, matching the C# `/analytics` endpoint.
 
 ---
 
@@ -179,6 +185,12 @@ There are **no** server‑side background/hosted services — the C# API is requ
 - **Three‑layer separation** — controllers are thin REST surfaces (over `BaseApiController`); `BL/` holds
   logic (`LoadCalculationBL.cs` is the core algorithm: acute load, AC ratio, stress score, warning level);
   `DAL/` is manual ADO.NET; `DBservice.cs` is the shared connection helper.
+- **Load‑math correctness rules (2026‑07‑06)** — confirmed sessions only (pending HC imports never
+  count); a dynamic cold‑start floor (< 7 active days in the trailing 28) + a covered‑days ramp on the
+  chronic divisor; injured users get tighter bands (Red ≥ 1.2, no gap); sessions bucket to the caller's
+  local day via `tzOffsetMinutes`. The shared window statics live in `LoadCalculationBL` and are pinned
+  by the **`TrainWise.Tests`** xUnit project (18 hand‑computed vectors); `ml/features.py` and the JS
+  mirrors (`utils/acwr.js`, `utils/loadSeries.js`, the Warnings screen) implement the identical math.
 - **Auth / authorization** — JWT bearer + per‑object ownership checks (see §3).
 - **Rate limiting** — .NET 8 built‑in limiter: auth policy (10/min/IP) + global 300/min/IP backstop.
 - **Error contract** — validation `ArgumentException` → `BadRequest(msg)`; unexpected exceptions →
@@ -193,8 +205,9 @@ There are **no** server‑side background/hosted services — the C# API is requ
 
 ## 9. Frontend capabilities
 
-- **Navigation** — a single root `NavigationStack` with a tab navigator (Home / Health / Connect /
-  Profile) and per‑tab sub‑stacks; no Expo Router.
+- **Navigation** — a single root `NavigationStack` with a tab navigator (**Home / Load / Health /
+  Connect** — the Load tab is the Warnings dashboard; Load + Health are hidden for coach‑only users;
+  Profile is a screen inside the Home stack, not a tab) and per‑tab sub‑stacks; no Expo Router.
 - **Auth token** — `src/api/authToken.js` holds the JWT (in‑memory + AsyncStorage); a bearer interceptor
   is on both axios clients (`services/api.js`, `api/api.js`), the raw‑`fetch` uploads, and `mlApi.js`.
 - **Central backend switch** — `src/config/backend.js` exposes `API_BASE_URL` + `LOCAL_ML_URL` so the two

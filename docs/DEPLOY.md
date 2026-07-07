@@ -19,8 +19,9 @@ local (for now).
 ```
 
 > **Two deploy artifacts, one config switch.** The backend and the APK are deployed separately. The
-> APK has its backend URL **baked in at build time** (the two `BASE_URL`s) — so "deploying" the app
-> means rebuilding the APK after pointing it at the right backend.
+> APK has its backend URL **baked in at build time** (`API_BASE_URL` from
+> `TrainWiseExpo/src/config/backend.js`) — so "deploying" the app means rebuilding the APK after
+> pointing it at the right backend.
 
 ---
 
@@ -80,12 +81,13 @@ The current Azure target (as of the last redeploy) is:
 
 ### Point the APK at the right backend first
 
-Set the **same** `BASE_URL` in both `TrainWiseExpo/src/api/api.js` and
-`TrainWiseExpo/src/services/api.js`:
+Set `BACKEND_MODE` in `TrainWiseExpo/src/config/backend.js` — the single switch both axios clients
+import their `API_BASE_URL` from:
 
-- **For public distribution / testing anywhere:** the Azure URL (`https://…azurewebsites.net/api`).
-- **For local‑LAN testing:** `http://<PC-LAN-IP>:5249/api` — the APK only works on the same WiFi with
-  the backend running.
+- **For public distribution / testing anywhere:** `BACKEND_MODE = 'azure'` (the
+  `https://…azurewebsites.net/api` URL).
+- **For local‑LAN testing:** `BACKEND_MODE = 'local'` + the current PC IP in `LOCAL_PC_IP` — the APK
+  only works on the same WiFi with the backend running.
 
 > An "Error 403 — web app is stopped" page in the app means the APK still points at a dead Azure URL
 > (an old build). Rebuild after fixing the `BASE_URL`.
@@ -148,14 +150,15 @@ from `pyodbc` + Windows auth to **pymssql + Azure SQL (SQL auth)**. Not done yet
 The switch is mechanical and reversible — the C# code never changes:
 
 **Azure → Local**
-1. Set both `BASE_URL`s to `http://<PC-IP>:5249/api`; set `ML_BASE_URL` to `http://<PC-IP>:8000`.
+1. Set `BACKEND_MODE = 'local'` + the current PC IP in `LOCAL_PC_IP` (`src/config/backend.js`); set
+   `ML_BASE_URL` to `http://<PC-IP>:8000` (`src/services/mlApi.js` — still hardcoded separately).
 2. Confirm `appsettings.json` points at `…\SQLEXPRESS` (it does by default).
 3. Ensure local SQL Express has every `sql/` migration applied.
 4. Confirm `usesCleartextTraffic="true"` in `AndroidManifest.xml`. Rebuild the APK.
 5. Start the API in VS 2022; verify firewall + Private network profile + current PC IP.
 
 **Local → Azure**
-1. Set both `BASE_URL`s back to the Azure `…azurewebsites.net/api` URL.
+1. Set `BACKEND_MODE = 'azure'` in `src/config/backend.js`.
 2. Ensure the App Service is running and Azure SQL has the latest schema.
 3. Rebuild the APK.
 
