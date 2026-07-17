@@ -21,6 +21,7 @@ import { useAuth } from '../api/AuthContext';
 import { useSocial } from '../api/SocialContext';
 import {
   getGyms,
+  getNearbyGyms,
   getNearbyUsers,
   getGymCoaches,
   getUserMiniProfile,
@@ -119,7 +120,10 @@ const ConnectScreen = ({ navigation }) => {
         // ~25 km covers all of Netanya and reaches Ruppin Academic Center
         // (~6 km NE) while keeping the results local to the user's area.
         const [g, p] = await Promise.all([
-          getGyms(center.latitude, center.longitude, 25),
+          // #146 — merged endpoint: seeded gyms + live Google Places nearby
+          // (server-side key, cached). Falls back to seeded-only when Places is
+          // off, so this is a safe drop-in for the old getGyms call.
+          getNearbyGyms(center.latitude, center.longitude, 25),
           getNearbyUsers(userId, center.latitude, center.longitude, 25),
         ]);
         setGyms(Array.isArray(g.data) ? g.data : []);
@@ -344,6 +348,12 @@ const ConnectScreen = ({ navigation }) => {
   const toggleGymListing = async () => {
     if (!gym) return;
     const gid = gym.gymID ?? gym.GymID;
+    // #146 — Google Places gyms are transient (negative synthetic ids, not in
+    // our DB), so a coach can't list themselves there.
+    if (gid <= 0) {
+      Alert.alert('Not available', 'This gym is from Google Maps and not in TrainWise yet.');
+      return;
+    }
     setActing(true);
     try {
       if (iAmListedAtGym) {

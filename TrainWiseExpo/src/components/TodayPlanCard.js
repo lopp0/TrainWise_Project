@@ -44,7 +44,11 @@ const TodayPlanCard = ({ navigation, userId }) => {
   const plan = plans[0];
   const title =
     plan.title ?? plan.Title ?? plan.activityName ?? plan.ActivityName ?? 'Planned workout';
-  const activityTypeId = plan.activityTypeID ?? plan.ActivityTypeID ?? null;
+  // The calendar field serializes as `activityTypeId` (lowercase 'd') — reading
+  // `activityTypeID` (capital ID) silently missed it, so nothing preselected.
+  const activityTypeId = plan.activityTypeId ?? plan.ActivityTypeId ?? plan.activityTypeID ?? null;
+  const plannedDuration = plan.plannedDuration ?? plan.PlannedDuration ?? null;
+  const plannedDistance = plan.plannedDistance ?? plan.PlannedDistance ?? null;
   const byCoach = plan.createdByCoach ?? plan.CreatedByCoach;
   const extra = plans.length - 1;
 
@@ -53,9 +57,13 @@ const TodayPlanCard = ({ navigation, userId }) => {
       style={styles.card}
       activeOpacity={0.85}
       onPress={() =>
+        // Open the "Already Done" tab prefilled with the coach's recommended
+        // activity + duration + distance so the trainee sees and logs the plan.
         navigation.navigate('AddWorkout', {
           preselectActivityTypeId: activityTypeId,
-          liveTab: true,
+          preselectDuration: plannedDuration,
+          preselectDistance: plannedDistance,
+          liveTab: false,
         })
       }
     >

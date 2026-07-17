@@ -23,6 +23,7 @@ import Card from '../components/Card';
 import PrimaryButton from '../components/PrimaryButton';
 import InjuryIcon from '../components/InjuryIcon';
 import ActivityIcon from '../components/ActivityIcon';
+import BodyMapPicker from '../components/BodyMapPicker';
 import {
   getAllInjuryTypes,
   getAllActivityTypes,
@@ -42,6 +43,7 @@ const InjuryReportScreen = ({ navigation, route }) => {
 
   const [injuryTypes, setInjuryTypes] = useState([]);
   const [selectedInjury, setSelectedInjury] = useState(null);
+  const [bodyMapOpen, setBodyMapOpen] = useState(false); // #125
   const [severity, setSeverity] = useState(5);
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
@@ -349,6 +351,28 @@ const InjuryReportScreen = ({ navigation, route }) => {
                 })}
               </ScrollView>
             )}
+
+            {/* #125 — body-map picker (tap the area that hurts to preselect) */}
+            <TouchableOpacity
+              style={styles.bodyMapToggle}
+              onPress={() => setBodyMapOpen((o) => !o)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="body-outline" size={16} color={Colors.primary} />
+              <Text style={styles.bodyMapToggleText}>
+                {bodyMapOpen ? 'Hide body map' : 'Or pick on a body map'}
+              </Text>
+              <Ionicons name={bodyMapOpen ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.primary} />
+            </TouchableOpacity>
+            {bodyMapOpen && (
+              <BodyMapPicker
+                selectedInjuryTypeId={selectedInjury?.injuryTypeID}
+                onSelect={(id) => {
+                  const match = injuryTypes.find((i) => i.injuryTypeID === id);
+                  if (match) setSelectedInjury(match);
+                }}
+              />
+            )}
           </Card>
 
           {/* After which workout (optional) */}
@@ -613,6 +637,15 @@ const makeStyles = (Colors) => StyleSheet.create({
   typeCardSelected: { borderColor: Colors.primary, backgroundColor: Colors.cardBackgroundLight },
   typeCardLabel: { color: Colors.textSecondary, fontSize: 10, fontWeight: '700', textAlign: 'center' },
   typeCardLabelSelected: { color: Colors.textPrimary },
+  bodyMapToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: Spacing.md,
+    paddingVertical: 8,
+  },
+  bodyMapToggleText: { color: Colors.primary, fontSize: 13, fontWeight: '800' },
 
   // After-which-workout picker
   pickerField: {

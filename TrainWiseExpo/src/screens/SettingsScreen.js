@@ -42,9 +42,26 @@ import {
 } from '../utils/biometric';
 import { changePassword as changePasswordApi } from '../services/api';
 import { sendWeeklyRecapNow } from '../api/NotificationService';
+import { exportWorkoutHistory } from '../utils/exportHistory';
 
 const SettingsScreen = ({navigation}) => {
   const { userId, updateUser: updateAuthUser, logout } = useAuth();
+  const [exporting, setExporting] = useState(false); // #123
+
+  // #123 — build a CSV of the user's workouts and open the share sheet.
+  const handleExportHistory = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const count = await exportWorkoutHistory(userId);
+      // The share sheet opens on success; a tiny confirmation for clarity.
+      console.log(`Exported ${count} workouts`);
+    } catch (e) {
+      Alert.alert('Export failed', e?.message || 'Could not export your history.');
+    } finally {
+      setExporting(false);
+    }
+  };
   const { theme, setTheme, accent, setAccent, autoTheme, updateAutoTheme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [loading, setLoading] = useState(true);
@@ -725,6 +742,26 @@ const SettingsScreen = ({navigation}) => {
           <Text style={styles.resetOnboardingText}>🔄 Reset Tutorial</Text>
         </TouchableOpacity>
 
+        {/* #123 — export your workout history to a CSV you can share/backup. */}
+        <Card>
+          <Text style={styles.cardTitle}>Your data</Text>
+          <TouchableOpacity
+            style={styles.actionRow}
+            onPress={handleExportHistory}
+            disabled={exporting}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.actionText}>
+              {exporting ? 'Preparing export…' : 'Export workout history (CSV)'}
+            </Text>
+            {exporting ? (
+              <ActivityIndicator color={Colors.primary} size="small" />
+            ) : (
+              <Text style={styles.linkArrow}>{'>'}</Text>
+            )}
+          </TouchableOpacity>
+        </Card>
+
         {/* Danger zone — separated visually so a stray tap on Save Changes
             can never land on the destructive action. Confirmation lives
             inside startDeleteFlow → modal, see top of file. */}
@@ -811,11 +848,6 @@ const SettingsScreen = ({navigation}) => {
           onPress={handleSave}
           loading={saving}
         />
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => navigation.navigate('Warnings')}>
-          <Text style={styles.secondaryButtonText}>Home Page</Text>
-        </TouchableOpacity>
       </View>
     </View>
   );

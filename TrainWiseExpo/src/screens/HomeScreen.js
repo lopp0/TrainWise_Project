@@ -10,6 +10,7 @@ import {
   Dimensions,
   Image,
   LayoutAnimation,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -31,6 +32,10 @@ import HomeHeader from '../components/HomeHeader';
 import WeeklySummaryCard from '../components/WeeklySummaryCard';
 import SmartSuggestionCard from '../components/SmartSuggestionCard';
 import TodayPlanCard from '../components/TodayPlanCard';
+import CalorieRing from '../components/CalorieRing';
+import GoalCard from '../components/GoalCard';
+import ReadinessCard from '../components/ReadinessCard';
+import QuestsCard from '../components/QuestsCard';
 import ConfettiOverlay from '../components/ConfettiOverlay';
 import { checkMilestones, totalsFromLogs } from '../utils/milestones';
 import ActivityIcon from '../components/ActivityIcon';
@@ -55,6 +60,13 @@ import {
   getDashboardLayout,
   setDashboardLayout,
 } from '../utils/dashboardLayout';
+import {
+  DEFAULT_CALORIE_GOAL,
+  getStoredCalorieGoal,
+  setCalorieGoal,
+} from '../utils/calorieLog';
+import { computeTDEE, estimateWorkoutCalories } from '../utils/calories';
+import { getNutritionDay, addNutritionEntry } from '../services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -238,6 +250,7 @@ const HomeScreen = ({ navigation }) => {
   useScrollToTop(scrollRef);
   const [backendLogs, setBackendLogs] = useState([]);
   const [hcWorkouts, setHcWorkouts] = useState([]);
+  const [dayDrill, setDayDrill] = useState(null); // #9 — { label, workouts } for the tapped bar
   const [loading, setLoading] = useState(true);
   const [unreadWarnings, setUnreadWarnings] = useState(0);
   const [acRatio, setAcRatio] = useState(0);
@@ -263,6 +276,14 @@ const HomeScreen = ({ navigation }) => {
   // optional widgets, plus an edit mode toggled from the "Customize" button.
   const [dashLayout, setDashLayout] = useState(DEFAULT_DASHBOARD_LAYOUT);
   const [editingDash, setEditingDash] = useState(false);
+
+  // #167 — daily calorie-balance ring. Goal + today's food intake are stored
+  // locally (per account, per day); calories burned come from today's confirmed
+  // workout logs.
+  const [storedCalGoal, setStoredCalGoal] = useState(null); // #2d manual override (null = use TDEE)
+  const [calIntake, setCalIntake] = useState(0);
+  const [waterMl, setWaterMl] = useState(0); // #2b hydration (server nutrition day)
+  const WATER_GOAL_ML = 2500;
 
   // #173 — milestone celebration (confetti + toast) when a cumulative total
   // first crosses a threshold.
@@ -394,6 +415,23 @@ const HomeScreen = ({ navigation }) => {
       setCoachPlanBadge(0);
     }
 
+    // #167/#132/#2b — load today's calorie + water totals from the SERVER
+    // nutrition log (single source of truth, unifies the two features), plus any
+    // manual calorie-goal override. Reloaded every focus so a new day resets.
+    try {
+      const [override, day] = await Promise.all([
+        getStoredCalorieGoal(userId),
+        getNutritionDay(userId).catch(() => null),
+      ]);
+      setStoredCalGoal(override);
+      if (day?.data?.totals) {
+        setCalIntake(day.data.totals.calories || 0);
+        setWaterMl(day.data.totals.waterMl || 0);
+      }
+    } catch {
+      // offline — leave the defaults
+    }
+
     // Re-schedule the daily reminder with fresh load-aware copy. The
     // function suppresses the push entirely when injury risk is high, so
     // we pass both the ratio and the derived level. Threshold mirrors
@@ -465,6 +503,55 @@ const HomeScreen = ({ navigation }) => {
 
   const weeklyData = buildWeeklyData(backendLogs, hcWorkouts);
   const maxLoad = Math.max(...weeklyData.map((d) => d.load), 100);
+
+  // #2c — calories burned in TODAY's confirmed workouts. Health-Connect imports
+  // carry real kcal; manual logs store 0, so we ESTIMATE those from duration +
+  // exertion + the user's weight (MET-based) instead of counting them as 0.
+  const todayStr = new Date().toDateString();
+  const burnedToday = (backendLogs || []).reduce((sum, log) => {
+    if ((log.isConfirmed ?? log.IsConfirmed) === false) return sum;
+    const key = new Date(log.startTime || log.StartTime).toDateString();
+    if (key !== todayStr) return sum;
+    const measured = Number(log.caloriesBurned ?? log.CaloriesBurned) || 0;
+    const kcal = measured > 0 ? measured : estimateWorkoutCalories({
+      durationMin: log.duration ?? log.Duration,
+      exertion: log.exertionLevel ?? log.ExertionLevel,
+      weightKg: user?.weight,
+    });
+    return sum + kcal;
+  }, 0);
+
+  // #2d — the Base budget is the user's BMR-derived TDEE (adapts to profile), or
+  // their manual override when set, or the flat default as a last resort.
+  const tdee = computeTDEE(user);
+  const calGoal = storedCalGoal ?? tdee ?? DEFAULT_CALORIE_GOAL;
+
+  // #2b — food + water now write to the shared server nutrition log, then refresh
+  // both totals so the ring + hydration bar stay consistent with the detail screen.
+  const refreshNutrition = async () => {
+    try {
+      const day = await getNutritionDay(userId);
+      setCalIntake(day.data?.totals?.calories || 0);
+      setWaterMl(day.data?.totals?.waterMl || 0);
+    } catch {}
+  };
+  const addCalories = async (kcal) => {
+    try {
+      await addNutritionEntry(userId, { kind: 'food', name: 'Quick add', calories: kcal });
+      await refreshNutrition();
+    } catch {}
+  };
+  const addWater = async (ml) => {
+    try {
+      await addNutritionEntry(userId, { kind: 'water', waterMl: ml });
+      await refreshNutrition();
+    } catch {}
+  };
+  const resetCalories = () => { refreshNutrition(); };
+  const changeCalGoal = async (g) => {
+    const next = await setCalorieGoal(userId, g);
+    setStoredCalGoal(next);
+  };
   const recommendation = acRatio > 0 ? buildRestRecommendation({ acRatio }) : null;
   const equippedTitleItem = equippedTitleId ? findShopItem(equippedTitleId) : null;
   const equippedChartTheme = equippedChartThemeId
@@ -475,8 +562,49 @@ const HomeScreen = ({ navigation }) => {
   const injuryNameById = (id) =>
     injuryTypes.find((i) => i.injuryTypeID === id)?.injuryName || `Injury #${id}`;
 
-  const handleBarPress = (dayIndex) => {
-    navigation.navigate('Stats', { selectedDayIndex: dayIndex });
+  // #9 — a day's bar sums every workout on that day. Tapping it drills down to
+  // the INDIVIDUAL workouts of that day (instead of collapsing them into one),
+  // each tappable through to its full summary.
+  const handleBarPress = (i) => {
+    const day = weeklyData[i];
+    if (!day?.date) return;
+    const dayStr = day.date.toDateString();
+    const nameById = {};
+    (activityTypes || []).forEach((t) => {
+      nameById[t.activityTypeID ?? t.ActivityTypeID] = t.typeName ?? t.TypeName;
+    });
+    const workouts = (backendLogs || [])
+      .filter((log) => (log.isConfirmed ?? log.IsConfirmed) !== false)
+      .filter((log) => new Date(log.startTime || log.StartTime).toDateString() === dayStr)
+      .map((log) => ({
+        id: log.activityID ?? log.ActivityID,
+        name: nameById[log.activityTypeID ?? log.ActivityTypeID] || 'Workout',
+        duration: log.duration ?? log.Duration ?? 0,
+        exertion: log.exertionLevel ?? log.ExertionLevel ?? 0,
+        load: Number(log.calculatedLoadForSession ?? log.CalculatedLoadForSession ?? 0),
+        start: log.startTime || log.StartTime,
+      }))
+      .sort((a, b) => new Date(a.start) - new Date(b.start));
+
+    if (workouts.length === 0) return;
+    const label = day.date.toLocaleDateString('en-US', {
+      weekday: 'long', day: 'numeric', month: 'short',
+    });
+    setDayDrill({ label, workouts });
+  };
+
+  const openWorkoutFromDrill = (w) => {
+    setDayDrill(null);
+    navigation.navigate('WorkoutSummary', {
+      logId: w.id,
+      summary: {
+        activityName: w.name,
+        duration: w.duration,
+        exertion: w.exertion,
+        sessionLoad: w.load,
+        activityId: w.id,
+      },
+    });
   };
 
   const toggleSection = (setter) => {
@@ -546,6 +674,32 @@ const HomeScreen = ({ navigation }) => {
             experienceLevel={user?.experienceLevel}
           />
         ) : null;
+      case 'calories':
+        return (
+          <CalorieRing
+            goal={calGoal}
+            intake={calIntake}
+            burned={burnedToday}
+            water={waterMl}
+            waterGoal={WATER_GOAL_ML}
+            onAdd={addCalories}
+            onAddWater={addWater}
+            onReset={resetCalories}
+            onSetGoal={changeCalGoal}
+            onOpenDetail={() => navigation.navigate('Nutrition')}
+          />
+        );
+      case 'recovery':
+        return <ReadinessCard acRatio={acRatio} />;
+      case 'goal':
+        return <GoalCard userId={userId} logs={backendLogs} />;
+      case 'quests':
+        return (
+          <QuestsCard
+            logs={backendLogs}
+            onClaimed={(balance) => setCheckInState((s) => ({ ...s, coins: balance }))}
+          />
+        );
       default:
         return null;
     }
@@ -594,16 +748,9 @@ const HomeScreen = ({ navigation }) => {
           ) : null}
         </View>
 
-        {/* ── Quick actions: interval timer (#120) + achievements (#147) ── */}
+        {/* ── Quick action: achievements (#147). The interval/rest timer (#120)
+            was moved to the Live Workout tab where it's contextually useful. ── */}
         <View style={styles.quickRow}>
-          <TouchableOpacity
-            style={styles.quickBtn}
-            activeOpacity={0.85}
-            onPress={() => navigation.navigate('Timer')}
-          >
-            <Ionicons name="timer-outline" size={16} color={Colors.primary} />
-            <Text style={styles.quickBtnText}>Rest timer</Text>
-          </TouchableOpacity>
           <TouchableOpacity
             style={styles.quickBtn}
             activeOpacity={0.85}
@@ -611,6 +758,14 @@ const HomeScreen = ({ navigation }) => {
           >
             <Ionicons name="medal-outline" size={16} color={Colors.primary} />
             <Text style={styles.quickBtnText}>Achievements</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickBtn}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('ExerciseLibrary')}
+          >
+            <Ionicons name="library-outline" size={16} color={Colors.primary} />
+            <Text style={styles.quickBtnText}>Exercises</Text>
           </TouchableOpacity>
         </View>
 
@@ -919,6 +1074,49 @@ const HomeScreen = ({ navigation }) => {
           </View>
         </>
       )}
+
+      {/* #9 — day drill-down: the individual workouts behind a day's bar */}
+      <Modal
+        visible={!!dayDrill}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDayDrill(null)}
+      >
+        <TouchableOpacity
+          style={styles.drillBackdrop}
+          activeOpacity={1}
+          onPress={() => setDayDrill(null)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.drillSheet} onPress={() => {}}>
+            <Text style={styles.drillTitle}>{dayDrill?.label}</Text>
+            <Text style={styles.drillSub}>
+              {dayDrill?.workouts?.length}{' '}
+              {dayDrill?.workouts?.length === 1 ? 'workout' : 'workouts'} ·{' '}
+              {dayDrill?.workouts?.reduce((s, w) => s + w.load, 0)} load
+            </Text>
+            {dayDrill?.workouts?.map((w, idx) => (
+              <TouchableOpacity
+                key={w.id ?? idx}
+                style={styles.drillRow}
+                activeOpacity={0.8}
+                onPress={() => openWorkoutFromDrill(w)}
+              >
+                <View style={styles.drillDot}>
+                  <Ionicons name="barbell" size={16} color={Colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.drillName}>{w.name}</Text>
+                  <Text style={styles.drillMeta}>
+                    {w.duration} min · exertion {w.exertion}/10
+                  </Text>
+                </View>
+                <Text style={styles.drillLoad}>{w.load}</Text>
+                <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+              </TouchableOpacity>
+            ))}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -1184,6 +1382,39 @@ const makeStyles = (C) => StyleSheet.create({
     fontWeight: '700',
   },
   // #173 milestone toast
+  // #9 day drill-down
+  drillBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  drillSheet: {
+    backgroundColor: C.cardBackground,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 18,
+  },
+  drillTitle: { color: C.textPrimary, fontSize: 18, fontWeight: '900' },
+  drillSub: { color: C.textSecondary, fontSize: 13, marginTop: 2, marginBottom: 12 },
+  drillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+  },
+  drillDot: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: C.cardBackgroundLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  drillName: { color: C.textPrimary, fontSize: 15, fontWeight: '800' },
+  drillMeta: { color: C.textMuted, fontSize: 12, marginTop: 1 },
+  drillLoad: { color: C.primary, fontSize: 15, fontWeight: '900' },
+
   milestoneToast: {
     position: 'absolute',
     top: '42%',

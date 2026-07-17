@@ -78,6 +78,8 @@ my-app/
 # Profile / chat images saved by the API at runtime. Keep the folder, drop files.
 TrainWise/TrainWise/wwwroot/images/*
 !TrainWise/TrainWise/wwwroot/images/.gitkeep
+TrainWise/TrainWise/wwwroot/media/*
+!TrainWise/TrainWise/wwwroot/media/.gitkeep
 
 # =================== Azure publish profiles (personal deploy config) ===================
 TrainWise/TrainWise/Properties/PublishProfiles/

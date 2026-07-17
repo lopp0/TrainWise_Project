@@ -41,6 +41,9 @@ import LeaderboardScreen from '../screens/LeaderboardScreen';
 import TrainingCalendarScreen from '../screens/TrainingCalendarScreen';
 import TimerScreen from '../screens/TimerScreen';
 import AchievementsScreen from '../screens/AchievementsScreen';
+import NutritionScreen from '../screens/NutritionScreen';
+import SharedWorkoutScreen from '../screens/SharedWorkoutScreen';
+import ExerciseLibraryScreen from '../screens/ExerciseLibraryScreen';
 
 
 
@@ -93,6 +96,9 @@ const HomeStack = () => {
       <Stack.Screen name="TrainingCalendar" component={TrainingCalendarScreen} />
       <Stack.Screen name="Timer" component={TimerScreen} />
       <Stack.Screen name="Achievements" component={AchievementsScreen} />
+      <Stack.Screen name="ExerciseLibrary" component={ExerciseLibraryScreen} />
+      <Stack.Screen name="Nutrition" component={NutritionScreen} />
+      <Stack.Screen name="SharedWorkout" component={SharedWorkoutScreen} />
     </Stack.Navigator>
   );
 };

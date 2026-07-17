@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image,
-  ActivityIndicator, Alert,
+  ActivityIndicator, Alert, Share,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,25 +10,74 @@ import { useThemedStyles } from '../theme/useThemedStyles';
 import ScreenHeader from '../components/ScreenHeader';
 import Card from '../components/Card';
 import PrimaryButton from '../components/PrimaryButton';
+import HeartRateZones from '../components/HeartRateZones';
+import { ageFromBirthYear, maxHrForAge } from '../utils/hrZones';
 import { useAuth } from '../api/AuthContext';
 import {
   getWorkoutNotes, setWorkoutNotes, uploadChatImage,
-  getKudos, toggleKudos, resolveProfileImageUrl,
+  getKudos, toggleKudos, resolveProfileImageUrl, getActivityLogsByUser,
+  shareWorkout,
 } from '../services/api';
 
 const WorkoutSummaryScreen = ({navigation, route}) => {
   const styles = useThemedStyles(makeStyles);
-  const { userId } = useAuth();
+  const { userId, user } = useAuth();
   // #124/#171 need the workout's log id; callers pass it as route.params.logId
   // (falls back to summary.activityId). When absent, those cards stay hidden.
   const logId = route?.params?.logId ?? route?.params?.summary?.activityId ?? null;
   const ownerId = route?.params?.ownerId ?? null;
   const isOwnWorkout = ownerId == null || ownerId === userId;
 
+  const [sharing, setSharing] = useState(false); // #181
+
+  // #181 — mark the workout shareable, then open the OS share sheet with the
+  // deep link (trainwiseexpo://workout/{id}).
+  const handleShare = async () => {
+    if (!logId || sharing) return;
+    setSharing(true);
+    try {
+      await shareWorkout(logId, true);
+      const url = `trainwiseexpo://workout/${logId}`;
+      await Share.share({
+        message: `Check out my ${summary.activityName || 'workout'} on TrainWise 💪 ${url}`,
+        url,
+      });
+    } catch (e) {
+      Alert.alert('Could not share', e?.response?.data || e?.message || 'Try again.');
+    } finally {
+      setSharing(false);
+    }
+  };
+
   const [notes, setNotes] = useState('');
   const [photoPath, setPhotoPath] = useState(null);
   const [savingNotes, setSavingNotes] = useState(false);
   const [kudos, setKudos] = useState({ count: 0, kudoed: false });
+  const [avgHr, setAvgHr] = useState(null); // #122
+
+  // #122 — average heart rate for the zone indicator. Prefer HR already on the
+  // summary; otherwise look it up from the log by id (best-effort).
+  useEffect(() => {
+    const s = route?.params?.summary || {};
+    const sAvg = s.avgHeartRate ?? s.avgHr ?? null;
+    if (sAvg) { setAvgHr(Number(sAvg)); return; }
+    if (!logId || !userId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await getActivityLogsByUser(userId);
+        const rows = Array.isArray(res.data) ? res.data : [];
+        const match = rows.find((l) => (l.activityID ?? l.ActivityID) === logId);
+        const hr = match ? (match.avgHeartRate ?? match.AvgHeartRate ?? null) : null;
+        if (alive && hr) setAvgHr(Number(hr));
+      } catch {
+        // best-effort — the HR card just stays hidden
+      }
+    })();
+    return () => { alive = false; };
+  }, [logId, userId, route?.params?.summary]);
+
+  const maxHr = maxHrForAge(ageFromBirthYear(user?.birthYear ?? user?.BirthYear));
 
   const loadExtras = useCallback(async () => {
     if (!logId) return;
@@ -168,11 +217,37 @@ const WorkoutSummaryScreen = ({navigation, route}) => {
           </View>
         </Card>
 
+        {/* #122 — heart-rate zone (average effort from HR + age) */}
+        {avgHr && maxHr ? (
+          <View style={{ marginHorizontal: Spacing.lg }}>
+            <HeartRateZones avgBpm={avgHr} maxHr={maxHr} />
+          </View>
+        ) : null}
+
         {/* Recommendation */}
         <Card>
           <Text style={styles.cardTitle}>Recommendation</Text>
           <Text style={styles.recommendationText}>{summary.recommendation}</Text>
         </Card>
+
+        {/* #181 — share this workout via a deep link */}
+        {logId && isOwnWorkout && (
+          <TouchableOpacity
+            style={styles.shareBtn}
+            onPress={handleShare}
+            disabled={sharing}
+            activeOpacity={0.85}
+          >
+            {sharing ? (
+              <ActivityIndicator color={Colors.primary} />
+            ) : (
+              <>
+                <Ionicons name="share-social-outline" size={18} color={Colors.primary} />
+                <Text style={styles.shareBtnText}>Share this workout</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
 
         {/* #171 — kudos / cheers */}
         {logId && (
@@ -342,6 +417,20 @@ const makeStyles = (Colors) => StyleSheet.create({
     fontSize: Fonts.bodySize,
     lineHeight: 22,
   },
+  // #181 share
+  shareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.xs,
+    paddingVertical: 13,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+  },
+  shareBtnText: { color: Colors.primary, fontSize: Fonts.bodySize, fontWeight: '800' },
   // #171 kudos
   kudosRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   kudosCount: { color: Colors.textPrimary, fontSize: Fonts.bodySize, fontWeight: Fonts.bold },

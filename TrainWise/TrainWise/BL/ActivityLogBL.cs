@@ -66,6 +66,19 @@ namespace TrainWise.BL
             return _dal.GetByUser(userId);
         }
 
+        // #181 — mark a workout shareable / fetch its public projection.
+        public void SetShared(int activityId, bool shared)
+        {
+            if (activityId <= 0) throw new ArgumentException("ActivityID > 0");
+            _dal.SetShared(activityId, shared);
+        }
+
+        public PublicWorkout? GetPublicShared(int activityId)
+        {
+            if (activityId <= 0) return null;
+            return _dal.GetPublicShared(activityId);
+        }
+
         // #124 — per-workout note + photo.
         public void SetNotesAndPhoto(int activityId, string? notes, string? photoPath)
         {

@@ -8,7 +8,7 @@ namespace TrainWise.BL
         private readonly DailyLoadDAL _loadDal = new DailyLoadDAL();
         private readonly UserDAL _userDal = new UserDAL();
 
-        public DailyLoad CalculateAndSave(int userId, DateTime date)
+        public DailyLoad CalculateAndSave(int userId, DateTime date, int tzOffsetMinutes = 0)
         {
             if (userId <= 0)
                 throw new ArgumentException("UserID must be positive");
@@ -19,37 +19,23 @@ namespace TrainWise.BL
             if (_userDal.GetUserById(userId) == null)
                 throw new ArgumentException("User does not exist");
 
-            // Step 1 — fetch last 28 days of confirmed session loads from SQL
+            // Step 1 — fetch last 28 days of session loads from SQL
             var sessions = _loadDal.GetActivityLogsForLoad(userId, date);
 
             // Step 2 — fetch user context: baseline values, thresholds, HasActiveInjury
             var context = _loadDal.GetUserLoadContext(userId);
 
-            // Step 3 — compute AcuteLoad (last 7 days, sum) and ChronicLoad
-            //   (28-day rolling weekly average = 28-day sum / 4). The ACWR
-            //   thresholds in LoadParameters assume weekly-equivalent units
-            //   on both sides; without the /4, ratio can never exceed 1.0
-            //   and the status is permanently "Green".
+            // Step 3 — bucket per calendar day (unconfirmed HC imports excluded,
+            // times shifted to the caller's timezone) and compute AcuteLoad
+            // (last 7 days, sum) and effective ChronicLoad (28-day weekly
+            // average with cold-start floor + partial-history ramp — see
+            // EffectiveChronic). The ACWR thresholds in LoadParameters assume
+            // weekly-equivalent units on both sides.
+            var loadByDay = BucketByLocalDay(sessions, tzOffsetMinutes);
 
-            double acuteLoad = sessions
-                .Where(s => s.StartTime.Date >= date.Date.AddDays(-6))
-                .Sum(s => s.CalculatedLoadForSession);
-
-            double chronic28Sum = sessions
-                .Sum(s => s.CalculatedLoadForSession);
-            double chronicLoad = chronic28Sum / 4.0;
-
-            // Cold-start guard: a brand-new user's only workout falls in BOTH the
-            // 7-day acute window AND the 28-day chronic window, so chronicLoad =
-            // acuteLoad/4 and the ratio is a fixed 4.0 — flagging every first
-            // session as a huge overload (Red) regardless of size. Until a real
-            // baseline is established, judge against the experience-based expected
-            // weekly load instead of the near-empty history.
-            if (!context.IsBaselineEstablished)
-            {
-                double bootstrap = GetBootstrapAcuteLoad(context.ExperienceLevel, context.Parameters);
-                chronicLoad = Math.Max(chronicLoad, bootstrap);
-            }
+            double acuteLoad = SumRange(loadByDay, date.Date.AddDays(-6), date.Date);
+            double bootstrap = GetBootstrapAcuteLoad(context.ExperienceLevel, context.Parameters);
+            double chronicLoad = EffectiveChronic(loadByDay, date.Date, bootstrap);
 
             // Step 4 — compute AC Ratio
             double? acRatio = chronicLoad > 0 ? acuteLoad / chronicLoad : (double?)null;
@@ -76,10 +62,8 @@ namespace TrainWise.BL
             dailyLoad.LoadID = _loadDal.SaveDailyLoad(dailyLoad);
 
             // Step 9 — check if baseline should be established
-            if (!context.IsBaselineEstablished && sessions
-                .Select(s => s.StartTime.Date)
-                .Distinct()
-                .Count() >= 7)
+            if (!context.IsBaselineEstablished &&
+                CountActiveDays(loadByDay, date.Date.AddDays(-27), date.Date) >= 7)
             {
                 short newDailyBaseline = (short)Math.Round(acuteLoad / 7);
                 short newWeeklyBaseline = (short)Math.Round(acuteLoad);
@@ -126,8 +110,11 @@ namespace TrainWise.BL
 
             if (hasActiveInjury)
             {
+                // Yellow runs up to (not including) the tighter 1.2 Red line —
+                // a gap here would make injured users read GREEN at e.g. 1.15
+                // where a healthy user reads Yellow (fixed 2026-07-06).
                 if (ratio >= 1.2) return "Red";
-                if (ratio >= 0.8 && ratio <= 1.1) return "Yellow";
+                if (ratio >= 0.8) return "Yellow";
                 return "Green";
             }
 
@@ -146,6 +133,81 @@ namespace TrainWise.BL
 
                 _ => p.BeginnerAcuteLoad
             };
+        }
+
+        // ---- Shared window math (used by LoadAnalyticsBL + unit tests) ------
+        // These statics are the single source of truth for the load windows;
+        // ml/features.py and the JS mirrors (utils/acwr.js, utils/loadSeries.js,
+        // WarningsDashboardScreen) must stay in lockstep with them.
+
+        // Buckets confirmed session loads per calendar day in the CALLER'S
+        // timezone. StartTime is stored as a UTC instant; without the shift a
+        // 00:30 Israel workout lands on the previous UTC day. Bucketing also
+        // makes the window sums immune to the SP's inclusive end boundary
+        // (a session at exactly next-day midnight buckets to the next day).
+        internal static Dictionary<DateTime, double> BucketByLocalDay(
+            IEnumerable<ActivityLog> sessions, int tzOffsetMinutes)
+        {
+            tzOffsetMinutes = Math.Clamp(tzOffsetMinutes, -14 * 60, 14 * 60);
+            var loadByDay = new Dictionary<DateTime, double>();
+            foreach (var s in sessions)
+            {
+                if (!s.IsConfirmed) continue; // pending HC imports aren't real yet
+                var d = s.StartTime.AddMinutes(tzOffsetMinutes).Date;
+                loadByDay[d] = loadByDay.GetValueOrDefault(d) + s.CalculatedLoadForSession;
+            }
+            return loadByDay;
+        }
+
+        internal static double SumRange(
+            Dictionary<DateTime, double> loadByDay, DateTime start, DateTime end)
+        {
+            double sum = 0;
+            for (DateTime d = start; d <= end; d = d.AddDays(1))
+                sum += loadByDay.GetValueOrDefault(d);
+            return sum;
+        }
+
+        internal static int CountActiveDays(
+            Dictionary<DateTime, double> loadByDay, DateTime start, DateTime end)
+        {
+            int n = 0;
+            for (DateTime d = start; d <= end; d = d.AddDays(1))
+                if (loadByDay.GetValueOrDefault(d) > 0) n++;
+            return n;
+        }
+
+        // Effective chronic load (weekly-equivalent) for the 28-day window
+        // ending on `day`, in two regimes:
+        //
+        //   < 7 active days (cold start / long layoff): judge against the
+        //     experience-based expected weekly load — max(sum/4, bootstrap).
+        //     A brand-new user's oversized first session still reads Red, and
+        //     a returning athlete's easy comeback session isn't a false Red.
+        //
+        //   >= 7 active days: RAMP the divisor to the days actually covered:
+        //     chronic = sum / min(4, covered/7), covered = days from the first
+        //     loaded day in the window through `day`. The fixed /4 assumed a
+        //     full 28-day history and flagged a perfectly steady 2-week-old
+        //     user at ratio 2.0 (false Red); the ramp makes steady training
+        //     read ~1.0 from day 7 onward. Full 28-day histories are unchanged
+        //     (covered = 28 → divisor 4).
+        internal static double EffectiveChronic(
+            Dictionary<DateTime, double> loadByDay, DateTime day, double bootstrapWeekly)
+        {
+            DateTime windowStart = day.AddDays(-27);
+            double sum28 = SumRange(loadByDay, windowStart, day);
+
+            if (CountActiveDays(loadByDay, windowStart, day) < 7)
+                return Math.Max(sum28 / 4.0, bootstrapWeekly);
+
+            DateTime firstActive = windowStart;
+            for (DateTime d = windowStart; d <= day; d = d.AddDays(1))
+            {
+                if (loadByDay.GetValueOrDefault(d) > 0) { firstActive = d; break; }
+            }
+            double covered = (day - firstActive).TotalDays + 1; // 7..28
+            return sum28 / Math.Min(4.0, covered / 7.0);
         }
     }
 }

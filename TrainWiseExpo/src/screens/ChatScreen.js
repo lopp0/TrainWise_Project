@@ -16,6 +16,15 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import ZoomableImage from '../components/ZoomableImage';
+import VideoPlayerModal from '../components/VideoPlayerModal';
+import {
+  useAudioRecorder,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  createAudioPlayer,
+} from 'expo-audio';
 import {
   getConversation,
   sendMessage,
@@ -23,6 +32,8 @@ import {
   resolveProfileImageUrl,
   getUserById,
   uploadChatImage,
+  uploadChatAudio,
+  uploadChatVideo,
   setTyping,
   getTyping,
   reactToMessage,
@@ -44,6 +55,8 @@ const mText = (m) => m.text ?? m.Text ?? '';
 const mSentAt = (m) => m.sentAt ?? m.SentAt;
 const mSeen = (m) => m.isSeen ?? m.IsSeen ?? false;
 const mImage = (m) => m.imagePath ?? m.ImagePath ?? null;
+const mAudio = (m) => m.audioPath ?? m.AudioPath ?? null; // #139
+const mVideo = (m) => m.videoPath ?? m.VideoPath ?? null; // #135
 
 // Server stores SentAt in UTC but serializes it without a 'Z' designator, so
 // new Date() would read it as local. Append 'Z' when no zone is present, then
@@ -87,9 +100,15 @@ const ChatScreen = ({ route, navigation }) => {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [viewerUri, setViewerUri] = useState(null); // full-screen image viewer
+  const [videoUri, setVideoUri] = useState(null); // #3 in-app video player
   const [peerTyping, setPeerTyping] = useState(false); // #138
   const [reactions, setReactions] = useState({}); // #140 — messageId -> [emoji]
   const [reactTarget, setReactTarget] = useState(null); // #140 — message being reacted to
+  const [recording, setRecording] = useState(false); // #139 — voice-record in progress
+  const [playingId, setPlayingId] = useState(null); // #139 — voice message currently playing
+  const [playProgress, setPlayProgress] = useState(0); // #139 — 0..1 position of the playing clip
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY); // #139
+  const playerRef = useRef(null); // #139 — active playback player
   // Peer avatar: prefer the path passed via params, otherwise resolve it from
   // the user record (coach-side trainee summaries don't carry the image path).
   const [peerImg, setPeerImg] = useState(peerImagePath || null);
@@ -204,6 +223,11 @@ const ChatScreen = ({ route, navigation }) => {
   useEffect(() => () => {
     mountedRef.current = false;
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    // #139 — release any active playback / recording resources on unmount.
+    if (playerRef.current) {
+      try { playerRef.current.remove(); } catch {}
+      playerRef.current = null;
+    }
   }, []);
 
   // #138 — ping "typing" (throttled) on input, and clear it after a pause.
@@ -303,11 +327,159 @@ const ChatScreen = ({ route, navigation }) => {
     }
   };
 
+  // #135 — attach a form-check video from the library, upload + send it.
+  const handlePickVideo = async () => {
+    if (sending || recording) return;
+    if (!selfId || !peerId) {
+      Alert.alert('Cannot send', 'This conversation is missing a participant.');
+      return;
+    }
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Allow media access to send a video.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        quality: 0.7,
+        videoMaxDuration: 60,
+      });
+      if (result.canceled || !result.assets?.length) return;
+
+      setSending(true);
+      const up = await uploadChatVideo(result.assets[0].uri);
+      const res = await sendMessage({ senderId: selfId, receiverId: peerId, videoPath: up.path });
+      const saved = res.data;
+      if (mountedRef.current && saved) {
+        setMessages((prev) => [...prev, saved]);
+        scrollToEnd(true);
+      }
+    } catch (e) {
+      if (mountedRef.current) Alert.alert('Video not sent', errText(e));
+    } finally {
+      if (mountedRef.current) setSending(false);
+    }
+  };
+
+  // #139 — voice recording. Tap the mic to start; tap send to stop+upload, or
+  // trash to discard.
+  const startRecording = async () => {
+    if (sending || recording) return;
+    try {
+      const perm = await requestRecordingPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Allow microphone access to record a voice message.');
+        return;
+      }
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+      if (mountedRef.current) setRecording(true);
+    } catch (e) {
+      Alert.alert('Cannot record', errText(e));
+    }
+  };
+
+  const finishRecording = async () => {
+    try {
+      await audioRecorder.stop();
+    } catch {}
+    await setAudioModeAsync({ allowsRecording: false }).catch(() => {});
+    return audioRecorder.uri;
+  };
+
+  const stopAndSendRecording = async () => {
+    if (!recording) return;
+    setRecording(false);
+    const uri = await finishRecording();
+    if (!uri) return;
+    try {
+      setSending(true);
+      const up = await uploadChatAudio(uri);
+      const res = await sendMessage({ senderId: selfId, receiverId: peerId, audioPath: up.path });
+      const saved = res.data;
+      if (mountedRef.current && saved) {
+        setMessages((prev) => [...prev, saved]);
+        scrollToEnd(true);
+      }
+    } catch (e) {
+      if (mountedRef.current) Alert.alert('Voice message not sent', errText(e));
+    } finally {
+      if (mountedRef.current) setSending(false);
+    }
+  };
+
+  const cancelRecording = async () => {
+    if (!recording) return;
+    setRecording(false);
+    await finishRecording();
+  };
+
+  // #139 — play / stop a voice bubble. One player at a time.
+  const stopPlayback = () => {
+    if (playerRef.current) {
+      try {
+        playerRef.current.remove();
+      } catch {}
+      playerRef.current = null;
+    }
+  };
+
+  const togglePlay = (id, url) => {
+    // Tapping the one already playing stops it.
+    if (playingId === id) {
+      stopPlayback();
+      setPlayingId(null);
+      setPlayProgress(0);
+      return;
+    }
+    stopPlayback();
+    setPlayProgress(0);
+    try {
+      const player = createAudioPlayer({ uri: url });
+      playerRef.current = player;
+      player.addListener('playbackStatusUpdate', (status) => {
+        if (!mountedRef.current) return;
+        // #139 — advance the progress dot in time with the audio (WhatsApp-style).
+        const dur = Number(status?.duration) || 0;
+        const cur = Number(status?.currentTime) || 0;
+        if (dur > 0) setPlayProgress(Math.max(0, Math.min(1, cur / dur)));
+        if (status?.didJustFinish) {
+          stopPlayback();
+          setPlayingId(null);
+          setPlayProgress(0);
+        }
+      });
+      player.play();
+      setPlayingId(id);
+    } catch {
+      setPlayingId(null);
+      setPlayProgress(0);
+    }
+  };
+
+  // #139 — deterministic pseudo-waveform heights per message so the bars are
+  // stable across re-renders (WhatsApp shows a fixed waveform per clip).
+  const waveHeights = (id) => {
+    const bars = [];
+    let seed = (Number(id) || 7) * 9301 + 49297;
+    for (let i = 0; i < 22; i++) {
+      seed = (seed * 9301 + 49297) % 233280;
+      bars.push(6 + (seed / 233280) * 16); // 6..22 px
+    }
+    return bars;
+  };
+
   const renderItem = ({ item }) => {
     const mine = mSender(item) === selfId;
     const text = mText(item);
     const img = mImage(item);
     const imgUrl = img ? resolveProfileImageUrl(img) : null;
+    const audio = mAudio(item);
+    const audioUrl = audio ? resolveProfileImageUrl(audio) : null;
+    const video = mVideo(item);
+    const videoUrl = video ? resolveProfileImageUrl(video) : null;
     const msgReactions = reactions[mId(item)] || [];
     return (
       <View style={[styles.bubbleRow, mine ? styles.rowMine : styles.rowTheirs]}>
@@ -319,12 +491,68 @@ const ChatScreen = ({ route, navigation }) => {
           style={[
             styles.bubble,
             mine ? styles.bubbleMine : styles.bubbleTheirs,
-            imgUrl && styles.bubbleWithImage,
+            (imgUrl || videoUrl) && styles.bubbleWithImage,
           ]}
         >
           {imgUrl && (
             <TouchableOpacity activeOpacity={0.9} onPress={() => setViewerUri(imgUrl)}>
               <Image source={{ uri: imgUrl }} style={styles.chatImage} resizeMode="cover" />
+            </TouchableOpacity>
+          )}
+          {/* #139 — voice message: WhatsApp-style waveform with a progress dot */}
+          {audioUrl && (() => {
+            const isPlaying = playingId === mId(item);
+            const bars = waveHeights(mId(item));
+            const progress = isPlaying ? playProgress : 0;
+            const playedColor = mine ? '#FFFFFF' : Colors.primary;
+            const unplayedColor = mine ? 'rgba(255,255,255,0.4)' : Colors.textMuted;
+            return (
+              <TouchableOpacity
+                style={styles.voiceRow}
+                activeOpacity={0.8}
+                onPress={() => togglePlay(mId(item), audioUrl)}
+              >
+                <Ionicons
+                  name={isPlaying ? 'pause-circle' : 'play-circle'}
+                  size={36}
+                  color={playedColor}
+                />
+                <View style={styles.voiceBars}>
+                  {bars.map((h, i) => {
+                    const barPos = i / bars.length;
+                    const played = barPos <= progress;
+                    return (
+                      <View
+                        key={i}
+                        style={[
+                          styles.voiceBar,
+                          { height: h, backgroundColor: played ? playedColor : unplayedColor },
+                        ]}
+                      />
+                    );
+                  })}
+                  {/* the moving progress dot */}
+                  <View
+                    style={[
+                      styles.voiceDot,
+                      { left: `${progress * 100}%`, backgroundColor: playedColor },
+                    ]}
+                  />
+                </View>
+              </TouchableOpacity>
+            );
+          })()}
+          {/* #135 — form-check video: thumbnail card opens the clip in the player */}
+          {videoUrl && (
+            <TouchableOpacity
+              style={styles.videoCard}
+              activeOpacity={0.9}
+              onPress={() => setVideoUri(videoUrl)}
+            >
+              <View style={styles.videoPlayBadge}>
+                <Ionicons name="play" size={26} color="#fff" />
+              </View>
+              <Text style={styles.videoLabel}>Form-check video · tap to play</Text>
             </TouchableOpacity>
           )}
           {!!text && (
@@ -419,38 +647,84 @@ const ChatScreen = ({ route, navigation }) => {
       )}
 
       {/* Composer */}
-      <View style={styles.composer}>
-        <TouchableOpacity
-          style={styles.imageBtn}
-          onPress={handlePickImage}
-          disabled={sending}
-          activeOpacity={0.7}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="image" size={26} color={Colors.primary} />
-        </TouchableOpacity>
-        <TextInput
-          style={styles.input}
-          placeholder="Message…"
-          placeholderTextColor={Colors.textMuted}
-          value={input}
-          onChangeText={onChangeInput}
-          multiline
-          maxLength={1000}
-        />
-        <TouchableOpacity
-          style={[styles.sendBtn, (!input.trim() || sending) && styles.sendBtnDisabled]}
-          onPress={handleSend}
-          disabled={!input.trim() || sending}
-          activeOpacity={0.85}
-        >
-          {sending ? (
-            <ActivityIndicator color={Colors.textPrimary} size="small" />
+      {recording ? (
+        // #139 — recording bar: discard (trash) or stop+send.
+        <View style={styles.composer}>
+          <TouchableOpacity style={styles.imageBtn} onPress={cancelRecording} activeOpacity={0.7}>
+            <Ionicons name="trash" size={24} color={Colors.danger || '#f44336'} />
+          </TouchableOpacity>
+          <View style={styles.recordingBar}>
+            <View style={styles.recDot} />
+            <Text style={styles.recText}>Recording voice message…</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
+            onPress={stopAndSendRecording}
+            disabled={sending}
+            activeOpacity={0.85}
+          >
+            {sending ? (
+              <ActivityIndicator color={Colors.textPrimary} size="small" />
+            ) : (
+              <Ionicons name="send" size={20} color={Colors.textPrimary} />
+            )}
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.composer}>
+          <TouchableOpacity
+            style={styles.imageBtn}
+            onPress={handlePickImage}
+            disabled={sending}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="image" size={26} color={Colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.imageBtn}
+            onPress={handlePickVideo}
+            disabled={sending}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="videocam" size={24} color={Colors.primary} />
+          </TouchableOpacity>
+          <TextInput
+            style={styles.input}
+            placeholder="Message…"
+            placeholderTextColor={Colors.textMuted}
+            value={input}
+            onChangeText={onChangeInput}
+            multiline
+            maxLength={1000}
+          />
+          {/* When there's no typed text, the mic replaces send (WhatsApp-style). */}
+          {input.trim() ? (
+            <TouchableOpacity
+              style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
+              onPress={handleSend}
+              disabled={sending}
+              activeOpacity={0.85}
+            >
+              {sending ? (
+                <ActivityIndicator color={Colors.textPrimary} size="small" />
+              ) : (
+                <Ionicons name="send" size={20} color={Colors.textPrimary} />
+              )}
+            </TouchableOpacity>
           ) : (
-            <Ionicons name="send" size={20} color={Colors.textPrimary} />
+            <TouchableOpacity
+              style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
+              onPress={startRecording}
+              disabled={sending}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="mic" size={22} color={Colors.textPrimary} />
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
-      </View>
+        </View>
+      )}
 
       {/* Full-screen image viewer */}
       <Modal
@@ -459,19 +733,20 @@ const ChatScreen = ({ route, navigation }) => {
         animationType="fade"
         onRequestClose={() => setViewerUri(null)}
       >
-        <TouchableOpacity
-          style={styles.viewerBackdrop}
-          activeOpacity={1}
-          onPress={() => setViewerUri(null)}
-        >
+        <View style={styles.viewerBackdrop}>
           {!!viewerUri && (
-            <Image source={{ uri: viewerUri }} style={styles.viewerImage} resizeMode="contain" />
+            <View style={styles.viewerImage}>
+              <ZoomableImage uri={viewerUri} />
+            </View>
           )}
           <TouchableOpacity style={styles.viewerClose} onPress={() => setViewerUri(null)}>
             <Ionicons name="close" size={28} color="#fff" />
           </TouchableOpacity>
-        </TouchableOpacity>
+        </View>
       </Modal>
+
+      {/* #3 — in-app video player (form-check clips) */}
+      {videoUri && <VideoPlayerModal uri={videoUri} onClose={() => setVideoUri(null)} />}
 
       {/* #140 — emoji reaction picker (long-press a bubble) */}
       <Modal
@@ -545,6 +820,55 @@ const makeStyles = (C) =>
     },
     bubbleWithImage: { padding: 4 },
     chatImage: { width: 220, height: 220, borderRadius: 12 },
+
+    // #139 voice bubble
+    voiceRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4, minWidth: 180 },
+    voiceBars: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 26, position: 'relative' },
+    voiceBar: { width: 3, borderRadius: 2 },
+    voiceDot: {
+      position: 'absolute',
+      top: '50%',
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      marginTop: -5,
+      marginLeft: -5,
+    },
+
+    // #135 form-check video card
+    videoCard: {
+      width: 220,
+      height: 130,
+      borderRadius: 12,
+      backgroundColor: '#000',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    videoPlayBadge: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      backgroundColor: 'rgba(255,255,255,0.25)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    videoLabel: { color: '#fff', fontSize: 11, marginTop: 8, opacity: 0.9 },
+
+    // #139 recording bar
+    recordingBar: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: C.inputBackground,
+      borderRadius: 22,
+      borderWidth: 1,
+      borderColor: C.inputBorder,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+    },
+    recDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#f44336' },
+    recText: { color: C.textSecondary, fontSize: 14 },
     msgText: { color: C.textPrimary, fontSize: 15, lineHeight: 20 },
     msgTextMine: { color: '#FFFFFF' },
     metaRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end', marginTop: 3 },

@@ -1,5 +1,7 @@
 import 'react-native-gesture-handler';
 import React, { useEffect } from 'react';
+import * as Linking from 'expo-linking';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider } from './src/api/AuthContext';
@@ -21,19 +23,35 @@ import {
 
 const ThemedRoot = () => {
   const { theme } = useTheme();
+
+  // #181 — handle incoming share deep links (trainwiseexpo://workout/{id}).
+  // Robust to custom-scheme host/path differences: just pull the numeric id.
+  useEffect(() => {
+    const handleUrl = (url) => {
+      if (!url) return;
+      const m = /workout\/(\d+)/.exec(url);
+      if (m) navigationRef.current?.navigate('SharedWorkout', { workoutId: Number(m[1]) });
+    };
+    Linking.getInitialURL().then(handleUrl).catch(() => {});
+    const sub = Linking.addEventListener('url', (e) => handleUrl(e.url));
+    return () => sub.remove();
+  }, []);
+
   return (
-    <SafeAreaProvider>
-      <AppAlertProvider>
-        <InAppBannerProvider>
-          <NavigationContainer ref={navigationRef}>
-            <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
-            <AppNavigator />
-            <WhatsNewModal />
-            <BiometricLockOverlay />
-          </NavigationContainer>
-        </InAppBannerProvider>
-      </AppAlertProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <AppAlertProvider>
+          <InAppBannerProvider>
+            <NavigationContainer ref={navigationRef}>
+              <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
+              <AppNavigator />
+              <WhatsNewModal />
+              <BiometricLockOverlay />
+            </NavigationContainer>
+          </InAppBannerProvider>
+        </AppAlertProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 };
 

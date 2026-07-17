@@ -9,5 +9,7 @@ namespace TrainWise.BL.Models
         public DateTime SentAt { get; set; }
         public bool IsSeen { get; set; }
         public string ImagePath { get; set; } // nullable — set for image messages
+        public string AudioPath { get; set; } // nullable — set for voice messages (#139)
+        public string VideoPath { get; set; } // nullable — set for form-check videos (#135)
     }
 }

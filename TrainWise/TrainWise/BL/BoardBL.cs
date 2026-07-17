@@ -79,5 +79,31 @@ namespace TrainWise.BL
             if (logId <= 0) throw new ArgumentException("Invalid log id");
             return _dal.GetKudos(logId, viewerId);
         }
+
+        // ── #143 comments ───────────────────────────────────────────────────
+        public BoardComment AddComment(int postId, int userId, int? parentCommentId, string text)
+        {
+            if (postId <= 0) throw new ArgumentException("Invalid post id");
+            if (userId <= 0) throw new ArgumentException("Invalid user id");
+            if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("Comment can't be empty");
+            text = text.Trim();
+            if (text.Length > 500) text = text.Substring(0, 500);
+            if (parentCommentId.HasValue && parentCommentId.Value <= 0) parentCommentId = null;
+            return _dal.AddComment(postId, userId, parentCommentId, text);
+        }
+
+        public List<BoardComment> GetComments(int postId)
+        {
+            if (postId <= 0) throw new ArgumentException("Invalid post id");
+            return _dal.GetComments(postId);
+        }
+
+        public int? GetCommentOwner(int commentId) => _dal.GetCommentOwner(commentId);
+
+        public void DeleteComment(int commentId)
+        {
+            if (commentId <= 0) throw new ArgumentException("Invalid comment id");
+            _dal.DeleteComment(commentId);
+        }
     }
 }

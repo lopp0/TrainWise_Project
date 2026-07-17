@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using TrainWise.BL;
 using TrainWise.BL.Models;
 
@@ -124,6 +125,38 @@ namespace TrainWise.Controllers
             catch (Exception ex) { return BadRequest(ex.Message); }
         }
 
+        // #181 — PUT /api/activitylog/{id}/share  body { shared? }  (owner only).
+        // Marks the workout shareable so the anonymous /public endpoint exposes it.
+        [HttpPut("{id:int}/share")]
+        public IActionResult SetShared(int id, [FromBody] ShareWorkoutRequest? request)
+        {
+            var owner = _bl.GetOwnerUserId(id);
+            if (owner == null) return NotFound("Workout not found");
+            if (!CallerMayAct(owner.Value)) return Forbid();
+            try
+            {
+                _bl.SetShared(id, request?.Shared ?? true);
+                return Ok(new { ok = true, shared = request?.Shared ?? true });
+            }
+            catch (Exception ex) { return BadRequest(ex.Message); }
+        }
+
+        // #181 — GET /api/activitylog/{id}/public  — anonymous read of a SHARED
+        // workout, non-sensitive fields ONLY. 404 when not shared / not found so
+        // an unshared id can't be probed. (Global 300/min/IP limiter applies.)
+        [AllowAnonymous]
+        [HttpGet("{id:int}/public")]
+        public IActionResult GetPublic(int id)
+        {
+            try
+            {
+                var w = _bl.GetPublicShared(id);
+                if (w == null) return NotFound("This workout is not shared.");
+                return Ok(w);
+            }
+            catch (Exception) { return StatusCode(500, "An unexpected error occurred."); }
+        }
+
         [HttpDelete("{id}")]
         public IActionResult SoftDelete(int id)
         {
@@ -146,6 +179,11 @@ namespace TrainWise.Controllers
     {
         public string? Notes { get; set; }
         public string? PhotoPath { get; set; }
+    }
+
+    public class ShareWorkoutRequest
+    {
+        public bool? Shared { get; set; }
     }
 
 }

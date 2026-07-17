@@ -129,9 +129,16 @@ export const deleteActivityLog = (activityId) =>
 export const getDailyLoadByUser = (userId) =>
   api.get(`/dailyload/user/${userId}`);
 
+// The device's UTC offset in minutes (Israel DST = 180). JS getTimezoneOffset
+// returns minutes BEHIND UTC, hence the sign flip. The backend uses it to
+// bucket session times to the user's LOCAL calendar day — without it a 00:30
+// workout counts on the previous day's load windows.
+export const deviceTzOffsetMinutes = () => -new Date().getTimezoneOffset();
+
 export const calculateDailyLoad = (userId, date = new Date()) =>
   api.post(`/dailyload/user/${userId}/calculate`, {
     date: date instanceof Date ? date.toISOString() : date,
+    tzOffsetMinutes: deviceTzOffsetMinutes(),
   });
 
 // Day-by-day trend series with BOTH AC-ratio methods (classic rolling + EWMA)
@@ -141,8 +148,43 @@ export const getLoadAnalytics = (userId, days = 56) =>
   api.get(`/dailyload/user/${userId}/analytics`, {
     // end = the DEVICE's calendar date: Azure runs on UTC, so between local
     // midnight and 03:00 the server's "today" is still yesterday.
-    params: { days, end: new Date().toLocaleDateString('en-CA') },
+    params: {
+      days,
+      end: new Date().toLocaleDateString('en-CA'),
+      tzOffsetMinutes: deviceTzOffsetMinutes(),
+    },
   });
+
+// ==================== WORKOUT SHARE (#181) ====================
+// Mark a workout shareable (owner only), then share the deep link.
+export const shareWorkout = (activityId, shared = true) =>
+  api.put(`/activitylog/${activityId}/share`, { shared });
+// Anonymous read of a shared workout (non-sensitive fields only).
+export const getPublicWorkout = (activityId) =>
+  api.get(`/activitylog/${activityId}/public`);
+
+// ==================== WORKOUT TEMPLATES (#119) ====================
+export const getWorkoutTemplates = (userId) =>
+  api.get(`/workouttemplates/user/${userId}`);
+export const createWorkoutTemplate = (template) =>
+  api.post('/workouttemplates', template);
+export const deleteWorkoutTemplate = (templateId) =>
+  api.delete(`/workouttemplates/${templateId}`);
+
+// ==================== NUTRITION / HYDRATION (#132) ====================
+// Today's entries + totals for the user's LOCAL calendar day.
+export const getNutritionDay = (userId, date = new Date()) =>
+  api.get(`/nutrition/user/${userId}/day`, {
+    params: {
+      date: (date instanceof Date ? date : new Date(date)).toLocaleDateString('en-CA'),
+      tzOffsetMinutes: deviceTzOffsetMinutes(),
+    },
+  });
+// kind = 'food' (name?/calories/barcode?) or 'water' (waterMl).
+export const addNutritionEntry = (userId, entry) =>
+  api.post(`/nutrition/user/${userId}`, entry);
+export const deleteNutritionEntry = (entryId) =>
+  api.delete(`/nutrition/${entryId}`);
 
 // ==================== RECOMMENDATIONS ====================
 export const getRecommendationsByUser = (userId) =>
@@ -223,6 +265,14 @@ export const getLeaderboard = ({
 export const setLeaderboardOptIn = (userId, on) =>
   api.put(`/board/leaderboard/optin/${userId}`, null, { params: { on } });
 
+// #143 — comments on a board post (+ one level of nested replies).
+export const getBoardComments = (postId) =>
+  api.get(`/board/${postId}/comments`);
+export const addBoardComment = (postId, userId, text, parentCommentId = null) =>
+  api.post(`/board/${postId}/comments`, { userID: Number(userId), text, parentCommentId });
+export const deleteBoardComment = (commentId, userId) =>
+  api.delete(`/board/comments/${commentId}`, { params: { userId } });
+
 // #171 — kudos ("cheers") on a workout (ActivityLog). Toggle on/off; returns
 // { count, kudoed } so the button reflects the viewer's own kudos state.
 export const toggleKudos = (logId, fromUserId) =>
@@ -274,13 +324,16 @@ export const getCoachesForTrainee = (userId) =>
 
 // ==================== CHAT / MESSAGES ====================
 // Chat is user<->user. `senderId` / `receiverId` are both Users.UserID.
-// `imagePath` (optional) is a path returned by uploadChatImage.
-export const sendMessage = ({ senderId, receiverId, text, imagePath }) =>
+// `imagePath` / `audioPath` (#139) / `videoPath` (#135) are paths returned by
+// the matching upload helper below (all optional).
+export const sendMessage = ({ senderId, receiverId, text, imagePath, audioPath, videoPath }) =>
   api.post('/messages', {
     senderID: Number(senderId),
     receiverID: Number(receiverId),
     text: text ?? '',
     imagePath: imagePath ?? null,
+    audioPath: audioPath ?? null,
+    videoPath: videoPath ?? null,
   });
 
 // Uploads a chat image to the backend (multipart), returns { path } where
@@ -319,6 +372,43 @@ export const uploadChatImage = async (localUri) => {
     throw new Error(`Server returned non-JSON: ${text.slice(0, 200)}`);
   }
 };
+
+// #139 / #135 — upload chat media (voice clip / form-check video) to the
+// backend. `endpoint` is 'audio' or 'video'; returns { path } = "/media/...".
+// Same raw-fetch + 90s AbortController pattern as uploadChatImage (video is
+// bigger, hence the longer timeout). The server sniffs the bytes and derives
+// the on-disk extension, so the client mime is only a hint.
+const uploadChatMedia = async (endpoint, localUri, mime, fallbackName) => {
+  const filename = localUri.split('/').pop() || fallbackName;
+  const form = new FormData();
+  form.append('file', { uri: localUri, name: filename, type: mime });
+
+  const url = `${API_BASE_URL}/messages/upload/${endpoint}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90000);
+  let response;
+  try {
+    const _t = getAuthToken();
+    response = await fetch(url, {
+      method: 'POST', body: form, signal: controller.signal,
+      headers: _t ? { Authorization: `Bearer ${_t}` } : undefined,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  const text = await response.text();
+  if (!response.ok) throw new Error(`HTTP ${response.status} — ${text || 'no response body'}`);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Server returned non-JSON: ${text.slice(0, 200)}`);
+  }
+};
+
+export const uploadChatAudio = (localUri) =>
+  uploadChatMedia('audio', localUri, 'audio/m4a', `voice_${Date.now()}.m4a`);
+export const uploadChatVideo = (localUri) =>
+  uploadChatMedia('video', localUri, 'video/mp4', `clip_${Date.now()}.mp4`);
 
 // Full thread between two users (oldest first).
 export const getConversation = (userA, userB) =>
@@ -426,6 +516,11 @@ export const getSentCoachOffers = (coachUserId) =>
 // ==================== GYMS (#3) ====================
 export const getGyms = (lat, lng, radiusKm = 25) =>
   api.get('/gyms', { params: { lat, lng, radiusKm } });
+
+// #146 — seeded gyms MERGED with live Google Places results (server proxies the
+// billable Places call; degrades to seeded-only when the key isn't configured).
+export const getNearbyGyms = (lat, lng, radiusKm = 25) =>
+  api.get('/gyms/nearby', { params: { lat, lng, radiusKm } });
 
 export const getGymCoaches = (gymId) =>
   api.get(`/gyms/${gymId}/coaches`);

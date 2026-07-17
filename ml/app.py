@@ -12,6 +12,7 @@ Endpoints (<id> = trainee Users.UserID):
     GET /health
     GET /api/ml/trainee/<id>/pmc?days=42
     GET /api/ml/trainee/<id>/acwr?days=28
+    GET /api/ml/trainee/<id>/analytics?days=56
     GET /api/ml/trainee/<id>/forecast[?month=YYYY-MM]
     GET /api/ml/trainee/<id>/forecast/history
 """
@@ -70,6 +71,16 @@ def _clamp_days(raw, default):
     return max(1, min(d, 400))
 
 
+def _tz_offset():
+    """Caller's UTC offset in minutes (?tzOffsetMinutes=180 for Israel DST),
+    clamped to the real-world UTC-14..+14 range. 0 = legacy UTC-day buckets."""
+    try:
+        tz = int(request.args.get("tzOffsetMinutes") or 0)
+    except (TypeError, ValueError):
+        tz = 0
+    return max(-14 * 60, min(14 * 60, tz))
+
+
 # Generic error body — never echo str(exc) to the client (it can leak SQL text,
 # the DB/server name, or file paths). The detail stays in the server log.
 _ERR = "An unexpected error occurred."
@@ -79,7 +90,8 @@ _ERR = "An unexpected error occurred."
 def pmc(trainee_id):
     days = _clamp_days(request.args.get("days"), 42)
     try:
-        return jsonify({"traineeId": trainee_id, "series": features.pmc_series(trainee_id, days)})
+        return jsonify({"traineeId": trainee_id,
+                        "series": features.pmc_series(trainee_id, days, _tz_offset())})
     except Exception:
         app.logger.exception("pmc failed")
         return jsonify({"error": _ERR, "series": []}), 500
@@ -89,11 +101,26 @@ def pmc(trainee_id):
 def acwr(trainee_id):
     days = _clamp_days(request.args.get("days"), 28)
     try:
-        data = features.acwr_series(trainee_id, days)
+        data = features.acwr_series(trainee_id, days, _tz_offset())
         data["traineeId"] = trainee_id
         return jsonify(data)
     except Exception:
         app.logger.exception("acwr failed")
+        return jsonify({"error": _ERR, "series": []}), 500
+
+
+@app.get("/api/ml/trainee/<int:trainee_id>/analytics")
+def analytics(trainee_id):
+    # Full load analytics (rolling + bias-corrected EWMA AC ratio + training
+    # summary) — same shape as the C# LoadAnalyticsBL, so the Load tab charts can
+    # be served from the ML service. Default 56-day window.
+    days = _clamp_days(request.args.get("days"), 56)
+    try:
+        data = features.analytics_series(trainee_id, days, _tz_offset())
+        data["traineeId"] = trainee_id
+        return jsonify(data)
+    except Exception:
+        app.logger.exception("analytics failed")
         return jsonify({"error": _ERR, "series": []}), 500
 
 
@@ -104,7 +131,7 @@ def forecast_endpoint(trainee_id):
     if month is not None and not re.fullmatch(r"\d{4}-\d{2}", month):
         return jsonify({"error": "month must be formatted YYYY-MM"}), 400
     try:
-        result = forecast.get_forecast(trainee_id, month)
+        result = forecast.get_forecast(trainee_id, month, _tz_offset())
         status = 404 if result.get("error") else 200
         return jsonify(result), status
     except Exception:

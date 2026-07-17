@@ -28,10 +28,17 @@ def _maybe_load():
     return _model
 
 
-def rule_class(ac_ratio):
+def rule_class(ac_ratio, has_active_injury=False):
     """Rule-based fallback mirroring DetermineLoadLevel: >1.3 High, >=0.8
-    Warning, else Safe."""
+    Warning, else Safe. Active injury tightens the High line to >=1.2,
+    matching the C# injured bands."""
     if ac_ratio is None:
+        return "Safe"
+    if has_active_injury:
+        if ac_ratio >= 1.2:
+            return "High"
+        if ac_ratio >= config.AC_GREEN_MAX:
+            return "Warning"
         return "Safe"
     if ac_ratio > config.AC_YELLOW_MAX:
         return "High"
@@ -44,9 +51,10 @@ def classify(features: dict):
     """features expects at least 'ac_ratio'; the trained model may also use
     'acute', 'chronic', 'experience', 'age', 'active_injuries'. Returns one of
     Safe | Warning | High."""
+    has_injury = bool(features.get("active_injuries") or 0)
     model = _maybe_load()
     if model is None:
-        return rule_class(features.get("ac_ratio"))
+        return rule_class(features.get("ac_ratio"), has_injury)
     try:
         import pandas as pd
         # The exported model is an sklearn Pipeline trained on this exact
@@ -57,4 +65,4 @@ def classify(features: dict):
         return str(pred)
     except Exception as exc:
         print(f"[risk] model.predict failed, using rules: {exc}")
-        return rule_class(features.get("ac_ratio"))
+        return rule_class(features.get("ac_ratio"), has_injury)

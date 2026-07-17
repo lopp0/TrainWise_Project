@@ -29,6 +29,7 @@ import { useMessages } from '../api/MessagesContext';
 import ScreenHeader from '../components/ScreenHeader';
 import DraggableChatBubble from '../components/DraggableChatBubble';
 import LoadAnalyticsSection from '../components/LoadAnalyticsSection';
+import PainTracker from '../components/PainTracker';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { loadLevelColor, loadLevelLabel } from './CoachDashboardScreen';
@@ -358,6 +359,8 @@ const CoachTraineeDetailScreen = ({ route, navigation }) => {
                           </Text>
                         )}
                         {!!notes && <Text style={styles.injuryNotes}>{notes}</Text>}
+                        {/* #127 — the trainee's daily pain trend, read-only for the coach */}
+                        <PainTracker injuryId={inj.injuryID ?? inj.InjuryID} readOnly />
                       </View>
                     );
                   })}

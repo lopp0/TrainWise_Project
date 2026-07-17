@@ -22,7 +22,6 @@ import {
   getEquippedAvatarFrame,
   findShopItem,
 } from '../utils/shopManager';
-import WeightTracker from '../components/WeightTracker';
 
 const ProfileScreen = () => {
   const { user, logout, updateUser } = useAuth();
@@ -188,9 +187,6 @@ const ProfileScreen = () => {
             </View>
           ))}
         </View>
-
-        {/* #131 — weight & body-composition tracking (trainees only) */}
-        {!isCoachOnly && <WeightTracker userId={user?.userId} />}
 
         <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
           <Ionicons name="log-out-outline" size={20} color={Colors.primary} />

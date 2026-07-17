@@ -17,6 +17,40 @@ namespace TrainWise.BL
             return _dal.GetGyms(lat, lng, radiusKm);
         }
 
+        // #146 — seeded gyms MERGED with live Google Places results (server-side
+        // key, cached). Places gyms are deduped against seeded ones by name or
+        // proximity so the same gym doesn't appear twice. Sorted by distance.
+        public List<Gym> GetNearbyMerged(double lat, double lng, double radiusKm)
+        {
+            var seeded = GetGyms(lat, lng, radiusKm);
+            var places = PlacesService.GetNearbyGyms(lat, lng, radiusKm);
+            if (places.Count == 0) return seeded;
+
+            string Norm(string s) => new string((s ?? "").ToLowerInvariant()
+                .Where(char.IsLetterOrDigit).ToArray());
+
+            var merged = new List<Gym>(seeded);
+            foreach (var p in places)
+            {
+                bool dupe = seeded.Any(g =>
+                    Norm(g.Name) == Norm(p.Name) ||
+                    HaversineKm(g.Latitude, g.Longitude, p.Latitude, p.Longitude) < 0.12); // ~120m
+                if (!dupe) merged.Add(p);
+            }
+            return merged.OrderBy(g => g.DistanceKm).ToList();
+        }
+
+        private static double HaversineKm(double lat1, double lng1, double lat2, double lng2)
+        {
+            double R = 6371.0;
+            double dLat = (lat2 - lat1) * Math.PI / 180.0;
+            double dLng = (lng2 - lng1) * Math.PI / 180.0;
+            double a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+                       Math.Cos(lat1 * Math.PI / 180.0) * Math.Cos(lat2 * Math.PI / 180.0) *
+                       Math.Sin(dLng / 2) * Math.Sin(dLng / 2);
+            return R * 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        }
+
         public List<GymCoachContact> GetGymCoaches(int gymId)
         {
             if (gymId <= 0) throw new ArgumentException("GymID must be positive");

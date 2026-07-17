@@ -84,10 +84,19 @@ def _predict_weekly_loads(weeks_df, as_of, current_acute):
 
     if n >= 2:
         X = completed["week"].to_numpy(dtype=float).reshape(-1, 1)
-        y = completed["load"].to_numpy(dtype=float)
+        # Fit on the per-day rate scaled to a full week: the month's last
+        # bucket can be 1-3 days (days 29-31) and its raw total is
+        # structurally ~3/7 of a real week, which dragged the trend down.
+        bucket_days = completed.apply(
+            lambda wk: (wk["end"] - wk["start"]).days + 1, axis=1
+        ).to_numpy(dtype=float)
+        y = completed["load"].to_numpy(dtype=float) / bucket_days * 7.0
         lin = LinearRegression().fit(X, y)
         best, model_type, r2 = lin, "linear", float(lin.score(X, y))
-        if n >= 3:
+        # Poly needs n >= 4: a parabola through 3 points always fits exactly
+        # (R^2 = 1), so at n = 3 the "clear improvement" guard was no guard
+        # at all and noise got extrapolated.
+        if n >= 4:
             poly = make_pipeline(PolynomialFeatures(2), LinearRegression()).fit(X, y)
             r2_poly = float(poly.score(X, y))
             if r2_poly > r2 + 0.05:   # upgrade only on a clear improvement
@@ -115,7 +124,8 @@ def _predict_weekly_loads(weeks_df, as_of, current_acute):
     return completed, future, n, model_type, r2, confidence, preds
 
 
-def _simulate_forward(logs_full, as_of, month_start, month_end, future, preds, user):
+def _simulate_forward(logs_full, as_of, month_start, month_end, future, preds, user,
+                      has_injury=False):
     """Build the daily load series (actual up to as_of; the projected weekly
     load spread evenly across each remaining week) and recompute the rolling
     acute / chronic / AC ratio over the whole series.
@@ -135,25 +145,24 @@ def _simulate_forward(logs_full, as_of, month_start, month_end, future, preds, u
         if fill_from <= wk["end"]:
             daily.loc[pd.date_range(fill_from, wk["end"], freq="D")] = per_day
 
-    rolled = features.rolling_loads(
-        daily, user["ExperienceLevel"], user["IsBaselineEstablished"]
-    )
+    rolled = features.rolling_loads(daily, user["ExperienceLevel"])
 
     weeks_out = []
     for _, wk in future.iterrows():
         r = rolled.loc[pd.Timestamp(min(wk["end"], month_end))]
-        ratio = None if pd.isna(r["ac_ratio"]) else round(float(r["ac_ratio"]), 2)
+        raw = None if pd.isna(r["ac_ratio"]) else float(r["ac_ratio"])
         weeks_out.append({
             "week": int(wk["week"]),
             "start": wk["start"].isoformat(),
             "projAcuteLoad": round(float(r["acute"]), 0),
-            "projACRatio": ratio,
-            "risk": risk.rule_class(ratio),
+            "projACRatio": None if raw is None else round(raw, 2),
+            # Risk from the unrounded ratio, injury-tightened like the app.
+            "risk": risk.rule_class(raw, has_injury),
         })
     return weeks_out, rolled
 
 
-def _state_from_rolled(rolled, as_of):
+def _state_from_rolled(rolled, as_of, has_injury=False):
     """Current acute / chronic / AC ratio at as_of (projection-free: only
     actual days fall in the trailing windows ending at as_of)."""
     r = rolled.loc[pd.Timestamp(as_of)]
@@ -162,7 +171,7 @@ def _state_from_rolled(rolled, as_of):
         "acute": round(float(r["acute"]), 1),
         "chronic": round(float(r["chronic"]), 1),
         "acRatio": None if ratio is None else round(ratio, 2),
-        "level": features.level_for(ratio),
+        "level": features.level_for(ratio, has_injury),
     }
 
 
@@ -293,10 +302,12 @@ def _headline(month_name, proj_ac, proj_load):
 # --------------------------------------------------------------------------
 # Public entry point
 # --------------------------------------------------------------------------
-def get_forecast(trainee_id, month_key=None):
+def get_forecast(trainee_id, month_key=None, tz_offset_minutes=0):
     user = features.get_user(trainee_id)
     if user is None:
         return {"error": "trainee not found"}
+    active_injuries = features.count_active_injuries(trainee_id)
+    has_injury = active_injuries > 0
 
     current_key = _current_month_key()
     month_key = month_key or current_key
@@ -318,7 +329,8 @@ def get_forecast(trainee_id, month_key=None):
     # chronic is accurate from day one of the month. (Extra pre-month logs
     # simply don't fall into any of this month's weekly buckets.)
     logs = features.get_trainee_logs(
-        trainee_id, month_start - timedelta(days=config.CHRONIC_WINDOW_DAYS)
+        trainee_id, month_start - timedelta(days=config.CHRONIC_WINDOW_DAYS),
+        tz_offset_minutes,
     )
     weeks_df = features.weekly_buckets(logs, month_start, month_end)
     workouts_this_month = int(weeks_df["workouts"].sum())
@@ -327,16 +339,15 @@ def get_forecast(trainee_id, month_key=None):
     # gives the trailing 7-day acute that drives the early-month "recent pace".
     sim_start = month_start - timedelta(days=config.CHRONIC_WINDOW_DAYS)
     daily_actual = features.daily_load_series(logs, sim_start, as_of)
-    rolled_actual = features.rolling_loads(
-        daily_actual, user["ExperienceLevel"], user["IsBaselineEstablished"]
-    )
-    state = _state_from_rolled(rolled_actual, as_of)
+    rolled_actual = features.rolling_loads(daily_actual, user["ExperienceLevel"])
+    state = _state_from_rolled(rolled_actual, as_of, has_injury)
     current_chronic = state["chronic"]
 
     completed, future, n, model_type, r2, confidence, preds = _predict_weekly_loads(
         weeks_df, as_of, state["acute"]
     )
-    weeks_out, rolled = _simulate_forward(logs, as_of, month_start, month_end, future, preds, user)
+    weeks_out, rolled = _simulate_forward(
+        logs, as_of, month_start, month_end, future, preds, user, has_injury)
 
     # End-of-month headline = last projected week, or the month-end actual when
     # the month is already complete (no future weeks).
@@ -349,10 +360,6 @@ def get_forecast(trainee_id, month_key=None):
         eo = {"projACRatio": eo_ratio, "projAcuteLoad": round(float(r["acute"]), 0)}
 
     age = (date.today().year - int(user["BirthYear"])) if user.get("BirthYear") else None
-    active_injuries = 0
-    inj = features.get_injuries(trainee_id)
-    if not inj.empty and "IsActiveInjury" in inj.columns:
-        active_injuries = int(inj["IsActiveInjury"].fillna(0).astype(bool).sum())
 
     risk_class = risk.classify({
         "ac_ratio": eo["projACRatio"], "acute": eo["projAcuteLoad"] or 0,

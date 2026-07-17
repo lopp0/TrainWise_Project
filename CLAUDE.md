@@ -36,25 +36,20 @@ Rules:
 
 Two cooperating projects in one folder, no shared root package manager:
 
-- **`TrainWise/`** — ASP.NET Core 8 Web API (the backend). Open `TrainWise.sln` in Visual Studio 2022 and run with the green play button (Swagger opens at `https://localhost:5249/swagger`). Uses raw ADO.NET (no EF Core) against SQL Server Express.
+- **`TrainWise/`** — ASP.NET Core 8 Web API (the backend). Open `TrainWise.sln` in Visual Studio 2022 and run with the green play button (Swagger opens at `https://localhost:5249/swagger`). Uses raw ADO.NET (no EF Core) against SQL Server Express. The solution also contains **`TrainWise.Tests`** (xUnit, added 2026-07-06) pinning the load-window math — run with `dotnet test` from `TrainWise/`.
 - **`TrainWiseExpo/`** — Expo (React Native 0.81 / RN New Architecture) mobile app. Installed as APK on a Samsung Galaxy S25+ for testing — the iOS folder is not maintained. JavaScript only, no TypeScript despite the `tsconfig.json`.
 
 ## Backend deployment modes
 
-The project supports **two backend modes**. Switching between them is a config change, not a code change. **As of 2026-06-16 the project is back in Azure mode** — the C# API + SQL were re-published to a NEW Azure resource: `https://trainwise01-api-djcfcvcedth8hjgp.israelcentral-01.azurewebsites.net` (Cloud project `test01-496711`). Both axios `BASE_URL`s now point at `…azurewebsites.net/api`. The older documented Azure URL (`trainwise-api-fuaahua…`) and the Local-LAN section below are kept for reference / fallback.
+The project supports **two backend modes**. Switching is a **one-line** config change: set `BACKEND_MODE` (`'local'` | `'azure'`) in [src/config/backend.js](TrainWiseExpo/src/config/backend.js) — the central switch BOTH axios clients import `API_BASE_URL` from, so they can never drift apart (that file also holds `LOCAL_PC_IP`). **Check `backend.js` for the current mode — the project flips between them; as of 2026-07-07 it is `'local'`** (PC IP `192.168.1.118`). The live Azure resource (used when the mode is `'azure'`) is `https://trainwise01-api-djcfcvcedth8hjgp.israelcentral-01.azurewebsites.net` (Cloud project `test01-496711`, re-published 2026-06-16). The older Azure URL (`trainwise-api-fuaahua…`) is dead — kept below for history only. Note: [src/services/mlApi.js](TrainWiseExpo/src/services/mlApi.js) still hardcodes its own `ML_BASE_URL` (it does NOT yet import `backend.js`'s exported `LOCAL_ML_URL`), so the ML IP must be updated separately.
 
 > **The Python ML service is NOT on Azure** — it still runs locally (`ml/app.py`, port 8000; [src/services/mlApi.js](TrainWiseExpo/src/services/mlApi.js) carries the PC's LAN IP). So with the C# backend on Azure, login/workouts/chat/coach work from anywhere, but the **coach Analytics/forecast screen only works when the local Python service is running and the phone is on the same WiFi** (else it shows the "analytics offline" fallback). To make the forecast cloud-side, deploy `ml/app.py` to Azure App Service F1 (free) and rewire `ml/db.py` from pyodbc+Windows-auth to **pymssql + Azure SQL (SQL auth)** — not done yet.
 
-### Mode A — Azure App Service (the original / preferred long-term setup)
+### Mode A — Azure App Service (the "works anywhere" setup)
 
-Backend hosted at `https://trainwise-api-fuaahuamcpbxgmeb.israelcentral-01.azurewebsites.net`, Azure SQL at `trainwiseadmin.database.windows.net` / `TrainWiseDB`. Both axios clients point directly at the public URL. Phone reaches the backend over the public internet — no LAN, no firewall, no PC-needs-to-be-on. **As of 2026-06-06 the Azure subscription is DISABLED** (Azure-for-Students $100 credit exhausted at $59.84 actual + $206.97 forecast). To reactivate, add a credit card via portal → Subscription → Upgrade, then immediately scale `trainwisedb` to General Purpose Serverless (max 1 vCore, min 0.5, 1h auto-pause, 2GB storage, locally-redundant backup) to keep ongoing cost at ~$1-3/month.
+Backend hosted on Azure App Service, Azure SQL at `trainwiseadmin.database.windows.net` / `TrainWiseDB`. Phone reaches the backend over the public internet — no LAN, no firewall, no PC-needs-to-be-on. The **live** resource is `trainwise01-api-djcfcvcedth8hjgp.israelcentral-01.azurewebsites.net` (2026-06-16). The ORIGINAL resource (`trainwise-api-fuaahua…`) died with the first subscription: **on 2026-06-06 that Azure-for-Students subscription was DISABLED** ($100 credit exhausted at $59.84 actual + $206.97 forecast) — when reactivating any subscription, immediately scale the DB to General Purpose Serverless (max 1 vCore, min 0.5, 1h auto-pause, 2GB storage, locally-redundant backup) to keep ongoing cost at ~$1-3/month.
 
-**BASE_URLs** (both files):
-```
-const BASE_URL = 'https://trainwise-api-fuaahuamcpbxgmeb.israelcentral-01.azurewebsites.net/api';
-```
-- [src/api/api.js](TrainWiseExpo/src/api/api.js)
-- [src/services/api.js](TrainWiseExpo/src/services/api.js)
+**Switch**: set `BACKEND_MODE = 'azure'` in [src/config/backend.js](TrainWiseExpo/src/config/backend.js) (its `AZURE_URL` constant holds the live `…azurewebsites.net/api` URL), then rebuild the APK. Both axios clients pick it up automatically.
 
 **Backend `appsettings.json`** — the local JSON connection string is ignored at runtime in Azure because Azure App Service injects the value via the `Connection strings` blade (Configuration → Connection strings, name=`DefaultConnection`, type=`SQLAzure`). `DBservice.Connect()` reads via `IConfigurationRoot` with `.AddEnvironmentVariables()`, so the App Service value wins over JSON.
 
@@ -62,30 +57,26 @@ const BASE_URL = 'https://trainwise-api-fuaahuamcpbxgmeb.israelcentral-01.azurew
 
 **Azure config that must stay correct**:
 - **Azure SQL Networking** → "Allow Azure services and resources to access this server" = ON. Without it the App Service cannot reach the DB.
-- **Swagger enabled in production** (not gated by `IsDevelopment()` in [Program.cs](TrainWise/TrainWise/TrainWise/Program.cs)) so `/swagger/index.html` works on the Azure URL for ad-hoc debugging. Cold starts on Free F1 take 10-30s after 20min idle.
+- **Swagger is gated to Development** in [Program.cs](TrainWise/TrainWise/Program.cs) (re-gated in the 2026-07-02 security pass) — `/swagger` is NOT served on the Azure URL. For live triage, temporarily relax the gate and revert after (see docs/DEPLOY.md on `main`). Cold starts on Free F1 take 10-30s after 20min idle.
 - **Profile pictures** (`/api/users/{id}/upload`) write to `wwwroot/images` which on Azure may not survive App Service restarts. Migrate to Azure Blob Storage or a persisted disk at `D:\home\data\images` if persistence becomes a problem.
 
 **Diagnosing 4xx/5xx (Azure mode)**: `App Service → Monitoring → App Service logs → Application logging (Filesystem) = On (Level: Information)`. Then `Log stream` shows incoming requests + exceptions live. Controllers return `BadRequest(ex.Message)` — the actual error is in the response body, NOT the log stream (the stream only shows the status code). Check both.
 
-### Mode B — Local LAN (current as of 2026-06-06)
+### Mode B — Local LAN
 
 Backend runs in VS 2022 on the user's PC, SQL on the same PC's SQL Express, phone reaches the API over WiFi. **Zero cloud cost but tethered to the user's home WiFi**. Phone and PC must be on the same subnet. PC must be on and the API must be running for the app to work at all.
 
-**BASE_URLs** (both files) — pattern:
-```
-const BASE_URL = 'http://<PC-LAN-IP>:5249/api';
-```
-Currently: `http://192.168.1.117:5249/api` (the PC's DHCP-assigned IP; it shifted .119 -> .117 on 2026-06-13 — see "PC's IP changes" gotcha below. The ML service in [src/services/mlApi.js](TrainWiseExpo/src/services/mlApi.js) carries the same IP on port 8000 and must be kept in sync too).
+**Switch**: set `BACKEND_MODE = 'local'` in [src/config/backend.js](TrainWiseExpo/src/config/backend.js) and keep `LOCAL_PC_IP` current (the PC's DHCP-assigned IP — `192.168.1.118` as of 2026-07-07; see "PC's IP changes" gotcha below). The ML service in [src/services/mlApi.js](TrainWiseExpo/src/services/mlApi.js) carries the same IP on port 8000 in its own hardcoded `ML_BASE_URL` and must be kept in sync by hand.
 
 **Backend `appsettings.json` connection string**:
 ```
 Data Source=Lirone\SQLEXPRESS;Initial Catalog=TrainWise;Integrated Security=True;Encrypt=False
 ```
-The database name is `TrainWise`, not `TrainWiseDB` — local SQL Express was set up with the shorter name. The migrations that ran on Azure SQL also need to run on the local DB; the up-to-date schema as of 2026-06-08 includes the `IsTrainee` column (2026-06-02 migration), the `Messages` table (2026-06-04 migration), `Messages.ImagePath` for image chat (2026-06-07 migration), the **social layer** (`Friendships`, `Gyms`, `GymCoaches`, `CoachOffers` tables + `Users.LastSeen` / `Latitude` / `Longitude` columns, 2026-06-08 migration), and the `sp_InsertUser` / `sp_LoginUser` proc updates. **Run order on a fresh DB**: `TWDB.sql` (schema+procs) → `2026-06-02_add_is_trainee.sql` → `2026-06-04_add_messages.sql` → `2026-06-07_add_message_image.sql` → `seed_reference_data.sql` → `2026-06-08_add_social.sql` (depends on reference data + ActivityTypes for its fake-user seed) → `2026-06-12_add_forecasts.sql` (the `MonthlyForecasts` table for the coach forecast; no dependencies). Scripts at `c:\Dev\TrainWise\sql\`.
+The database name is `TrainWise`, not `TrainWiseDB` — local SQL Express was set up with the shorter name. The migrations that ran on Azure SQL also need to run on the local DB. **Run order on a fresh DB** (complete list in docs/SETUP.md on `main`): `TWDB.sql` (schema+procs) → `2026-06-02_add_is_trainee.sql` → `2026-06-04_add_messages.sql` → `2026-06-07_add_message_image.sql` → `seed_reference_data.sql` → `2026-06-08_add_social.sql` (depends on reference data + ActivityTypes for its fake-user seed) → `2026-06-12_add_forecasts.sql` → `2026-06-18_add_injury_link.sql` → the five `2026-06-19_*` scripts (calendar, cosmetics, live_location, records, workout_board) → `2026-06-21_add_board_image.sql` → `2026-06-21_add_push_token.sql` → `2026-06-28_add_green_batch.sql` (notes/photos, pain logs, body measurements, typing, reactions, kudos) → `2026-07-02_security_hardening.sql` (widens `Users.Password` for the PBKDF2 hash — must run BEFORE deploying the hashing backend) → `2026-07-10_fix_injury_link_ondelete.sql` (recreates `FK_InjuriesReports_ActivityLogs` with `ON DELETE SET NULL` so deleting a workout that has a linked injury no longer fails; also unblocks `sp_DeleteUser`). 16 dated migrations total; scripts at `c:\Dev\TrainWise\sql\`.
 
 ### Reference / seed data (must run on any fresh DB)
 
-`TWDB.sql` / `TrainWisev0.sql` are **schema + stored procedures only — no data rows**. A fresh DB therefore has empty lookup tables, which breaks the activity/injury/goal dropdowns and the load algorithm until seeded. The canonical seed data lives in [sql/seed_reference_data.sql](TrainWise/sql/seed_reference_data.sql) (run it after the schema + migrations; it's `IF NOT EXISTS`-guarded so it's safe to re-run). Captured 2026-06-07:
+`TWDB.sql` / `TrainWisev0.sql` are **schema + stored procedures only — no data rows**. A fresh DB therefore has empty lookup tables, which breaks the activity/injury/goal dropdowns and the load algorithm until seeded. The canonical seed data lives in [sql/seed_reference_data.sql](sql/seed_reference_data.sql) (run it after the schema + migrations; it's `IF NOT EXISTS`-guarded so it's safe to re-run). Captured 2026-06-07:
 
 - **ActivityTypes** (20 rows) — `TypeName` + `IntensityFactor` (the multiplier used by the load calc):
   ```
@@ -100,7 +91,7 @@ The database name is `TrainWise`, not `TrainWiseDB` — local SQL Express was se
 - **TrainingGoals** (20 rows): 1 Weight Loss · 2 Improve Endurance · 3 Build Muscle · 4 Marathon Preparation · 5 General Fitness · 6 Injury Prevention · 7 Rehabilitation · 8 Speed Improvement · 9 Power Development · 10 Flexibility · 11 Cross Training · 12 5K Preparation · 13 10K Preparation · 14 Half Marathon Prep · 15 Core Strength · 16 Balance & Mobility · 17 HIIT Performance · 18 Long Run Stamina · 19 Cycling Endurance · 20 Improve Recovery
 - **LoadParameters** (single tuning row, `ParamID=1`): BeginnerDailyLoad 200, RegularDailyLoad 350, AdvanceDailyLoad 500, BeginnerAcuteLoad 150, RegularAcuteLoad 280, AdvanceAcuteLoad 420, LowLoadRatio 0.8, SafeZoneLowRange 0.8, SafeZoneHighRange 1.3, OverLoad 1.5.
 
-Everything else (`Users`, `Coaches`, `ActivityLogs`, `DailyLoad`, `Messages`, …) is per-user runtime data, not seed data. To dump the live DB's full contents as INSERTs, use [sql/export_all_data.sql](TrainWise/sql/export_all_data.sql) or SSMS → Generate Scripts → "Data only".
+Everything else (`Users`, `Coaches`, `ActivityLogs`, `DailyLoad`, `Messages`, …) is per-user runtime data, not seed data. To dump the live DB's full contents as INSERTs, use [sql/export_all_data.sql](sql/export_all_data.sql) or SSMS → Generate Scripts → "Data only".
 
 **Backend launch profile** must bind to `http://+:5249` or `http://0.0.0.0:5249` (NOT `http://localhost:5249`) — Properties → Debug → "Open debug launch profiles UI" → applicationUrl. Verify on startup that the log says `Now listening on: http://0.0.0.0:5249`.
 
@@ -114,7 +105,7 @@ The active WiFi network must be classified as **Private**, not Public (Settings 
 
 **`wwwroot/images` folder** must exist on the local PC at `C:\Dev\TrainWise\TrainWise\TrainWise\wwwroot\images` for profile-pic upload to work. Create it once with `New-Item -ItemType Directory -Force -Path "C:\Dev\TrainWise\TrainWise\TrainWise\wwwroot\images"`.
 
-**The PC's IP changes (Local LAN gotcha)**: DHCP leases expire and the router reassigns IPs. When the PC's IP shifts (e.g. `.117` → `.119`), every API call from the phone times out with `Network Error` because the BASE_URLs point at the old ghost IP. Verify the current IP with `ipconfig | findstr IPv4` before debugging anything else. Long-term fix: reserve a static IP at the router (DHCP reservation against the PC's WiFi MAC) OR use `http://<hostname>.local:5249/api` so Android resolves via mDNS instead of a hardcoded IP.
+**The PC's IP changes (Local LAN gotcha)**: DHCP leases expire and the router reassigns IPs. When the PC's IP shifts (e.g. `.117` → `.118`), every API call from the phone times out with `Network Error` because `LOCAL_PC_IP` in [src/config/backend.js](TrainWiseExpo/src/config/backend.js) points at the old ghost IP (and `ML_BASE_URL` in mlApi.js does too — update BOTH, then rebuild the APK). Verify the current IP with `ipconfig | findstr IPv4` before debugging anything else. Long-term fix: reserve a static IP at the router (DHCP reservation against the PC's WiFi MAC) OR use `http://<hostname>.local:5249/api` so Android resolves via mDNS instead of a hardcoded IP.
 
 **Diagnosing connection failures in Local LAN mode** (run in this order):
 1. `netstat -an | findstr 5249` on the PC → must show `0.0.0.0:5249 LISTENING`. If `127.0.0.1:5249` only → launch profile bug. If nothing → API isn't running.
@@ -128,16 +119,16 @@ The active WiFi network must be classified as **Private**, not Public (Settings 
 The switch is mechanical and reversible:
 
 **Azure → Local**:
-1. Edit `BASE_URL` in both [src/api/api.js](TrainWiseExpo/src/api/api.js) and [src/services/api.js](TrainWiseExpo/src/services/api.js) to `http://<current-PC-IP>:5249/api`.
+1. In [src/config/backend.js](TrainWiseExpo/src/config/backend.js): set `BACKEND_MODE = 'local'` and update `LOCAL_PC_IP` to the current PC IP (also update `ML_BASE_URL` in mlApi.js).
 2. Verify backend `appsettings.json` `DefaultConnection` points at `Lirone\SQLEXPRESS` (it does by default — Azure-mode override comes from the App Service Connection strings blade, not from the JSON file).
 3. Ensure local SQL Express has the latest schema (run any pending scripts from `c:\Dev\TrainWise\sql\`).
 4. Confirm `usesCleartextTraffic="true"` is present in AndroidManifest.xml. Rebuild APK.
 5. Start API in VS 2022. Verify firewall + network profile + PC IP per the diagnostic steps above.
 
 **Local → Azure**:
-1. Edit both `BASE_URL`s back to `https://trainwise-api-fuaahuamcpbxgmeb.israelcentral-01.azurewebsites.net/api`.
+1. In [src/config/backend.js](TrainWiseExpo/src/config/backend.js): set `BACKEND_MODE = 'azure'` (the `AZURE_URL` there is the live `trainwise01-api-…azurewebsites.net/api`).
 2. (Optional) Remove `usesCleartextTraffic="true"` for production hygiene — not strictly required since HTTPS doesn't need it.
-3. Reactivate the Azure subscription if it's disabled, scale `trainwisedb` to Serverless as described in Mode A, ensure App Service is started.
+3. Ensure the Azure subscription is active and the App Service is started (scale the DB to Serverless as described in Mode A if reactivating).
 4. Rebuild APK.
 
 The C# backend code itself is identical in both modes; nothing in `Controllers/`, `BL/`, or `DAL/` changes when switching.
@@ -187,23 +178,33 @@ No EF, no migrations folder — schema is managed manually in SSMS.
 
 ```
 src/
-  api/             # Auth context, HC service, sync orchestration, axios client (legacy)
+  config/backend.js  # BACKEND_MODE switch ('local' | 'azure') — the single API_BASE_URL source
+  api/             # Auth context + authToken (JWT), HC service, sync orchestration, axios client (legacy)
   services/api.js  # **Primary axios client** — all backend HTTP goes here
+  services/mlApi.js  # axios client for the Python ML service (own hardcoded ML_BASE_URL)
   navigation/      # Single root NavigationStack, no Expo Router despite Expo defaults
   screens/         # One file per screen, JS class-free
   components/      # Reusable: ComboBox, Card, PrimaryButton, ScreenHeader
   theme/colors.js  # Dark-theme palette — use `Colors.*` not raw hex
 ```
 
-Note that `src/api/api.js` and `src/services/api.js` both exist. `services/api.js` is the canonical one; `api/api.js` is older and progressively being phased out (still hosts `getActivityLogs`, `registerUser`, device endpoints). New endpoints go in `services/`. **Both files now share the same Azure `BASE_URL` ending in `/api`**, so endpoint paths must NOT also start with `/api` (e.g. write `apiClient.post('/Users', ...)`, not `apiClient.post('/api/Users', ...)`). The doubled-prefix `/api/api/Users` was a 404 bug fixed 2026-05-31.
+Note that `src/api/api.js` and `src/services/api.js` both exist. `services/api.js` is the canonical one; `api/api.js` is older and progressively being phased out (still hosts `getActivityLogs`, `registerUser`, device endpoints). New endpoints go in `services/`. **Both files import `API_BASE_URL` from [src/config/backend.js](TrainWiseExpo/src/config/backend.js)** (so they can no longer drift apart), and that URL already ends in `/api` — endpoint paths must NOT also start with `/api` (e.g. write `apiClient.post('/Users', ...)`, not `apiClient.post('/api/Users', ...)`). The doubled-prefix `/api/api/Users` was a 404 bug fixed 2026-05-31.
 
-### Auth model
+### Auth model (JWT bearer since the 2026-07-02 security pass)
 
-Session-based, no JWT. [src/api/AuthContext.js](TrainWiseExpo/src/api/AuthContext.js) stores the user object in AsyncStorage and exposes `userId` to the rest of the app. A locally-generated `deviceId` (string `dev-<timestamp>-<rand>`) is also persisted; the backend's `UserDevices` table expects numeric IDs, so the sync service skips device-update calls when the local ID isn't numeric.
+**JWT bearer auth** — the old "session-based, no JWT" model is gone:
+
+- **Issuance**: [BL/JwtService.cs](TrainWise/TrainWise/BL/JwtService.cs) (HS256) mints a token carrying `uid` + `isCoach`/`isTrainee` claims on `POST /api/auth/login` ([AuthController](TrainWise/TrainWise/Controllers/AuthController.cs) → `{ token, user }`), on signup (`POST /api/Users` → `{ userID, token }`), and on `POST /api/users/google-login`. Config is all env vars: `JWT_KEY` (HMAC key, ≥32 chars — REQUIRED in prod or tokens die on every restart; random per-process key in dev), `JWT_ISSUER`/`JWT_AUDIENCE`, `JWT_EXPIRY_DAYS` (default 30 — long-lived, no refresh flow yet).
+- **Validation + staged enforcement**: [Program.cs](TrainWise/TrainWise/Program.cs) validates tokens whenever present. The **`AUTH_ENFORCE`** env var (default off) is the stage-2 switch: when `true`, a fallback authorization policy requires a valid token on every endpoint without `[AllowAnonymous]` (only login/signup/google-login are anonymous). This let old tokenless APKs keep working during rollout.
+- **Per-object ownership**: [BaseApiController.cs](TrainWise/TrainWise/Controllers/BaseApiController.cs) exposes `CallerId`/`CallerIsCoach` (from claims) and the gates `CallerMayAct(userId)`, `CallerMayActEither(a,b)`, `CallerOwnsOrCoaches(traineeId)` (self OR linked coach), `CallerOwnsCoachId(coachId)`. All gates ALLOW tokenless callers (pre-enforcement safety) but DENY a token that belongs to a different user — closing IDOR without breaking old builds.
+- **Client side**: [src/api/authToken.js](TrainWiseExpo/src/api/authToken.js) holds the token (module variable + AsyncStorage mirror, key `@trainwise_token`); bearer interceptors sit on both axios clients, the raw-fetch uploads, and mlApi.js. Moving it to `expo-secure-store` is a known backlog item.
+- **Also server-verified**: Google sign-in (`GoogleTokenVerifier` checks the ID token's signature + audience server-side — the client's `GoogleId` is never trusted) and signup reCAPTCHA (`CaptchaVerifier` → Google siteverify; **fail-open** when `RECAPTCHA_SECRET` is unset). Auth endpoints are rate-limited (10/min/IP "auth" policy + 300/min/IP global backstop in Program.cs). Passwords are PBKDF2-hashed ([BL/PasswordHasher.cs](TrainWise/TrainWise/BL/PasswordHasher.cs), SHA-256/100k/salted, verify-and-upgrade from legacy plaintext rows — `2026-07-02_security_hardening.sql` widened `Users.Password` first).
+
+[src/api/AuthContext.js](TrainWiseExpo/src/api/AuthContext.js) still stores the user object in AsyncStorage and exposes `userId` to the rest of the app. A locally-generated `deviceId` (string `dev-<timestamp>-<rand>`) is also persisted; the backend's `UserDevices` table expects numeric IDs, so the sync service skips device-update calls when the local ID isn't numeric.
 
 ### SignUp flow
 
-Two-step: [SignUpScreen.js](TrainWiseExpo/src/screens/SignUpScreen.js) (basic info + gender) → [SignUpFinal.js](TrainWiseExpo/src/screens/SignUpFinal.js) (preferences + terms) → POSTs `/api/Users` via `registerUser(payload)` from `src/api/api.js`. Both screens registered as separate routes in `AuthStack` ([NavigationStack.js:35-36](TrainWiseExpo/src/navigation/NavigationStack.js#L35-L36)).
+Two-step: [SignUpScreen.js](TrainWiseExpo/src/screens/SignUpScreen.js) (basic info + gender) → [SignUpFinal.js](TrainWiseExpo/src/screens/SignUpFinal.js) (preferences + terms + **reCAPTCHA** — the token is verified server-side by `CaptchaVerifier`, fail-open when `RECAPTCHA_SECRET` is unset) → POSTs `/api/Users` via `registerUser(payload)` from `src/api/api.js` → returns `{ userID, token }`. Both screens registered as separate routes in `AuthStack`. **Google sign-in** is also available on Login and SignUp: the native `@react-native-google-signin` picker sends the Google **ID token** to `POST /api/users/google-login`, which verifies it server-side (`GoogleTokenVerifier`, audience-checked) before find-or-create.
 
 ### Injuries flow
 
@@ -263,15 +264,15 @@ Confirmed working 2026-06-03: TrainWiseExpo now appears in Health Connect's "Vos
 
 ## Navigation graph
 
-Single root in [NavigationStack.js](TrainWiseExpo/src/navigation/NavigationStack.js). Four sub-stacks behind a tab navigator (Home / Health / **Connect** / Profile):
+Single root in [NavigationStack.js](TrainWiseExpo/src/navigation/NavigationStack.js). Tab navigator with four tabs — **Home / Load / Health / Connect** (the Profile tab was removed in sprint B; Profile is a HomeStack screen now):
 
 - **AuthStack**: `Welcome → Login | SignUp → SignUpFinal`
-- **HomeStack**: `HomeMain → Stats | Warnings | AddWorkout | InjuryReport → ActiveInjuries | WorkoutSummary | WorkoutRoute | Settings | ConnectQR | Shop | AIChat | Chat | MyNetwork | CoachTraineeDetail`
-- **HealthStack**: `HealthConnectMain` (= GoogleFitScreen) `| WorkoutRoute`
-- **ConnectStack** (2026-06-08): `ConnectMain → Requests | MyNetwork | Chat`
-- **ProfileStack**: `ProfileMain`
+- **HomeTab (HomeStack)**: `HomeMain → Stats | Warnings | AddWorkout | InjuryReport → ActiveInjuries | WorkoutSummary | WorkoutRoute | Settings | ConnectQR | Shop | AIChat | Chat | MyNetwork | CoachTraineeDetail → CoachTraineeAnalytics | Profile | PersonalRecords | TrainingCalendar | Timer | Achievements`
+- **LoadTab**: `WarningsDashboardScreen` mounted directly as the tab (labeled "Load", B-1 redesign)
+- **HealthTab (HealthStack)**: `HealthConnectMain` (= GoogleFitScreen) `| WorkoutRoute`
+- **ConnectTab (ConnectStack)** (2026-06-08): `ConnectMain → Requests | MyNetwork | Chat | WorkoutBoard | Leaderboard`
 
-`AppTabs` is wrapped by `HealthSyncProvider` (Health-tab `unconfirmedCount` badge), `MessagesProvider` (chat unread), and `SocialProvider` (Connect-tab `pendingTotal` badge + presence heartbeat). The **Connect tab is visible to coaches too** (not gated like the Health tab) — for a coach-only user it sits between Home and Profile. The "My coach" Home button was renamed **"My network"** and now opens the `MyNetwork` hub (the file is still `MyCoachScreen.js`).
+`AppTabs` is wrapped by `HealthSyncProvider` (Health-tab `unconfirmedCount` badge), `MessagesProvider` (chat unread), and `SocialProvider` (Connect-tab `pendingTotal` badge + presence heartbeat). **Coach-only users see only Home + Connect** (the Load and Health tabs are hidden — coaches don't track their own load). The "My coach" Home button was renamed **"My network"** and now opens the `MyNetwork` hub (the file is still `MyCoachScreen.js`).
 
 ## Shared chart logic
 
@@ -284,10 +285,17 @@ Single root in [NavigationStack.js](TrainWiseExpo/src/navigation/NavigationStack
 
 Use `useFocusEffect` (not `useEffect`) on tab-switched screens so deletes on the Health tab propagate when the user returns Home.
 
-## Load analytics (rolling + EWMA trend, 2026-07-05)
+## Load analytics (rolling + EWMA trend, 2026-07-05; correctness pass 2026-07-06)
 
 Day-by-day AC-ratio trend with TWO methods, shown on the trainee Load tab and inside a foldable "Load trend & analysis" card on CoachTraineeDetail:
-- **C# is the source of truth**: `BL/LoadAnalyticsBL.cs` → `GET api/dailyload/user/{id}/analytics?days=56&end=YYYY-MM-DD` (gate `CallerOwnsOrCoaches`; reuses `sp_GetActivityLogsForLoad` with a wide window via `DailyLoadDAL.GetActivityLogsForRange` — **no SQL migration**). Client must pass `end` = device-local date because Azure runs UTC (00:00-03:00 Israel drift).
+- **C# is the source of truth**: `BL/LoadAnalyticsBL.cs` → `GET api/dailyload/user/{id}/analytics?days=56&end=YYYY-MM-DD&tzOffsetMinutes=180` (gate `CallerOwnsOrCoaches`; reuses `sp_GetActivityLogsForLoad` with a wide window via `DailyLoadDAL.GetActivityLogsForRange` — **no SQL migration**). Client must pass `end` = device-local date because Azure runs UTC (00:00-03:00 Israel drift), and `tzOffsetMinutes` = `-new Date().getTimezoneOffset()` so sessions bucket to the user's LOCAL calendar day (without it a 00:30 workout counts on the previous day).
+- **Shared window math lives in `LoadCalculationBL` internal statics** (`BucketByLocalDay`, `SumRange`, `CountActiveDays`, `EffectiveChronic`, `DetermineLoadLevel`) — used by BOTH `CalculateAndSave` (stored DailyLoad) and `LoadAnalyticsBL`, and pinned by the `TrainWise.Tests` xUnit project (V1-V6 hand-computed vectors). ml/features.py and the JS mirrors must match these exactly.
+- **2026-07-06 correctness rules** (apply to every load surface — C#, Python, JS):
+  - **Unconfirmed HC imports never count** (`IsConfirmed = 0` skipped; NULL = confirmed). The SP has no filter — the C# side filters in `BucketByLocalDay`; the DAL maps `IsConfirmed` with NULL→true.
+  - **Cold-start floor is DYNAMIC**: floor `chronic` at the experience bootstrap (150/280/420 weekly) whenever the trailing 28-day window has **< 7 days with load > 0** — NOT the one-shot `Users.IsBaselineEstablished` flag (which never resets; a returning-from-layoff athlete used to store a false Red while the app showed Green).
+  - **Covered-days ramp** once ≥ 7 active days: `chronic = sum28 / min(4, covered/7)` where `covered` runs from the first loaded day inside the window. A steady 2-week-old user reads ~1.0 instead of a false Red 2.0; full 28-day histories are unchanged (/4). The EWMA needs no ramp — its bias correction already returns the sample mean over short history.
+  - **Injured bands have no gap**: Red ≥ 1.2, Yellow 0.8 ≤ r < 1.2, Green < 0.8 (the old Yellow cap at 1.1 made an injured 1.15 read GREEN). Python `level_for`/`rule_class` and the Warnings screen now take the injured flag too.
+  - **Grade levels from the UNROUNDED ratio** (1.3049 is Red; its displayed 1.30 would wrongly grade Yellow).
 - Methods: classic rolling (Gabbett 2016, official — drives status/recommendations) and **bias-corrected EWMA** (Williams 2017 + the Adam zero-init correction, Kingma & Ba 2015; λ = 2/(N+1), t counts from first logged session). Correction is REQUIRED: without it a new user's first workout falsely reads Red on EWMA.
 - Both use the same cold-start floor pre-baseline (rolling: weekly bootstrap 150/280/420; EWMA: bootstrap/7 because EWMA is daily-scale) and `LoadCalculationBL.DetermineLoadLevel` (now `internal static`).
 - Summary block: Foster 1998 monotony/strain, duration-weighted intensity mix (RPE 1-3/4-6/7-10), rest days.
@@ -301,8 +309,9 @@ The backend stores times exactly as sent (no timezone conversion). The frontend 
 ## ActivityLog invariants
 
 - Hard-delete only (soft-delete reverted 2026-04-22; `IsDeleted` column dropped from DB; `sp_GetActivityLogsByUser` and `sp_GetActivityLogsForLoad` rewritten without the filter).
-- Any screen that creates/updates an ActivityLog MUST set `calculatedLoadForSession = duration × exertion` AND call `calculateDailyLoad(userId, editedDate)` then `calculateDailyLoad(userId, today)` afterwards — otherwise the DailyLoad rows on the server stay stale.
-- AC ratio thresholds (strict): `ratio < 0.8` Green, `0.8 ≤ ratio ≤ 1.3` Yellow, `ratio > 1.3` Red.
+- Any screen that creates/updates an ActivityLog MUST set `calculatedLoadForSession = duration × exertion` AND call `calculateDailyLoad(userId, editedDate)` then `calculateDailyLoad(userId, today)` afterwards — otherwise the DailyLoad rows on the server stay stale. `calculateDailyLoad` (services/api.js) sends `tzOffsetMinutes` in the body so the server buckets sessions to the device's local day.
+- AC ratio thresholds (strict): `ratio < 0.8` Green, `0.8 ≤ ratio ≤ 1.3` Yellow, `ratio > 1.3` Red. Active injury tightens to Red ≥ 1.2 / Yellow 0.8 ≤ r < 1.2 (no gap) on every surface.
+- Unconfirmed rows (`IsConfirmed = 0`, i.e. pending HC imports) never count toward acute/chronic/ratio anywhere; NULL counts as confirmed.
 - Warnings dashboard's status / AC ratio / weekly bars are computed client-side from `ActivityLogs`, never from `DailyLoad` rows (those are 7-day rolling snapshots and leak prior-week data).
 - Refresh on Warnings must recalc ALL 7 days of DailyLoad (loop i=6..0).
 
@@ -404,7 +413,7 @@ Updated 2026-06-09 after a Google key was leaked via a push (see `tasks/lessons.
   thinks the JS bundle is up-to-date — verify the APK's timestamp/size CHANGED. Force a
   fresh APK with `./gradlew clean assembleRelease`. Plain gradlew does NOT re-prebuild,
   so a rotated native Maps key only reaches the manifest via `expo run:android`/prebuild.
-- **Local-LAN distribution:** the APK has the PC's IP (`192.168.1.119`) baked in, so a
+- **Local-LAN distribution:** the APK has the PC's IP (`LOCAL_PC_IP` in src/config/backend.js) baked in, so a
   sent APK only works on devices on the SAME WiFi, with the backend + SQL running. The
   Azure "Error 403 - web app is stopped" page means the APK still points at the dead
   Azure URL (an old build). Remote testers need a public backend (Azure or a tunnel).
@@ -425,20 +434,20 @@ Both flags are set at signup from the SignUpScreen role picker (`'trainer' | 'tr
 - `'both'` → `IsCoach=1, IsTrainee=1`
 
 **Coach-only gating:**
-- [NavigationStack.AppTabs](TrainWiseExpo/src/navigation/NavigationStack.js) hides the Health tab when `isCoach && !isTrainee`.
+- [NavigationStack.AppTabs](TrainWiseExpo/src/navigation/NavigationStack.js) hides the **Load and Health tabs** when `isCoach && !isTrainee` (coach-only users see Home + Connect).
 - [HomeRouter](TrainWiseExpo/src/screens/HomeRouter.js) renders CoachDashboardScreen directly (no toggle) for coach-only users.
 - [ProfileScreen](TrainWiseExpo/src/screens/ProfileScreen.js) hides Activity Level / Experience Level / Height / Weight rows for coach-only.
 
 Existing rows from before 2026-06-02 default to `IsTrainee=1` via the column's `DEFAULT 1` — they keep all their screens. UserDAL.MapUser uses `SafeReadBool(reader, "IsTrainee", true)` so it tolerates SPs that haven't been updated to include the column in their SELECT lists.
 
-**Coach row caveat (open issue):** `UserBL.Create` only inserts into the `Coaches` table when `IsCoach=true` at signup time. Users who flip to coach later need a manual `INSERT INTO Coaches` or the `getCoachByUserId` 404 leaves their QR Connect flow permanently stuck on "Could not load your coach profile". A lazy-create in CoachBL is the right long-term fix.
+**Coach row lazy-create (RESOLVED):** `UserBL.Create` only inserts into the `Coaches` table when `IsCoach=true` at signup time, but [CoachBL.GetCoachByUserId](TrainWise/TrainWise/BL/CoachBL.cs) now **lazy-creates** the Coaches row on first read for any user with `IsCoach=1` — so a trainee who flips to coach later gets a working QR Connect flow without a manual INSERT. (`sp_RespondCoachOffer` does the same on coach-offer accept.)
 
 ## Coach ↔ trainee chat (messages)
 
 Added 2026-06-04 (#6), image support 2026-06-07 (#9). WhatsApp-style chat that is **user↔user, not coach↔trainee** — both `senderID` and `receiverID` are `Users.UserID`. The coach/trainee link only decides who *can* see whom in the UI; the message rows themselves are just between two users.
 
-- **DB**: `Messages` table + `sp_InsertMessage` / `sp_GetConversation` / `sp_MarkMessagesSeen` / `sp_GetUnreadMessageCount` ([sql/2026-06-04_add_messages.sql](TrainWise/sql/2026-06-04_add_messages.sql)). Image chat adds `Messages.ImagePath NVARCHAR(300) NULL` and updates the two read/insert procs ([sql/2026-06-07_add_message_image.sql](TrainWise/sql/2026-06-07_add_message_image.sql)). `SentAt` is stored UTC but serialized **without a 'Z'** — the frontend appends 'Z' before parsing then renders in `Asia/Jerusalem` (mirror the `toLocalTime` helper, don't "fix" storage).
-- **Backend**: `MessagesController` — `POST /api/messages`, `GET /api/messages/conversation/{a}/{b}` (oldest first), `PUT /api/messages/seen/{senderId}/{receiverId}`, `GET /api/messages/unread/{userId}`, and `POST /api/messages/upload` (IFormFile → `wwwroot/images/chat_*`, returns `{ path }`, same `WebRootPath` rule as profile upload). **`SendMessageRequest.Text` and `.ImagePath` are `string?`** — nullable refs are ON, so a plain `string` would be implicitly `[Required]` and 400 every text-only message (see lessons 2026-06-07). `MessageBL` allows image-only (empty Text).
+- **DB**: `Messages` table + `sp_InsertMessage` / `sp_GetConversation` / `sp_MarkMessagesSeen` / `sp_GetUnreadMessageCount` ([sql/2026-06-04_add_messages.sql](sql/2026-06-04_add_messages.sql)). Image chat adds `Messages.ImagePath NVARCHAR(300) NULL` and updates the two read/insert procs ([sql/2026-06-07_add_message_image.sql](sql/2026-06-07_add_message_image.sql)). `SentAt` is stored UTC but serialized **without a 'Z'** — the frontend appends 'Z' before parsing then renders in `Asia/Jerusalem` (mirror the `toLocalTime` helper, don't "fix" storage).
+- **Backend**: `MessagesController` — `POST /api/messages`, `GET /api/messages/conversation/{a}/{b}` (oldest first), `PUT /api/messages/seen/{senderId}/{receiverId}`, `GET /api/messages/unread/{userId}`, and `POST /api/messages/upload` (IFormFile → `wwwroot/images/chat_*`, returns `{ path }`, same `WebRootPath` rule as profile upload). The 2026-06-28 green batch added a **typing indicator** (`PUT/GET /api/messages/typing/{fromUserId}/{toUserId}`, one `MessageTyping` row per pair) and **emoji reactions** (`POST /api/messages/{messageId}/react/{userId}`, `GET /api/messages/reactions/{userA}/{userB}`, `MessageReactions` table — one per user per message). **`SendMessageRequest.Text` and `.ImagePath` are `string?`** — nullable refs are ON, so a plain `string` would be implicitly `[Required]` and 400 every text-only message (see lessons 2026-06-07). `MessageBL` allows image-only (empty Text).
 - **Frontend client** ([services/api.js](TrainWiseExpo/src/services/api.js)): `sendMessage` (text:'' / imagePath:null defaults), `getConversation`, `markMessagesSeen`, `getUnreadMessageCount`, `uploadChatImage` (raw fetch multipart), `getCoachesForTrainee`. Message field accessors are dual-cased (`m.senderID ?? m.SenderID`, `isSeen ?? IsSeen`, etc.).
 - **Chat UI** ([ChatScreen.js](TrainWiseExpo/src/screens/ChatScreen.js)): focus-gated 4s poll, auto-marks incoming messages seen (read receipts), image bubbles + full-screen viewer. `errText()` extracts the real axios error (never render the raw body — it stringifies as "[object Object]").
 - **Unread badge / notifications**: [MessagesContext.js](TrainWiseExpo/src/api/MessagesContext.js) is a global 12s poller exposing `unreadCount` + firing a generic local notification when the **total** count rises. It does NOT know the sender — naming the coach in the notification would need an unread-by-sender endpoint.
@@ -449,7 +458,7 @@ Added 2026-06-04 (#6), image support 2026-06-07 (#9). WhatsApp-style chat that i
 ## Connect / social layer (friends, gyms, presence, coach offers)
 
 Added 2026-06-08 (#3). A whole vertical slice — SQL → C# → RN. Migration:
-[sql/2026-06-08_add_social.sql](TrainWise/sql/2026-06-08_add_social.sql) (idempotent;
+[sql/2026-06-08_add_social.sql](sql/2026-06-08_add_social.sql) (idempotent;
 **must run after `seed_reference_data.sql`** — its fake-user seed references ActivityTypeIDs 1–6).
 
 - **DB**: `Friendships` (RequesterID/AddresseeID/Status pending|accepted|declined — ONE row per pair, either direction), `Gyms` + `GymCoaches` (gym↔coach recommendation link, CoachUserID = Users.UserID), `CoachOffers` (coach→trainee "need a coach?"), and `Users.LastSeen` / `Latitude` / `Longitude`. Distance uses `geography::Point(lat,lng,4326).STDistance(...)`; "online" = `LastSeen` within **5 minutes**. ~20 stored procs, all `CREATE OR ALTER`. The seed adds 6 fake trainees + 4 fake coaches near **Netanya (32.3215, 34.8532)** + **10 REAL Netanya gyms harvested from the Google Places API** (name + Address + Lat/Lng all from Google so the pin and address always agree — fixes the address-mismatch class of bug): Profit Gym, G 24/7, Holmes Place Natanya, Greenbody, Icon Fitness Netanya, FITTR, Collegym, Shmeps Fit, Reborn, Profit Kiryat HaSharon. They cover the user's city and reach Ruppin Academic Center (~6km NE). Gyms are **demo-only reference data** (no UI creates them), so the seed **wipes `Gyms` + `GymCoaches` and reseeds** each run (converges; any coach self-listing is rebuilt). The Connect query radius is **25km** (Netanya + Ruppin, local). `Gyms.City` exists but the Connect filter is now type+sort (see frontend). The fake people are **real loginable accounts, password `demo1234`** (use a second login to demo the accept side of friend/coach flows).
@@ -469,7 +478,7 @@ Added 2026-06-08 (#4). [InjuryReportScreen.js](TrainWiseExpo/src/screens/InjuryR
 ## Profile picture upload
 
 Wired 2026-06-02. End-to-end flow:
-- **Backend**: `POST /api/users/{id}/upload` accepts `IFormFile` via multipart. Saves to `wwwroot/images/{id}_{ticks}.{ext}` using `IWebHostEnvironment.WebRootPath` (relative `wwwroot` path doesn't work on Azure — see lesson 2026-06-02). Updates `Users.ProfileImagePath` via existing `sp_UpdateUserProfileImage`. Returns `{ path: "/images/..." }`. Served by `app.UseStaticFiles()` in Program.cs.
+- **Backend**: `POST /api/users/{id}/upload` accepts `IFormFile` via multipart. Saves to `wwwroot/images/{id}_{guid}.{ext}` (GUID names so URLs aren't enumerable) using `IWebHostEnvironment.WebRootPath` (relative `wwwroot` path doesn't work on Azure — see lesson 2026-06-02), gated by `BL/UploadValidator.cs` (6 MB cap + magic-byte sniff; the client filename/extension is ignored). Updates `Users.ProfileImagePath` via existing `sp_UpdateUserProfileImage`. Returns `{ path: "/images/..." }`. Served by `app.UseStaticFiles()` in Program.cs.
 - **Frontend**: [services/api.js](TrainWiseExpo/src/services/api.js) exports `uploadProfileImage(userId, localUri)` (raw fetch + FormData, no explicit Content-Type so RN sets the boundary correctly, 60s AbortController timeout) and `resolveProfileImageUrl(path)` (strips `/api` from BASE_URL to hit static-files host root). [AuthContext.login](TrainWiseExpo/src/api/AuthContext.js) carries `profileImagePath`. [ProfileScreen](TrainWiseExpo/src/screens/ProfileScreen.js) has a tappable avatar with ImagePicker + camera badge. [HomeScreen](TrainWiseExpo/src/screens/HomeScreen.js) renders the same URL in the greeting avatar.
 
 **Known limitation**: Azure App Service may wipe `wwwroot/images` on app restart (the deployment overlay replaces it). For production-grade persistence, move to Azure Blob Storage or mount a persisted disk at `D:\home\data\images`.
@@ -482,6 +491,8 @@ Redesigned 2026-06-02. [NotificationService.js](TrainWiseExpo/src/api/Notificati
 - **`sendLoadWarningIfNeeded(acRatio, level)`** — fires on workout confirm. Was previously a TEMP DEBUG OVERRIDE that always fired with body `acRatio=X, level=Red`; this was removed 2026-06-02. Now only fires for genuine Yellow/Red zones.
 
 Daily reminder content can't be mutated after scheduling, so the re-schedule-on-app-open pattern is intentional. iOS limits per-app scheduled count; the implementation cancels all before scheduling to stay safe.
+
+**FCM (push when the app is closed)**: the client registers its token via `PUT /api/users/{id}/pushtoken` (2026-06-21 migration adds the column); the backend sends through [BL/PushSender.cs](TrainWise/TrainWise/BL/PushSender.cs) (FirebaseAdmin, service-account JSON from the `FIREBASE_CREDENTIALS_JSON` env var — `google-services.json` on the client side is gitignored under `android/`).
 
 ## Expo SDK 54 picker / camera gotchas
 
@@ -500,10 +511,12 @@ screen calls the Python service directly over the LAN.
 - **Service** ([ml/app.py](ml/app.py)) binds `0.0.0.0:8000`, reads the same SQL Express DB
   (`Lirone\SQLEXPRESS` / `TrainWise`) via `pyodbc` with Windows Integrated Security (no
   password in source), and mirrors the C# load formula exactly ([ml/features.py](ml/features.py):
-  acute = 7-day load sum, chronic = 28-day sum / 4, AC thresholds 0.8 / 1.3 — recomputed from
-  `ActivityLogs`, NOT the stored `DailyLoad` rows, so charts never go stale). Endpoints:
-  `GET /health`, `/api/ml/trainee/<id>/pmc`, `/acwr`, `/forecast[?month=YYYY-MM]`,
-  `/forecast/history`.
+  acute = 7-day load sum, chronic per the 2026-07-06 rules — dynamic cold-start floor +
+  covered-days ramp, confirmed-only, AC thresholds 0.8 / 1.3 with injured tightening —
+  recomputed from `ActivityLogs`, NOT the stored `DailyLoad` rows, so charts never go stale).
+  Endpoints: `GET /health`, `/api/ml/trainee/<id>/pmc`, `/acwr`, `/forecast[?month=YYYY-MM]`,
+  `/forecast/history` — all accept `?tzOffsetMinutes=` (sent by mlApi.js) for local-day
+  bucketing.
 - **Forecast** ([ml/forecast.py](ml/forecast.py)): per-trainee regression on the current
   month's completed weekly loads (naive carry for week 1, `LinearRegression` at 2 weeks,
   `PolynomialFeatures(2)` upgrade at 3+ if it clearly fits better), projecting remaining weeks
@@ -523,7 +536,7 @@ screen calls the Python service directly over the LAN.
 - **DB**: `MonthlyForecasts` table created by [sql/2026-06-12_add_forecasts.sql](sql/2026-06-12_add_forecasts.sql)
   (idempotent; the Python service writes rows directly — no stored procs).
 - **Frontend**: [src/services/mlApi.js](TrainWiseExpo/src/services/mlApi.js) (axios client,
-  `ML_BASE_URL = http://<PC-IP>:8000` — **must track the PC IP exactly like the C# BASE_URLs**;
+  `ML_BASE_URL = http://<PC-IP>:8000` — **must track the PC IP exactly like `LOCAL_PC_IP` in src/config/backend.js** (hardcoded separately, not imported from there);
   offline errors degrade gracefully, no red crash). [CoachTraineeAnalyticsScreen.js](TrainWiseExpo/src/screens/CoachTraineeAnalyticsScreen.js)
   renders the **PMC** (Fitness/Fatigue/Form) and **ACWR safe-zone** charts (custom
   `react-native-svg` line charts — chart-kit can't shade the 0.8-1.3 band) plus the forecast
@@ -540,10 +553,12 @@ screen calls the Python service directly over the LAN.
 
 ## Known pending items
 
-- Teammate's SignUp flow expects gender PNGs `000.png` / `001.png` / `002.png` / `003.png` under `assets/images/` — currently only `wowowow.png` exists; either get the assets or swap to Ionicons.
 - HC `ActiveCaloriesBurned` permission is now requested at the SDK level + manifest + `app.json`. After installing the new APK the user must grant it once in Health Connect — until then calories silently fall back to the BMR-corrected `TotalCaloriesBurned` estimate.
-- App logo: `app.json` references `assets/images/wowowow.png` for launcher icon, adaptive icon foreground, and notification icon. Notification icons on Android MUST be transparent silhouettes — if the logo is colored, the system status-bar icon may render as a white blob. Make a separate silhouette PNG if that happens.
-- **#12 Route maps** for cardio workouts (running / walking / swimming / hiking) is the next planned feature. Decision: use Google Maps via react-native-maps. Requires a Google Cloud project, Maps SDK for Android enabled, API key with restrictions, billing on file. See [tasks/conversation_resume_2026_06_03.md](tasks/conversation_resume_2026_06_03.md) for the full carry-over brief.
+- App logo: `app.json` still references `assets/images/wowowow.png` for the launcher icon, adaptive icon foreground, AND the notification icon. Notification icons on Android MUST be transparent silhouettes — if the colored logo renders as a white blob in the status bar, point the expo-notifications `icon` at a silhouette PNG. (Refinements R2 shipped a silhouette, but `app.json` line ~52 still points at the colored logo — verify on device.)
+- `mlApi.js` still hardcodes its own `ML_BASE_URL` instead of importing `LOCAL_ML_URL` from `src/config/backend.js` — wiring it up would make the PC-IP update a single-file change.
+- The Python ML service is local-only (see the note at the top): deploying `ml/app.py` to Azure (pymssql + SQL auth) is the standing roadmap item.
+
+Resolved former items (kept so old session logs make sense): the gender PNGs `000-003.png` now exist under `assets/images/`; **#12 route maps shipped 2026-06-03** (`WorkoutRouteScreen` + expo-maps); the coach-row 404 is fixed by the CoachBL lazy-create (see "Coach row lazy-create" above).
 
 ## Self-learning
 

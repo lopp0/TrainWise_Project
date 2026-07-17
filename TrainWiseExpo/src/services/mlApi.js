@@ -31,19 +31,37 @@ const isOffline = (err) =>
 
 export const mlIsOfflineError = isOffline;
 
+// The device's UTC offset in minutes (same convention as services/api.js) so
+// the Python service buckets workouts to the user's LOCAL calendar day.
+const tzOffsetMinutes = () => -new Date().getTimezoneOffset();
+
 // Performance Manager Chart series: [{ date, fitness, fatigue, form }].
 export const getTraineePMC = (traineeId, days = 42) =>
-  ml.get(`/api/ml/trainee/${traineeId}/pmc`, { params: { days } });
+  ml.get(`/api/ml/trainee/${traineeId}/pmc`, {
+    params: { days, tzOffsetMinutes: tzOffsetMinutes() },
+  });
 
 // ACWR series + thresholds: { series:[{date,acRatio,level}], safeLow, safeHigh, danger }.
 export const getTraineeACWR = (traineeId, days = 28) =>
-  ml.get(`/api/ml/trainee/${traineeId}/acwr`, { params: { days } });
+  ml.get(`/api/ml/trainee/${traineeId}/acwr`, {
+    params: { days, tzOffsetMinutes: tzOffsetMinutes() },
+  });
+
+// Full load analytics (rolling + EWMA AC ratio series + training summary), same
+// shape as the C# LoadAnalyticsBL. Powers the Load-tab Load Trend + Training
+// Analysis cards from the ML service (Classic/Smooth toggle reads this).
+export const getTraineeAnalytics = (traineeId, days = 56) =>
+  ml.get(`/api/ml/trainee/${traineeId}/analytics`, {
+    params: { days, tzOffsetMinutes: tzOffsetMinutes() },
+  });
 
 // Monthly forecast. Omit `month` for the current month (also records a
 // snapshot server-side); pass 'YYYY-MM' to view a stored previous month.
 export const getTraineeForecast = (traineeId, month) =>
   ml.get(`/api/ml/trainee/${traineeId}/forecast`, {
-    params: month ? { month } : undefined,
+    params: month
+      ? { month, tzOffsetMinutes: tzOffsetMinutes() }
+      : { tzOffsetMinutes: tzOffsetMinutes() },
   });
 
 // Past months (latest snapshot per month) for the month picker:

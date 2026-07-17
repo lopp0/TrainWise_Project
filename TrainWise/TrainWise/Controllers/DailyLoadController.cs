@@ -19,12 +19,13 @@ namespace TrainWise.Controllers
         /// </summary>
         [HttpGet("user/{userId}/analytics")]
         public ActionResult<LoadAnalytics> GetAnalytics(
-            int userId, [FromQuery] int days = 56, [FromQuery] DateTime? end = null)
+            int userId, [FromQuery] int days = 56, [FromQuery] DateTime? end = null,
+            [FromQuery] int tzOffsetMinutes = 0)
         {
             if (!CallerOwnsOrCoaches(userId)) return Forbid();
             try
             {
-                return Ok(_analyticsBl.GetAnalytics(userId, days, end));
+                return Ok(_analyticsBl.GetAnalytics(userId, days, end, tzOffsetMinutes));
             }
             catch (ArgumentException ex)
             {
@@ -60,7 +61,7 @@ namespace TrainWise.Controllers
             if (!CallerMayAct(userId)) return Forbid();
             try
             {
-                var result = _loadBl.CalculateAndSave(userId, request.Date);
+                var result = _loadBl.CalculateAndSave(userId, request.Date, request.TzOffsetMinutes);
                 return Ok(result);
             }
             catch (ArgumentException ex)
@@ -77,5 +78,8 @@ namespace TrainWise.Controllers
     public class DateRequest
     {
         public DateTime Date { get; set; }
+        // Caller's UTC offset in minutes (e.g. Israel DST = 180). Optional so
+        // old APK builds keep working; 0 keeps the legacy UTC-day bucketing.
+        public int TzOffsetMinutes { get; set; } = 0;
     }
 }

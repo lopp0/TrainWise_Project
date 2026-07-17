@@ -40,6 +40,19 @@ namespace TrainWise.BL.Models
         public bool IsPublic { get; set; } = true;
     }
 
+    // #143 — a comment (or reply) on a workout-board post.
+    public class BoardComment
+    {
+        public int CommentId { get; set; }
+        public int PostId { get; set; }
+        public int UserID { get; set; }
+        public int? ParentCommentId { get; set; } // null = top-level, else a reply
+        public string Text { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public string AuthorName { get; set; }
+        public string AuthorImagePath { get; set; }
+    }
+
     public class LeaderboardEntry
     {
         public int Rank { get; set; }

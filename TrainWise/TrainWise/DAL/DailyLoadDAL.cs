@@ -13,8 +13,11 @@ namespace TrainWise.DAL
             var list = new List<ActivityLog>();
             using (SqlConnection con = Connect())
             {
-                var startDate = date.Date.AddDays(-27);
-                var endDate = date.Date.AddDays(1);
+                // One extra day each side: the caller's timezone shift can move
+                // a session across the UTC day boundary in either direction.
+                // Out-of-window rows bucket to days the sums never touch.
+                var startDate = date.Date.AddDays(-28);
+                var endDate = date.Date.AddDays(2);
                 var param = new Dictionary<string, object>
                 {
                     {"@UserID", userId},
@@ -35,6 +38,9 @@ namespace TrainWise.DAL
                             ExertionLevel = reader["ExertionLevel"] as byte? ?? 0,
                             CalculatedLoadForSession = reader["CalculatedLoadForSession"] == DBNull.Value ? 0 : Convert.ToInt32(reader["CalculatedLoadForSession"]),
                             StartTime = reader["StartTime"] as DateTime? ?? default,
+                            // NULL = confirmed (legacy rows) — matches the app's
+                            // `(isConfirmed ?? IsConfirmed) !== false` skip rule.
+                            IsConfirmed = reader["IsConfirmed"] as bool? ?? true,
                         });
                     }
                 }
@@ -71,6 +77,7 @@ namespace TrainWise.DAL
                             ExertionLevel = reader["ExertionLevel"] as byte? ?? 0,
                             CalculatedLoadForSession = reader["CalculatedLoadForSession"] == DBNull.Value ? 0 : Convert.ToInt32(reader["CalculatedLoadForSession"]),
                             StartTime = reader["StartTime"] as DateTime? ?? default,
+                            IsConfirmed = reader["IsConfirmed"] as bool? ?? true,
                         });
                     }
                 }

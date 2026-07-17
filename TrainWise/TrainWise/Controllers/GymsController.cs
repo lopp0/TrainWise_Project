@@ -18,6 +18,35 @@ namespace TrainWise.Controllers
             catch (Exception ex) { return StatusCode(500, ex.Message); }
         }
 
+        // #146 — GET /api/gyms/nearby?lat=&lng=&radiusKm=
+        // Seeded gyms merged with live Google Places results (server-side key).
+        // Falls back to seeded-only when the Places key isn't configured.
+        [HttpGet("nearby")]
+        public IActionResult GetNearby([FromQuery] double lat, [FromQuery] double lng, [FromQuery] double radiusKm = 25)
+        {
+            try { return Ok(_bl.GetNearbyMerged(lat, lng, radiusKm)); }
+            catch (ArgumentException ex) { return BadRequest(ex.Message); }
+            catch (Exception ex) { return StatusCode(500, ex.Message); }
+        }
+
+        // #146 diagnostics — GET /api/gyms/places-debug?lat=&lng=&radiusKm=
+        // Shows whether the server-side Places key is set and what Google returned
+        // ("OK" / "REQUEST_DENIED" / "ZERO_RESULTS" + error_message). Use this to
+        // confirm the GOOGLE_PLACES_KEY env var + Places API enablement.
+        [HttpGet("places-debug")]
+        public IActionResult PlacesDebug([FromQuery] double lat = 32.3215, [FromQuery] double lng = 34.8532, [FromQuery] double radiusKm = 25)
+        {
+            var places = PlacesService.GetNearbyGyms(lat, lng, radiusKm);
+            return Ok(new
+            {
+                keyConfigured = PlacesService.Enabled,
+                googleStatus = PlacesService.LastStatus,
+                googleError = PlacesService.LastError,
+                placesCount = places.Count,
+                sample = places.Take(3).Select(g => new { g.Name, g.Latitude, g.Longitude })
+            });
+        }
+
         // GET /api/gyms/{gymId}/coaches — recommended coaches at a gym
         [HttpGet("{gymId}/coaches")]
         public IActionResult GetGymCoaches(int gymId)

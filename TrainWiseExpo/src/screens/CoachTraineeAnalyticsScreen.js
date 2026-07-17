@@ -31,6 +31,25 @@ const CHART_W = screenWidth - 64; // card has 16 padding each side + inner margi
 // constant across themes and don't reuse the semantic green/yellow/red.
 const SERIES = { fitness: '#42A5F5', fatigue: '#FFA726', form: '#9575CD' };
 
+// Per-graph help text (the "?" on each card), mirroring the trainee Load tab.
+const HELP = {
+  forecast: {
+    title: 'Monthly forecast',
+    body:
+      'Projects where this athlete’s training load is heading by month end if they keep their current pace.\n\nIt fits a trend on the weeks already completed this month (their recent 7-day pace early on, then a linear or polynomial regression as more weeks finish) and re-simulates the acute:chronic ratio forward day by day — so chronic load rises with sustained training and the projected ratio stays realistic instead of dividing a rising acute by a frozen chronic.\n\nThe risk pill (Safe / Warning / High) comes from the projected end-of-month ratio. Read it as guidance that sharpens as the month fills in, not a guarantee.',
+  },
+  pmc: {
+    title: 'Fitness, Fatigue & Form',
+    body:
+      'The Performance Manager Chart.\n\nFitness (chronic load, ~28-day average) is the base the athlete has built. Fatigue (acute load, last 7 days) is recent tiredness. Form = Fitness − Fatigue.\n\nPositive Form means fresh and ready to perform; strongly negative means fatigued and due for recovery. A healthy pattern is Fitness rising gradually while Form dips during hard blocks and rebounds on a taper.',
+  },
+  acwr: {
+    title: 'Training load ratio (ACWR)',
+    body:
+      'Acute : Chronic Workload Ratio — the last 7 days of load divided by the 28-day weekly average.\n\nThe green band 0.8 to 1.3 is the sweet spot: enough load to adapt without spiking injury risk. Above 1.3 the athlete is ramping too fast; above the red 1.5 line is the danger zone. Below 0.8 for a long time means detraining.\n\nEach point is colored by its status, and with an active injury the safe range tightens (Gabbett 2016).',
+  },
+};
+
 // Risk pill / dot color from the Safe|Warning|High class.
 const riskColor = (riskClass) => {
   if (riskClass === 'High') return '#f44336';
@@ -167,6 +186,7 @@ const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
   const [history, setHistory] = useState([]);
   const [month, setMonth] = useState(null); // null = current month
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [helpTopic, setHelpTopic] = useState(null);
 
   const loadAll = useCallback(async () => {
     if (!traineeId) { setLoading(false); return; }
@@ -314,7 +334,12 @@ const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
             {/* ===== Forecast card ===== */}
             <View style={[styles.card, styles.forecastCard]}>
               <View style={styles.forecastHead}>
-                <Text style={styles.cardTitle}>Monthly forecast</Text>
+                <View style={styles.titleWithHelp}>
+                  <Text style={styles.cardTitle}>Monthly forecast</Text>
+                  <TouchableOpacity onPress={() => setHelpTopic('forecast')} hitSlop={8}>
+                    <Ionicons name="help-circle-outline" size={18} color={Colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
                 <TouchableOpacity
                   style={styles.monthBtn}
                   onPress={() => setMonthPickerOpen(true)}
@@ -404,7 +429,12 @@ const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
 
             {/* ===== PMC chart ===== */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Fitness, fatigue and form</Text>
+              <View style={styles.titleRow}>
+                <Text style={styles.cardTitle}>Fitness, fatigue and form</Text>
+                <TouchableOpacity onPress={() => setHelpTopic('pmc')} hitSlop={8}>
+                  <Ionicons name="help-circle-outline" size={18} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
               <Text style={styles.cardHint}>
                 Fitness = chronic load · Fatigue = acute load · Form = fitness minus fatigue
               </Text>
@@ -431,7 +461,12 @@ const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
 
             {/* ===== ACWR chart ===== */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Training load ratio (ACWR)</Text>
+              <View style={styles.titleRow}>
+                <Text style={styles.cardTitle}>Training load ratio (ACWR)</Text>
+                <TouchableOpacity onPress={() => setHelpTopic('acwr')} hitSlop={8}>
+                  <Ionicons name="help-circle-outline" size={18} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
               <Text style={styles.cardHint}>
                 Green band 0.8 to 1.3 is the safe zone · above 1.5 is overload risk
               </Text>
@@ -467,6 +502,28 @@ const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
           </>
         )}
       </ScrollView>
+
+      {/* per-graph help */}
+      <Modal
+        visible={!!helpTopic}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setHelpTopic(null)}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.helpBackdrop}
+          onPress={() => setHelpTopic(null)}
+        >
+          <View style={styles.helpCard}>
+            <Text style={styles.helpTitle}>{helpTopic ? HELP[helpTopic].title : ''}</Text>
+            <Text style={styles.helpBody}>{helpTopic ? HELP[helpTopic].body : ''}</Text>
+            <TouchableOpacity style={styles.helpClose} onPress={() => setHelpTopic(null)}>
+              <Text style={styles.helpCloseText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* month picker */}
       <Modal
@@ -534,6 +591,8 @@ const makeStyles = (C) =>
     },
     forecastCard: { borderColor: C.primary, borderWidth: 1.5 },
     cardTitle: { color: C.primary, fontSize: 15, fontWeight: '800' },
+    titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    titleWithHelp: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     cardHint: { color: C.textMuted, fontSize: 11, marginTop: 4, marginBottom: 10 },
     noData: { color: C.textMuted, fontSize: 13, textAlign: 'center', paddingVertical: 16 },
 
@@ -607,6 +666,14 @@ const makeStyles = (C) =>
       borderWidth: 1, borderColor: C.border,
     },
     modalTitle: { color: C.textPrimary, fontSize: 17, fontWeight: '800', marginBottom: 12 },
+
+    // per-graph help modal
+    helpBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', paddingHorizontal: 24 },
+    helpCard: { backgroundColor: C.cardBackground, borderRadius: 14, padding: 18, borderWidth: 1, borderColor: C.border },
+    helpTitle: { color: C.primary, fontSize: 17, fontWeight: '800', marginBottom: 10 },
+    helpBody: { color: C.textPrimary, fontSize: 14, lineHeight: 21, marginBottom: 16 },
+    helpClose: { backgroundColor: C.primary, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+    helpCloseText: { color: '#fff', fontSize: 15, fontWeight: '700' },
     monthOption: {
       flexDirection: 'row', alignItems: 'center', gap: 10,
       paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border,

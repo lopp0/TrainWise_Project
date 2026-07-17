@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useMemo} from 'react';
 import {
   View,
   Text,
@@ -19,9 +19,13 @@ import ScreenHeader from '../components/ScreenHeader';
 import Card from '../components/Card';
 import PrimaryButton from '../components/PrimaryButton';
 import LoadAnalyticsSection from '../components/LoadAnalyticsSection';
+import RiskGauge from '../components/RiskGauge';
+import LoadHistoryCard from '../components/LoadHistoryCard';
+import { computeInjuryRisk } from '../utils/injuryRisk';
 import { getActivityLogsByUser, getActiveInjuriesByUser, getCoachRecommendationsByUser } from '../services/api';
 import { useAuth } from '../api/AuthContext';
 import { buildRestRecommendation } from '../utils/restRecommendation';
+import { parseServerDate } from '../utils/serverDate';
 import {
   getWeekStartDate,
   getWeekStartDay,
@@ -44,8 +48,15 @@ const getWeekRangeLabel = (offset, weekStartDay) => {
   return `${formatShortDate(ws)} – ${formatShortDate(we)}`;
 };
 
-const determineLoadLevel = (ratio) => {
+// Same bands as backend DetermineLoadLevel; an active injury tightens the
+// Red line to 1.2 (Yellow runs 0.8..<1.2 — no gap).
+const determineLoadLevel = (ratio, hasInjury = false) => {
   if (ratio == null || ratio <= 0) return 'Green';
+  if (hasInjury) {
+    if (ratio >= 1.2) return 'Red';
+    if (ratio >= 0.8) return 'Yellow';
+    return 'Green';
+  }
   if (ratio > 1.3) return 'Red';
   if (ratio >= 0.8) return 'Yellow';
   return 'Green';
@@ -53,7 +64,7 @@ const determineLoadLevel = (ratio) => {
 
 const sumSessionLoadsInRange = (logs, startDate, endDate) => {
   return logs.reduce((sum, log) => {
-    const st = new Date(log.startTime || log.StartTime);
+    const st = parseServerDate(log.startTime || log.StartTime);
     if (st >= startDate && st <= endDate) {
       return sum + Number(
         log.calculatedLoadForSession ?? log.CalculatedLoadForSession ?? 0,
@@ -131,6 +142,25 @@ const WarningsDashboardScreen = () => {
   const recId = (rec) => String(rec.recID ?? rec.RecID);
   const coachUnseen = coachRecs.filter((r) => !seenRecIds.has(recId(r))).length;
 
+  // #183 — injury-risk gauge (ACWR + Foster monotony/strain), from the same
+  // confirmed logs the dashboard already loaded.
+  const injuryRisk = useMemo(
+    () => computeInjuryRisk(allLogs, user?.experienceLevel ?? user?.ExperienceLevel, hasActiveInjury),
+    [allLogs, user, hasActiveInjury],
+  );
+
+  // #10 — the "Current Status" AC ratio + level must agree with the Injury-Risk
+  // gauge and the Load-trend chart. All three read the SAME rolling ACWR
+  // (computeLoadAnalytics, surfaced via injuryRisk.ratio). The week-based number
+  // is only used when browsing a PAST week, where "current" rolling doesn't apply.
+  const isCurrentWeek = weekOffset === 0;
+  const displayRatio =
+    isCurrentWeek && injuryRisk.ratio != null ? injuryRisk.ratio : acRatio;
+  const displayLevel =
+    isCurrentWeek && injuryRisk.ratio != null
+      ? determineLoadLevel(displayRatio, hasActiveInjury)
+      : currentLoadLevel;
+
   // Folding the coach section open marks everything in it as seen (persisted),
   // so the red unseen-count badge clears and stays cleared across visits.
   const toggleCoach = async () => {
@@ -184,7 +214,7 @@ const WarningsDashboardScreen = () => {
   useEffect(() => {
     renderWeek(allLogs, allLoadHistory, weekOffset);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekOffset, allLogs, allLoadHistory, weekStartDay]);
+  }, [weekOffset, allLogs, allLoadHistory, weekStartDay, hasActiveInjury]);
 
   const renderWeek = (logs, loadHistory, offset) => {
     const weekStart = getWeekStartDate(offset, weekStartDay);
@@ -194,7 +224,7 @@ const WarningsDashboardScreen = () => {
     // Per-day session-load sum for the displayed week only.
     // Two sessions on the same day sum together. Empty days stay 0.
     logs.forEach((log) => {
-      const st = new Date(log.startTime || log.StartTime);
+      const st = parseServerDate(log.startTime || log.StartTime);
       const d = new Date(st);
       d.setHours(0, 0, 0, 0);
       const diffDays = Math.round(
@@ -229,25 +259,44 @@ const WarningsDashboardScreen = () => {
     const chronic28Sum = sumSessionLoadsInRange(logs, chronic28Start, weekEnd);
     const chronic = chronic28Sum / 4; // weekly-equivalent average over 28 days
 
-    // Cold-start guard (mirrors backend LoadCalculationBL): a brand-new user's
-    // only workout falls in BOTH the acute window AND the 28-day window, so
-    // chronic = acute/4 and the ratio is a fixed 4.0 → every first session is a
-    // false Red. Until a real baseline exists (>= 7 distinct training days in
-    // the 28-day window), floor the chronic at the experience-based expected
-    // weekly load so early/small workouts are judged sanely.
-    const distinctDays = new Set();
+    // Cold-start guard + ramp (mirrors backend LoadCalculationBL.EffectiveChronic
+    // and utils/acwr.js — change one, change all):
+    //   < 7 days with load > 0 in the 28-day window: floor the chronic at the
+    //     experience-based expected weekly load (brand-new user's first session
+    //     isn't a fixed 4.0; a returning athlete isn't a false Red).
+    //   >= 7 active days: divide by the weeks actually covered instead of a
+    //     fixed 4 — chronic = sum28 / min(4, covered/7), covered from the first
+    //     loaded day. A steady 2-week-old user reads ~1.0, not a false Red 2.0.
+    const dayLoads = new Map();
     logs.forEach((log) => {
-      const st = new Date(log.startTime || log.StartTime);
+      const st = parseServerDate(log.startTime || log.StartTime);
       if (st >= chronic28Start && st <= weekEnd) {
         const dd = new Date(st);
         dd.setHours(0, 0, 0, 0);
-        distinctDays.add(dd.getTime());
+        const load = Number(
+          log.calculatedLoadForSession ?? log.CalculatedLoadForSession ?? 0,
+        );
+        dayLoads.set(dd.getTime(), (dayLoads.get(dd.getTime()) || 0) + load);
       }
     });
-    const baselineEstablished = distinctDays.size >= 7;
+    const activeDayKeys = [...dayLoads.entries()].filter(([, v]) => v > 0).map(([k]) => k);
+    const baselineEstablished = activeDayKeys.length >= 7;
     const bootstrapWeekly =
       BOOTSTRAP_WEEKLY[user?.experienceLevel ?? user?.ExperienceLevel] || 150;
-    const effChronic = baselineEstablished ? chronic : Math.max(chronic, bootstrapWeekly);
+    let effChronic;
+    if (!baselineEstablished) {
+      effChronic = Math.max(chronic, bootstrapWeekly);
+    } else {
+      const firstActive = Math.min(...activeDayKeys);
+      const coverEnd = Math.min(weekEnd.getTime(), Date.now());
+      const endDay = new Date(coverEnd);
+      endDay.setHours(0, 0, 0, 0);
+      const covered = Math.min(
+        28,
+        Math.max(7, Math.round((endDay.getTime() - firstActive) / 86400000) + 1),
+      );
+      effChronic = chronic28Sum / Math.min(4, covered / 7);
+    }
 
     // Ratio / level semantics (effChronic = chronic with the cold-start floor):
     //   - effChronic > 0 : standard ACWR.
@@ -256,10 +305,10 @@ const WarningsDashboardScreen = () => {
     let level = 'Green';
     if (effChronic > 0) {
       ratio = acute / effChronic;
-      level = determineLoadLevel(ratio);
+      level = determineLoadLevel(ratio, hasActiveInjury);
     } else if (acute > 0) {
       ratio = acute >= 1000 ? 2.0 : acute >= 300 ? 1.1 : 0.9;
-      level = determineLoadLevel(ratio);
+      level = determineLoadLevel(ratio, hasActiveInjury);
     }
 
     // Stress 0-100 scale.
@@ -376,15 +425,15 @@ const WarningsDashboardScreen = () => {
                 <View
                   style={[
                     styles.statusDot,
-                    {backgroundColor: getLevelColor(currentLoadLevel)},
+                    {backgroundColor: getLevelColor(displayLevel)},
                   ]}
                 />
                 <Text
                   style={[
                     styles.statusText,
-                    {color: getLevelColor(currentLoadLevel)},
+                    {color: getLevelColor(displayLevel)},
                   ]}>
-                  {currentLoadLevel}
+                  {displayLevel}
                 </Text>
               </View>
               <View style={styles.metricsRow}>
@@ -395,7 +444,7 @@ const WarningsDashboardScreen = () => {
                       <Ionicons name="help-circle-outline" size={14} color={Colors.textSecondary} />
                     </TouchableOpacity>
                   </View>
-                  <Text style={styles.metricValue}>{acRatio.toFixed(2)}</Text>
+                  <Text style={styles.metricValue}>{displayRatio.toFixed(2)}</Text>
                 </View>
                 <View style={styles.metric}>
                   <View style={styles.metricLabelRow}>
@@ -404,7 +453,7 @@ const WarningsDashboardScreen = () => {
                       <Ionicons name="help-circle-outline" size={14} color={Colors.textSecondary} />
                     </TouchableOpacity>
                   </View>
-                  <Text style={[styles.metricValue, { color: getLevelColor(currentLoadLevel) }]}>
+                  <Text style={[styles.metricValue, { color: getLevelColor(displayLevel) }]}>
                     {acuteLoad}
                   </Text>
                 </View>
@@ -419,6 +468,11 @@ const WarningsDashboardScreen = () => {
                 </View>
               </View>
             </Card>
+
+            {/* #183 — Injury-Risk Gauge (ACWR + monotony + strain) */}
+            <View style={{ paddingHorizontal: Spacing.lg }}>
+              <RiskGauge risk={injuryRisk} />
+            </View>
 
             {/* Weekly Load Chart */}
             <Card>
@@ -463,6 +517,11 @@ const WarningsDashboardScreen = () => {
               />
               <Text style={styles.chartCaption}>Daily session load (load units)</Text>
             </Card>
+
+            {/* #115 — monthly / yearly load history (Week / Month / Year) */}
+            <View style={{ paddingHorizontal: Spacing.lg }}>
+              <LoadHistoryCard logs={allLogs} />
+            </View>
 
             {/* Load Trend (Classic/EWMA toggle) + Training Analysis. Computed
                 by the backend LoadAnalyticsBL; falls back to the on-device

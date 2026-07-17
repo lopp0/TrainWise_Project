@@ -104,6 +104,43 @@ namespace TrainWise.DAL
             }
         }
 
+        // #181 — flag/unflag a workout as publicly shareable.
+        public void SetShared(int activityId, bool shared)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(
+                "UPDATE dbo.ActivityLogs SET IsShared = @s WHERE ActivityID = @id", con);
+            cmd.Parameters.AddWithValue("@id", activityId);
+            cmd.Parameters.AddWithValue("@s", shared);
+            cmd.ExecuteNonQuery();
+        }
+
+        // #181 — non-sensitive projection of a SHARED workout (null if the row
+        // doesn't exist or isn't shared). No owner id / HR / calories exposed.
+        public PublicWorkout? GetPublicShared(int activityId)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(@"
+SELECT a.ActivityID, t.TypeName, a.Duration, a.DistanceKM, a.ExertionLevel,
+       a.CalculatedLoadForSession, a.StartTime
+FROM dbo.ActivityLogs a
+JOIN dbo.ActivityTypes t ON t.ActivityTypeID = a.ActivityTypeID
+WHERE a.ActivityID = @id AND a.IsShared = 1", con);
+            cmd.Parameters.AddWithValue("@id", activityId);
+            using var r = cmd.ExecuteReader();
+            if (!r.Read()) return null;
+            return new PublicWorkout
+            {
+                ActivityID = Convert.ToInt32(r["ActivityID"]),
+                ActivityName = r["TypeName"].ToString(),
+                Duration = r["Duration"] == DBNull.Value ? 0 : Convert.ToInt32(r["Duration"]),
+                DistanceKM = r["DistanceKM"] == DBNull.Value ? 0 : Convert.ToDouble(r["DistanceKM"]),
+                ExertionLevel = r["ExertionLevel"] == DBNull.Value ? (byte)0 : Convert.ToByte(r["ExertionLevel"]),
+                SessionLoad = r["CalculatedLoadForSession"] == DBNull.Value ? 0 : Convert.ToInt32(r["CalculatedLoadForSession"]),
+                StartTime = r["StartTime"] as DateTime? ?? default
+            };
+        }
+
         // Owner of a workout row (for authorization). Null if it doesn't exist.
         public int? GetOwnerUserId(int activityId)
         {

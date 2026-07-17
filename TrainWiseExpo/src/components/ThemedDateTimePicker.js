@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemedStyles } from '../theme/useThemedStyles';
 
@@ -66,6 +66,24 @@ const ThemedDateTimePicker = ({ visible, value, maximumDate, onConfirm, onCancel
     setSel(nd);
   };
 
+  // Manual typing of hour / minute. Clamps to a valid range and refuses a
+  // future time when maximumDate caps it.
+  const typeTime = (field, text) => {
+    const digits = text.replace(/[^0-9]/g, '').slice(0, 2);
+    if (digits === '') return;
+    const n = parseInt(digits, 10);
+    const nd = new Date(sel);
+    if (field === 'h') {
+      if (n > 23) return;
+      nd.setHours(n);
+    } else {
+      if (n > 59) return;
+      nd.setMinutes(n);
+    }
+    if (maximumDate && nd > maximumDate) return;
+    setSel(nd);
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <Pressable style={styles.backdrop} onPress={onCancel}>
@@ -117,14 +135,28 @@ const ThemedDateTimePicker = ({ visible, value, maximumDate, onConfirm, onCancel
             <Text style={styles.timeLabel}>Time</Text>
             <View style={styles.timeBox}>
               <TouchableOpacity onPress={() => stepTime('h', -1)} style={styles.timeBtn}><Ionicons name="remove" size={18} color={Colors.primary} /></TouchableOpacity>
-              <Text style={styles.timeVal}>{pad(sel.getHours())}</Text>
+              <TextInput
+                style={styles.timeVal}
+                value={pad(sel.getHours())}
+                onChangeText={(t) => typeTime('h', t)}
+                keyboardType="number-pad"
+                maxLength={2}
+                selectTextOnFocus
+              />
               <TouchableOpacity onPress={() => stepTime('h', 1)} style={styles.timeBtn}><Ionicons name="add" size={18} color={Colors.primary} /></TouchableOpacity>
             </View>
             <Text style={styles.timeColon}>:</Text>
             <View style={styles.timeBox}>
-              <TouchableOpacity onPress={() => stepTime('m', -5)} style={styles.timeBtn}><Ionicons name="remove" size={18} color={Colors.primary} /></TouchableOpacity>
-              <Text style={styles.timeVal}>{pad(sel.getMinutes())}</Text>
-              <TouchableOpacity onPress={() => stepTime('m', 5)} style={styles.timeBtn}><Ionicons name="add" size={18} color={Colors.primary} /></TouchableOpacity>
+              <TouchableOpacity onPress={() => stepTime('m', -1)} style={styles.timeBtn}><Ionicons name="remove" size={18} color={Colors.primary} /></TouchableOpacity>
+              <TextInput
+                style={styles.timeVal}
+                value={pad(sel.getMinutes())}
+                onChangeText={(t) => typeTime('m', t)}
+                keyboardType="number-pad"
+                maxLength={2}
+                selectTextOnFocus
+              />
+              <TouchableOpacity onPress={() => stepTime('m', 1)} style={styles.timeBtn}><Ionicons name="add" size={18} color={Colors.primary} /></TouchableOpacity>
             </View>
           </View>
 
@@ -157,7 +189,7 @@ const makeStyles = (C) => {
     timeLabel: { color: C.textSecondary, fontSize: 13, fontWeight: '700', marginRight: 6 },
     timeBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.inputBackground, borderRadius: 10, borderWidth: 1, borderColor: C.inputBorder },
     timeBtn: { paddingHorizontal: 10, paddingVertical: 8 },
-    timeVal: { color: C.textPrimary, fontSize: 18, fontWeight: '900', minWidth: 26, textAlign: 'center' },
+    timeVal: { color: C.textPrimary, fontSize: 18, fontWeight: '900', minWidth: 34, textAlign: 'center', padding: 0 },
     timeColon: { color: C.textPrimary, fontSize: 18, fontWeight: '900' },
     actions: { flexDirection: 'row', gap: 12, marginTop: 16 },
     cancelBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: 'center', borderWidth: 1.5, borderColor: C.border },

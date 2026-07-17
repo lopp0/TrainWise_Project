@@ -18,8 +18,10 @@ namespace TrainWise.BL
 
             bool hasText = !string.IsNullOrWhiteSpace(m.Text);
             bool hasImage = !string.IsNullOrWhiteSpace(m.ImagePath);
-            if (!hasText && !hasImage)
-                throw new ArgumentException("Message text or image is required");
+            bool hasAudio = !string.IsNullOrWhiteSpace(m.AudioPath);   // #139
+            bool hasVideo = !string.IsNullOrWhiteSpace(m.VideoPath);   // #135
+            if (!hasText && !hasImage && !hasAudio && !hasVideo)
+                throw new ArgumentException("Message text or media is required");
 
             var sender = _userDal.GetUserById(m.SenderID);
             if (sender == null)
@@ -38,6 +40,8 @@ namespace TrainWise.BL
             // the app is closed (best-effort; no-op if they have no push token).
             string preview = hasText
                 ? (m.Text.Length > 80 ? m.Text.Substring(0, 80) + "…" : m.Text)
+                : hasAudio ? "Sent you a voice message 🎤"
+                : hasVideo ? "Sent you a video 🎥"
                 : "Sent you a photo 📷";
             PushSender.Send(_userDal.GetPushToken(m.ReceiverID),
                 $"{sender.FullName} 💬", preview);

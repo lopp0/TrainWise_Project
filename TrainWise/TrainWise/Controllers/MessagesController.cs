@@ -27,7 +27,9 @@ namespace TrainWise.Controllers
                     SenderID = request.SenderID,
                     ReceiverID = request.ReceiverID,
                     Text = request.Text,
-                    ImagePath = request.ImagePath
+                    ImagePath = request.ImagePath,
+                    AudioPath = request.AudioPath,
+                    VideoPath = request.VideoPath
                 });
                 return Ok(saved);
             }
@@ -70,6 +72,47 @@ namespace TrainWise.Controllers
             }
 
             return Ok(new { path = "/images/" + fileName });
+        }
+
+        // POST /api/messages/upload/audio — #139 voice message. Returns { path }.
+        [HttpPost("upload/audio")]
+        public Task<IActionResult> UploadAudio(IFormFile file, [FromServices] IWebHostEnvironment env)
+        {
+            if (!UploadValidator.TryValidateAudio(file, out string ext, out string err))
+                return Task.FromResult<IActionResult>(BadRequest(err));
+            return SaveMedia(file, env, "voice_", ext);
+        }
+
+        // POST /api/messages/upload/video — #135 form-check video. Returns { path }.
+        // Raise the per-request body cap above Kestrel's ~28 MB default so a
+        // clip up to the validator's 100 MB limit isn't 413'd before validation.
+        [RequestSizeLimit(105L * 1024 * 1024)]
+        [RequestFormLimits(MultipartBodyLengthLimit = 105L * 1024 * 1024)]
+        [HttpPost("upload/video")]
+        public Task<IActionResult> UploadVideo(IFormFile file, [FromServices] IWebHostEnvironment env)
+        {
+            if (!UploadValidator.TryValidateVideo(file, out string ext, out string err))
+                return Task.FromResult<IActionResult>(BadRequest(err));
+            return SaveMedia(file, env, "clip_", ext);
+        }
+
+        // Shared writer for chat media (audio/video). Random, non-enumerable name
+        // under wwwroot/media (served by UseStaticFiles like /images).
+        private static async Task<IActionResult> SaveMedia(IFormFile file,
+            IWebHostEnvironment env, string prefix, string ext)
+        {
+            string webRoot = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
+            string folder = Path.Combine(webRoot, "media");
+            if (!Directory.Exists(folder))
+                Directory.CreateDirectory(folder);
+
+            string fileName = $"{prefix}{Guid.NewGuid():N}{ext}";
+            string fullPath = Path.Combine(folder, fileName);
+            using (var stream = new FileStream(fullPath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+            return new OkObjectResult(new { path = "/media/" + fileName });
         }
 
         // GET /api/messages/conversation/{userA}/{userB}  — full thread

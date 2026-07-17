@@ -16,7 +16,9 @@ namespace TrainWise.DAL
                     {"@SenderID", m.SenderID},
                     {"@ReceiverID", m.ReceiverID},
                     {"@Text", m.Text},
-                    {"@ImagePath", (object)m.ImagePath ?? DBNull.Value}
+                    {"@ImagePath", (object)m.ImagePath ?? DBNull.Value},
+                    {"@AudioPath", (object)m.AudioPath ?? DBNull.Value},
+                    {"@VideoPath", (object)m.VideoPath ?? DBNull.Value}
                 };
 
                 using (SqlCommand cmd = CreateCommandWithStoredProcedure("sp_InsertMessage", con, param))
@@ -167,7 +169,19 @@ WHERE (m.SenderID = @a AND m.ReceiverID = @b)
             Text = reader["Text"].ToString(),
             SentAt = (DateTime)reader["SentAt"],
             IsSeen = (bool)reader["IsSeen"],
-            ImagePath = reader["ImagePath"] == DBNull.Value ? null : reader["ImagePath"].ToString()
+            ImagePath = reader["ImagePath"] == DBNull.Value ? null : reader["ImagePath"].ToString(),
+            AudioPath = HasColumn(reader, "AudioPath") && reader["AudioPath"] != DBNull.Value ? reader["AudioPath"].ToString() : null,
+            VideoPath = HasColumn(reader, "VideoPath") && reader["VideoPath"] != DBNull.Value ? reader["VideoPath"].ToString() : null
         };
+
+        // Defensive column check so the mapper still works if an older proc that
+        // doesn't SELECT the media columns is deployed (e.g. before the migration).
+        private static bool HasColumn(SqlDataReader reader, string name)
+        {
+            for (int i = 0; i < reader.FieldCount; i++)
+                if (string.Equals(reader.GetName(i), name, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            return false;
+        }
     }
 }

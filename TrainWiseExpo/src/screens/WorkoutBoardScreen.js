@@ -30,10 +30,14 @@ import {
   getAllActivityTypes,
   uploadChatImage,
   resolveProfileImageUrl,
+  getBoardComments,
+  addBoardComment,
+  deleteBoardComment,
 } from '../services/api';
 import { parseServerDate } from '../utils/serverDate';
 import UserProfileCard from '../components/UserProfileCard';
 import ConnectTabs from '../components/ConnectTabs';
+import ZoomableImage from '../components/ZoomableImage';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 
@@ -88,6 +92,15 @@ const WorkoutBoardScreen = ({ navigation }) => {
   const [recentLogs, setRecentLogs] = useState([]);
   const [typesById, setTypesById] = useState({});
 
+  // #11 — full-screen zoomable image viewer + comments sheet.
+  const [imageViewer, setImageViewer] = useState(null); // image url
+  const [commentsPost, setCommentsPost] = useState(null); // post whose comments are open
+  const [comments, setComments] = useState([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [replyTo, setReplyTo] = useState(null); // { id, name } — comment being replied to
+  const [commentCounts, setCommentCounts] = useState({}); // postId -> count
+
   const load = useCallback(async () => {
     if (!userId) return;
     try {
@@ -129,6 +142,67 @@ const WorkoutBoardScreen = ({ navigation }) => {
     } catch {
       load(); // revert on failure
     }
+  };
+
+  // #11 — comments. Open the sheet for a post and load its comments.
+  const openComments = async (post) => {
+    const pid = post.postId ?? post.PostId;
+    setCommentsPost(post);
+    setComments([]);
+    setReplyTo(null);
+    setCommentText('');
+    setCommentsLoading(true);
+    try {
+      const res = await getBoardComments(pid);
+      const list = Array.isArray(res.data) ? res.data : [];
+      setComments(list);
+      setCommentCounts((c) => ({ ...c, [pid]: list.length }));
+    } catch {
+      setComments([]);
+    } finally {
+      setCommentsLoading(false);
+    }
+  };
+
+  const submitComment = async () => {
+    const text = commentText.trim();
+    if (!text || !commentsPost) return;
+    const pid = commentsPost.postId ?? commentsPost.PostId;
+    setCommentText('');
+    const parentId = replyTo?.id ?? null;
+    setReplyTo(null);
+    try {
+      await addBoardComment(pid, userId, text, parentId);
+      const res = await getBoardComments(pid);
+      const list = Array.isArray(res.data) ? res.data : [];
+      setComments(list);
+      setCommentCounts((c) => ({ ...c, [pid]: list.length }));
+    } catch (e) {
+      setCommentText(text); // restore on failure
+      Alert.alert('Could not comment', e?.response?.data || 'Try again.');
+    }
+  };
+
+  const removeComment = (comment) => {
+    Alert.alert('Delete comment?', 'This also removes its replies.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const pid = commentsPost.postId ?? commentsPost.PostId;
+          try {
+            await deleteBoardComment(comment.commentId ?? comment.CommentId, userId);
+            const res = await getBoardComments(pid);
+            const list = Array.isArray(res.data) ? res.data : [];
+            setComments(list);
+            setCommentCounts((c) => ({ ...c, [pid]: list.length }));
+          } catch {
+            Alert.alert('Error', 'Could not delete.');
+          }
+        },
+      },
+    ]);
   };
 
   const onAddFriend = async (post) => {
@@ -323,16 +397,27 @@ const WorkoutBoardScreen = ({ navigation }) => {
           <Text style={styles.postDesc}>{item.description ?? item.Description}</Text>
         ) : null}
         {(item.imagePath ?? item.ImagePath) ? (
-          <Image
-            source={{ uri: resolveProfileImageUrl(item.imagePath ?? item.ImagePath) }}
-            style={styles.postImage}
-            resizeMode="cover"
-          />
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => setImageViewer(resolveProfileImageUrl(item.imagePath ?? item.ImagePath))}
+          >
+            <Image
+              source={{ uri: resolveProfileImageUrl(item.imagePath ?? item.ImagePath) }}
+              style={styles.postImage}
+              resizeMode="cover"
+            />
+          </TouchableOpacity>
         ) : null}
         <View style={styles.postFooter}>
           <TouchableOpacity style={styles.likeBtn} onPress={() => onLike(item)} activeOpacity={0.7}>
             <Ionicons name={liked ? 'heart' : 'heart-outline'} size={20} color={liked ? Colors.danger : styles._muted} />
             <Text style={styles.likeCount}>{likeCount}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.commentBtn} onPress={() => openComments(item)} activeOpacity={0.7}>
+            <Ionicons name="chatbubble-outline" size={19} color={styles._muted} />
+            <Text style={styles.likeCount}>
+              {commentCounts[item.postId ?? item.PostId] ?? ''}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -487,7 +572,127 @@ const WorkoutBoardScreen = ({ navigation }) => {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* #11 — comments sheet (post comments + one level of replies) */}
+      <Modal
+        visible={!!commentsPost}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCommentsPost(null)}
+      >
+        <Pressable style={styles.backdrop} onPress={() => setCommentsPost(null)}>
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>Comments</Text>
+            {commentsLoading ? (
+              <ActivityIndicator color={Colors.primary} style={{ marginVertical: 24 }} />
+            ) : (
+              <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled">
+                {comments.filter((c) => (c.parentCommentId ?? c.ParentCommentId) == null).length === 0 ? (
+                  <Text style={styles.noComments}>No comments yet. Start the conversation.</Text>
+                ) : (
+                  comments
+                    .filter((c) => (c.parentCommentId ?? c.ParentCommentId) == null)
+                    .map((c) => {
+                      const cid = c.commentId ?? c.CommentId;
+                      const replies = comments.filter(
+                        (r) => (r.parentCommentId ?? r.ParentCommentId) === cid
+                      );
+                      return (
+                        <View key={cid}>
+                          <CommentRow
+                            comment={c}
+                            styles={styles}
+                            mine={(c.userID ?? c.UserID) === userId}
+                            onReply={() => setReplyTo({ id: cid, name: c.authorName ?? c.AuthorName })}
+                            onDelete={() => removeComment(c)}
+                          />
+                          {replies.map((r) => (
+                            <View key={r.commentId ?? r.CommentId} style={styles.replyIndent}>
+                              <CommentRow
+                                comment={r}
+                                styles={styles}
+                                mine={(r.userID ?? r.UserID) === userId}
+                                onReply={() => setReplyTo({ id: cid, name: c.authorName ?? c.AuthorName })}
+                                onDelete={() => removeComment(r)}
+                              />
+                            </View>
+                          ))}
+                        </View>
+                      );
+                    })
+                )}
+              </ScrollView>
+            )}
+
+            {replyTo && (
+              <View style={styles.replyingBar}>
+                <Text style={styles.replyingText}>Replying to {replyTo.name}</Text>
+                <TouchableOpacity onPress={() => setReplyTo(null)}>
+                  <Ionicons name="close" size={16} color={styles._muted} />
+                </TouchableOpacity>
+              </View>
+            )}
+            <View style={styles.commentComposer}>
+              <TextInput
+                style={styles.commentInput}
+                placeholder={replyTo ? 'Write a reply…' : 'Add a comment…'}
+                placeholderTextColor={Colors.textMuted}
+                value={commentText}
+                onChangeText={setCommentText}
+                multiline
+                maxLength={500}
+              />
+              <TouchableOpacity
+                style={[styles.commentSend, !commentText.trim() && { opacity: 0.5 }]}
+                onPress={submitComment}
+                disabled={!commentText.trim()}
+              >
+                <Ionicons name="send" size={18} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* #11 — full-screen zoomable image viewer */}
+      <Modal visible={!!imageViewer} transparent animationType="fade" onRequestClose={() => setImageViewer(null)}>
+        <View style={styles.imgBackdrop}>
+          {!!imageViewer && (
+            <View style={styles.imgWrap}>
+              <ZoomableImage uri={imageViewer} />
+            </View>
+          )}
+          <TouchableOpacity style={styles.imgClose} onPress={() => setImageViewer(null)}>
+            <Ionicons name="close" size={28} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </SafeAreaView>
+  );
+};
+
+// #11 — a single comment row (used for both top-level comments and replies).
+const CommentRow = ({ comment, styles, mine, onReply, onDelete }) => {
+  const name = comment.authorName ?? comment.AuthorName ?? 'User';
+  const text = comment.text ?? comment.Text ?? '';
+  return (
+    <View style={styles.commentRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.commentAuthor}>{name}</Text>
+        <Text style={styles.commentText}>{text}</Text>
+        <View style={styles.commentActions}>
+          <TouchableOpacity onPress={onReply}>
+            <Text style={styles.commentAction}>Reply</Text>
+          </TouchableOpacity>
+          {mine && (
+            <TouchableOpacity onPress={onDelete}>
+              <Text style={[styles.commentAction, { color: styles._muted }]}>Delete</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    </View>
   );
 };
 
@@ -529,9 +734,42 @@ const makeStyles = (C) => {
       marginTop: 10,
       backgroundColor: C.cardBackgroundLight,
     },
-    postFooter: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
+    postFooter: { flexDirection: 'row', alignItems: 'center', gap: 20, marginTop: 12 },
     likeBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    commentBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     likeCount: { color: C.textSecondary, fontSize: 14, fontWeight: '700' },
+
+    // #11 comments
+    noComments: { color: C.textMuted, fontSize: 13, fontStyle: 'italic', paddingVertical: 20, textAlign: 'center' },
+    commentRow: { flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border },
+    replyIndent: { paddingLeft: 24 },
+    commentAuthor: { color: C.textPrimary, fontSize: 13, fontWeight: '800' },
+    commentText: { color: C.textSecondary, fontSize: 14, lineHeight: 19, marginTop: 2 },
+    commentActions: { flexDirection: 'row', gap: 16, marginTop: 6 },
+    commentAction: { color: C.primary, fontSize: 12, fontWeight: '800' },
+    replyingBar: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      backgroundColor: C.cardBackgroundLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, marginTop: 10,
+    },
+    replyingText: { color: C.textSecondary, fontSize: 12, fontWeight: '700' },
+    commentComposer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginTop: 10 },
+    commentInput: {
+      flex: 1, maxHeight: 100, backgroundColor: C.inputBackground, borderRadius: 20,
+      paddingHorizontal: 14, paddingVertical: 10, color: C.textPrimary,
+      borderWidth: 1, borderColor: C.inputBorder, fontSize: 14,
+    },
+    commentSend: {
+      width: 40, height: 40, borderRadius: 20, backgroundColor: C.primary,
+      alignItems: 'center', justifyContent: 'center',
+    },
+
+    // #11 image viewer
+    imgBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', alignItems: 'center', justifyContent: 'center' },
+    imgWrap: { width: '100%', height: '80%' },
+    imgClose: {
+      position: 'absolute', top: 48, right: 20, width: 44, height: 44, borderRadius: 22,
+      backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center',
+    },
 
     fab: {
       position: 'absolute', right: 20, bottom: 24,

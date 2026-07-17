@@ -239,5 +239,82 @@ ORDER BY MetricValue DESC;", con);
             }
             return list;
         }
+
+        // ── #143 comments ───────────────────────────────────────────────────
+        public BoardComment AddComment(int postId, int userId, int? parentCommentId, string text)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(@"
+INSERT INTO dbo.WorkoutPostComments (PostId, UserID, ParentCommentId, [Text])
+OUTPUT INSERTED.CommentId, INSERTED.PostId, INSERTED.UserID, INSERTED.ParentCommentId,
+       INSERTED.[Text], INSERTED.CreatedAt
+VALUES (@p, @u, @parent, @t);", con);
+            cmd.Parameters.AddWithValue("@p", postId);
+            cmd.Parameters.AddWithValue("@u", userId);
+            cmd.Parameters.AddWithValue("@parent", (object?)parentCommentId ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@t", text);
+            using var r = cmd.ExecuteReader();
+            if (!r.Read()) return null;
+            return new BoardComment
+            {
+                CommentId = Int(r, "CommentId"),
+                PostId = Int(r, "PostId"),
+                UserID = Int(r, "UserID"),
+                ParentCommentId = r["ParentCommentId"] == DBNull.Value ? (int?)null : Int(r, "ParentCommentId"),
+                Text = Str(r, "Text"),
+                CreatedAt = (DateTime)r["CreatedAt"],
+            };
+        }
+
+        public List<BoardComment> GetComments(int postId)
+        {
+            var list = new List<BoardComment>();
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(@"
+SELECT c.CommentId, c.PostId, c.UserID, c.ParentCommentId, c.[Text], c.CreatedAt,
+       u.FullName AS AuthorName, u.ProfileImagePath AS AuthorImagePath
+FROM dbo.WorkoutPostComments c
+JOIN dbo.Users u ON u.UserID = c.UserID
+WHERE c.PostId = @p
+ORDER BY c.CreatedAt ASC, c.CommentId ASC;", con);
+            cmd.Parameters.AddWithValue("@p", postId);
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                list.Add(new BoardComment
+                {
+                    CommentId = Int(r, "CommentId"),
+                    PostId = Int(r, "PostId"),
+                    UserID = Int(r, "UserID"),
+                    ParentCommentId = r["ParentCommentId"] == DBNull.Value ? (int?)null : Int(r, "ParentCommentId"),
+                    Text = Str(r, "Text"),
+                    CreatedAt = (DateTime)r["CreatedAt"],
+                    AuthorName = Str(r, "AuthorName"),
+                    AuthorImagePath = Str(r, "AuthorImagePath"),
+                });
+            }
+            return list;
+        }
+
+        public int? GetCommentOwner(int commentId)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(
+                "SELECT UserID FROM dbo.WorkoutPostComments WHERE CommentId = @id;", con);
+            cmd.Parameters.AddWithValue("@id", commentId);
+            var v = cmd.ExecuteScalar();
+            return v == null || v == DBNull.Value ? (int?)null : Convert.ToInt32(v);
+        }
+
+        public void DeleteComment(int commentId)
+        {
+            using SqlConnection con = Connect();
+            // Replies first (self-FK can't cascade in SQL Server), then the comment.
+            using SqlCommand cmd = new SqlCommand(@"
+DELETE FROM dbo.WorkoutPostComments WHERE ParentCommentId = @id;
+DELETE FROM dbo.WorkoutPostComments WHERE CommentId = @id;", con);
+            cmd.Parameters.AddWithValue("@id", commentId);
+            cmd.ExecuteNonQuery();
+        }
     }
 }

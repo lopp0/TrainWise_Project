@@ -30,6 +30,9 @@ import {
   calculateDailyLoad,
   getDailyLoadByUser,
   checkRecords,
+  getWorkoutTemplates,
+  createWorkoutTemplate,
+  deleteWorkoutTemplate,
 } from '../services/api';
 import { useAuth } from '../api/AuthContext';
 import { sendLoadWarningIfNeeded, markWorkoutToday } from '../api/NotificationService';
@@ -118,6 +121,11 @@ const AddWorkoutScreen = ({ navigation, route }) => {
   const [doneDistance, setDoneDistance] = useState('');
   const [doneExertion, setDoneExertion] = useState(5);
 
+  // #119 — reusable workout templates.
+  const [templates, setTemplates] = useState([]);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+
   const shouldShow = (field) => {
     const typeName = selectedActivity?.typeName || '';
     const fields = ACTIVITY_FIELDS[typeName] || ['duration', 'exertion'];
@@ -129,6 +137,7 @@ const AddWorkoutScreen = ({ navigation, route }) => {
 
   useEffect(() => {
     loadActivityTypes();
+    loadTemplates();
     // Smart suggestion moved to the Home screen (item 4) — no longer fetched
     // here, so the suggestion card never renders on AddWorkout.
     return () => {
@@ -137,14 +146,98 @@ const AddWorkoutScreen = ({ navigation, route }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Pre-select the activity passed from the Home Add-Workout card (B-2).
+  // #119 — load the user's saved templates for the "Start from template" row.
+  const loadTemplates = async () => {
+    if (!userId) return;
+    try {
+      const res = await getWorkoutTemplates(userId);
+      setTemplates(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      // no templates yet / offline — the row just stays hidden
+    }
+  };
+
+  const tVal = (t, camel, pascal) => t[camel] ?? t[pascal];
+
+  // Apply a saved template: preselect the activity + fill duration/exertion/distance.
+  const applyTemplate = (t) => {
+    const activityId = tVal(t, 'activityTypeID', 'ActivityTypeID');
+    const match = activityTypes.find((a) => a.activityTypeID === activityId);
+    if (match) setSelectedActivity(match);
+    const dur = tVal(t, 'duration', 'Duration');
+    const ex = tVal(t, 'exertionLevel', 'ExertionLevel');
+    const target = tVal(t, 'targetValue', 'TargetValue');
+    if (dur != null) setDuration(String(dur));
+    if (ex != null) setDoneExertion(ex);
+    setDoneDistance(target != null ? String(target) : '');
+    setTab(1); // ensure the manual fields are visible
+  };
+
+  const removeTemplate = (t) => {
+    const id = tVal(t, 'templateID', 'TemplateID');
+    Alert.alert('Delete template', `Remove "${tVal(t, 'name', 'Name')}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteWorkoutTemplate(id);
+            setTemplates((prev) => prev.filter((x) => tVal(x, 'templateID', 'TemplateID') !== id));
+          } catch {}
+        },
+      },
+    ]);
+  };
+
+  // Save the current "Already Done" form as a reusable template.
+  const saveTemplate = async () => {
+    const name = templateName.trim();
+    if (!name) {
+      Alert.alert('Name required', 'Give this template a name.');
+      return;
+    }
+    if (!selectedActivity) {
+      Alert.alert('Pick an activity', 'Choose a workout type before saving a template.');
+      return;
+    }
+    const dur = parseInt(duration, 10);
+    try {
+      const res = await createWorkoutTemplate({
+        userID: userId,
+        name,
+        activityTypeID: selectedActivity.activityTypeID,
+        duration: Number.isFinite(dur) && dur > 0 ? dur : 30,
+        exertionLevel: doneExertion,
+        targetValue: parseFloat(doneDistance) || null,
+      });
+      setTemplates((prev) => [res.data, ...prev]);
+      setShowSaveTemplate(false);
+      setTemplateName('');
+    } catch (e) {
+      Alert.alert('Could not save', e?.response?.data || e?.message || 'Try again.');
+    }
+  };
+
+  // Pre-select the activity passed from the Home Add-Workout / Today's-plan card.
+  // Also prefill duration + distance when a coach-planned workout passes them
+  // (#8) so the recommended values are visible, not a blank form.
   useEffect(() => {
     const preId = route?.params?.preselectActivityTypeId;
     if (preId != null && activityTypes.length) {
       const match = activityTypes.find((a) => a.activityTypeID === preId);
       if (match) setSelectedActivity(match);
     }
-  }, [route?.params?.preselectActivityTypeId, activityTypes]);
+    const preDur = route?.params?.preselectDuration;
+    if (preDur != null && preDur > 0) setDuration(String(preDur));
+    const preDist = route?.params?.preselectDistance;
+    if (preDist != null && preDist > 0) setDoneDistance(String(preDist));
+  }, [
+    route?.params?.preselectActivityTypeId,
+    route?.params?.preselectDuration,
+    route?.params?.preselectDistance,
+    activityTypes,
+  ]);
 
   const loadSmartSuggestion = async () => {
     let acRatio = null;
@@ -317,7 +410,7 @@ const AddWorkoutScreen = ({ navigation, route }) => {
     setSubmitting(true);
     try {
       const sessionLoad = durationMin * exertion;
-      await createActivityLog({
+      const createRes = await createActivityLog({
         userID: userId,
         activityTypeID: selectedActivity.activityTypeID,
         startTime: start.toISOString(),
@@ -332,6 +425,7 @@ const AddWorkoutScreen = ({ navigation, route }) => {
         calculatedLoadForSession: Math.round(sessionLoad),
         isConfirmed: true,
       });
+      const newLogId = createRes?.data?.activityID ?? createRes?.data?.ActivityID ?? null;
 
       // Recalc the workout's day AND today so the rolling 7/28-day windows
       // pick it up (ActivityLog invariants + B-5).
@@ -361,6 +455,7 @@ const AddWorkoutScreen = ({ navigation, route }) => {
       } catch {}
 
       navigation.navigate('WorkoutSummary', {
+        logId: newLogId,
         summary: {
           activityName: selectedActivity.typeName,
           duration: durationMin,
@@ -679,6 +774,17 @@ const AddWorkoutScreen = ({ navigation, route }) => {
                       <Ionicons name="play" size={20} color="#fff" />
                       <Text style={styles.startBtnText}>START</Text>
                     </TouchableOpacity>
+                    {/* Interval / rest timer (#120) — lives here in the Live tab
+                        (moved off Home). Separate from the stopwatch above: this
+                        structures work/rest rounds, the stopwatch logs duration. */}
+                    <TouchableOpacity
+                      style={styles.intervalBtn}
+                      onPress={() => navigation.navigate('Timer')}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="timer-outline" size={18} color={Colors.primary} />
+                      <Text style={styles.intervalBtnText}>Interval / rest timer</Text>
+                    </TouchableOpacity>
                   </View>
                 )}
               </Card>
@@ -690,6 +796,29 @@ const AddWorkoutScreen = ({ navigation, route }) => {
               contentContainerStyle={styles.pageContent}
               keyboardShouldPersistTaps="handled"
             >
+              {/* #119 — start from a saved template */}
+              {templates.length > 0 && (
+                <View style={styles.templateBar}>
+                  <Text style={styles.templateBarLabel}>Start from template</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    {templates.map((t) => (
+                      <TouchableOpacity
+                        key={tVal(t, 'templateID', 'TemplateID')}
+                        style={styles.templateChip}
+                        onPress={() => applyTemplate(t)}
+                        onLongPress={() => removeTemplate(t)}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons name="bookmark" size={13} color={Colors.primary} />
+                        <Text style={styles.templateChipText} numberOfLines={1}>
+                          {tVal(t, 'name', 'Name')}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+
               <Card style={styles.tightCard}>
                 <Text style={styles.cardTitle}>Start Time</Text>
                 <TouchableOpacity
@@ -777,6 +906,23 @@ const AddWorkoutScreen = ({ navigation, route }) => {
                   <Text style={styles.submitBtnText}>Save Workout</Text>
                 )}
               </TouchableOpacity>
+
+              {/* #119 — save the current setup as a reusable template */}
+              <TouchableOpacity
+                style={styles.saveTemplateBtn}
+                onPress={() => {
+                  if (!selectedActivity) {
+                    Alert.alert('Pick an activity', 'Choose a workout type first.');
+                    return;
+                  }
+                  setTemplateName(selectedActivity.typeName || '');
+                  setShowSaveTemplate(true);
+                }}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="bookmark-outline" size={16} color={Colors.primary} />
+                <Text style={styles.saveTemplateText}>Save as template</Text>
+              </TouchableOpacity>
             </ScrollView>
           </View>
         )}
@@ -841,6 +987,43 @@ const AddWorkoutScreen = ({ navigation, route }) => {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* #119 — save-as-template modal */}
+      <Modal
+        visible={showSaveTemplate}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSaveTemplate(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowSaveTemplate(false)}>
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            <Text style={styles.modalTitle}>Save as template</Text>
+            <Text style={styles.modalElapsed}>
+              {selectedActivity?.typeName || 'Workout'} · {duration || '—'} min · exertion {doneExertion}
+            </Text>
+            <TextInput
+              style={[styles.input, { marginTop: Spacing.sm }]}
+              placeholder="Template name (e.g. Easy 5k)"
+              placeholderTextColor={Colors.textMuted}
+              value={templateName}
+              onChangeText={setTemplateName}
+              maxLength={80}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancel}
+                onPress={() => setShowSaveTemplate(false)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalSave} onPress={saveTemplate} activeOpacity={0.85}>
+                <Text style={styles.modalSaveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -849,7 +1032,12 @@ const makeStyles = (Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   pageContent: { padding: Spacing.lg, paddingBottom: Spacing.xxl },
   // Tighter card padding so the workout-screen blocks aren't oversized (item 3).
-  tightCard: { padding: Spacing.md, marginBottom: Spacing.sm },
+  // marginHorizontal:0 CANCELS the base <Card> margin — the ScrollView's
+  // pageContent already adds Spacing.lg side padding, and the base Card adds
+  // ANOTHER Spacing.lg, which double-inset the boxes (~48px each side). With
+  // this the boxes fill the width like every other screen. Do NOT re-add a
+  // horizontal margin here.
+  tightCard: { padding: Spacing.md, marginBottom: Spacing.sm, marginHorizontal: 0 },
   cardTitle: {
     color: Colors.primary,
     fontSize: Fonts.subtitleSize,
@@ -940,6 +1128,18 @@ const makeStyles = (Colors) => StyleSheet.create({
 
   // Timer
   timerWrap: { alignItems: 'center', paddingVertical: Spacing.xs },
+  intervalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: Spacing.md,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+  },
+  intervalBtnText: { color: Colors.primary, fontSize: Fonts.bodySize, fontWeight: '800' },
   pausedTag: { color: Colors.warning, fontSize: Fonts.captionSize, fontWeight: '800', marginTop: 4 },
   liveBtnRow: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg },
   breakBtn: {
@@ -1034,6 +1234,37 @@ const makeStyles = (Colors) => StyleSheet.create({
     marginTop: Spacing.sm,
   },
   submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+
+  // #119 templates
+  templateBar: { marginBottom: Spacing.sm },
+  templateBarLabel: { color: Colors.textSecondary, fontSize: Fonts.captionSize, fontWeight: '800', marginBottom: 6 },
+  templateChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.cardBackgroundLight,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: Spacing.sm,
+    maxWidth: 180,
+  },
+  templateChipText: { color: Colors.textPrimary, fontSize: Fonts.bodySize, fontWeight: '700' },
+  saveTemplateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.sm,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+  },
+  saveTemplateText: { color: Colors.primary, fontSize: Fonts.bodySize, fontWeight: '800' },
 
   // Smart suggestion card (kept)
   smartCard: {

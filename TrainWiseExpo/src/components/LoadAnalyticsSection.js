@@ -15,6 +15,7 @@ import AcwrTrendChart from './AcwrTrendChart';
 import { Colors, Fonts, Spacing } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { getLoadAnalytics } from '../services/api';
+import { getTraineeAnalytics } from '../services/mlApi';
 import { computeLoadAnalytics } from '../utils/loadSeries';
 import { getWeekStartDate } from '../constants/weekStart';
 
@@ -85,6 +86,18 @@ const LoadAnalyticsSection = ({
     let cancelled = false;
     (async () => {
       setLoading(true);
+      // Same architecture as the coach forecast: the Python ML service is the
+      // primary source. If it's offline we fall back to the C# analytics
+      // endpoint, then to the on-device mirror — so the charts always render.
+      try {
+        const res = await getTraineeAnalytics(userId, 56);
+        if (!cancelled && res?.data?.series?.length) {
+          setData(res.data);
+          return;
+        }
+      } catch {
+        // ML service offline — try the C# backend next
+      }
       try {
         const res = await getLoadAnalytics(userId, 56);
         if (!cancelled && res?.data?.series) {
@@ -92,7 +105,7 @@ const LoadAnalyticsSection = ({
           return;
         }
       } catch {
-        // endpoint missing / offline: fall through to the on-device mirror
+        // C# endpoint missing / offline: fall through to the on-device mirror
       }
       if (!cancelled) {
         setData(

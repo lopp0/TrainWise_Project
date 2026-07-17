@@ -40,7 +40,7 @@ namespace TrainWise.BL
         // negligible.
         private const int WarmupDays = 56;
 
-        public LoadAnalytics GetAnalytics(int userId, int days, DateTime? end = null)
+        public LoadAnalytics GetAnalytics(int userId, int days, DateTime? end = null, int tzOffsetMinutes = 0)
         {
             if (userId <= 0)
                 throw new ArgumentException("UserID must be positive");
@@ -48,6 +48,7 @@ namespace TrainWise.BL
                 throw new ArgumentException("User does not exist");
 
             days = Math.Clamp(days, 14, 112);
+            tzOffsetMinutes = Math.Clamp(tzOffsetMinutes, -14 * 60, 14 * 60);
 
             // The client sends ITS calendar date ("end") because Azure App Service
             // runs on UTC — between local midnight and 03:00 Israel time the
@@ -60,16 +61,14 @@ namespace TrainWise.BL
             DateTime fetchFrom = from.AddDays(-WarmupDays);
 
             var context = _loadDal.GetUserLoadContext(userId);
-            var sessions = _loadDal.GetActivityLogsForRange(userId, fetchFrom, to.AddDays(1));
+            // Fetch one extra day on each side: the tz shift can move a session
+            // across the UTC day boundary in either direction.
+            var sessions = _loadDal.GetActivityLogsForRange(userId, fetchFrom.AddDays(-1), to.AddDays(2));
 
-            // Bucket confirmed session loads per calendar day once, then walk the
-            // timeline. Same date semantics as CalculateAndSave (StartTime.Date).
-            var loadByDay = new Dictionary<DateTime, double>();
-            foreach (var s in sessions)
-            {
-                var d = s.StartTime.Date;
-                loadByDay[d] = loadByDay.GetValueOrDefault(d) + s.CalculatedLoadForSession;
-            }
+            // Bucket confirmed session loads per calendar day (caller's
+            // timezone) once, then walk the timeline. Same bucketing as
+            // CalculateAndSave — one source of truth in LoadCalculationBL.
+            var loadByDay = LoadCalculationBL.BucketByLocalDay(sessions, tzOffsetMinutes);
 
             // Cold-start floors (mirrors CalculateAndSave / the app's acwr util):
             // until the user has >= 7 distinct training days in the trailing 28,
@@ -125,18 +124,17 @@ namespace TrainWise.BL
                     ? ewmaChronic / (1 - Math.Pow(1 - LambdaChronic, t)) : 0;
 
                 // Rolling windows ending on d (Gabbett 2016, coupled form: the
-                // acute week is INCLUDED in the chronic 28 days, like
-                // CalculateAndSave and the client's acwr util).
-                double acute = SumRange(loadByDay, d.AddDays(-6), d);
-                double chronic = SumRange(loadByDay, d.AddDays(-27), d) / 4.0;
+                // acute week is INCLUDED in the chronic 28 days). Chronic comes
+                // from the shared EffectiveChronic: cold-start floor below 7
+                // active days, covered-days ramp after — identical to
+                // CalculateAndSave and the client mirrors.
+                double acute = LoadCalculationBL.SumRange(loadByDay, d.AddDays(-6), d);
+                double effChronic = LoadCalculationBL.EffectiveChronic(loadByDay, d, bootstrapWeekly);
 
-                // Per-day baseline check: >= 7 distinct training days inside the
-                // trailing 28-day window (same rule the client util applies).
-                int activeDays = CountActiveDays(loadByDay, d.AddDays(-27), d);
-                bool baselineByDay = activeDays >= 7;
-
-                double effChronic = baselineByDay ? chronic : Math.Max(chronic, bootstrapWeekly);
-                double effEwmaChronic = baselineByDay
+                // EWMA needs no ramp: the bias correction already yields the
+                // sample mean over a short history (steady training → ratio 1).
+                int activeDays = LoadCalculationBL.CountActiveDays(loadByDay, d.AddDays(-27), d);
+                double effEwmaChronic = activeDays >= 7
                     ? ewmaChronicCorr : Math.Max(ewmaChronicCorr, bootstrapDaily);
 
                 double? rollingRatio = effChronic > 0 ? acute / effChronic : (double?)null;
@@ -162,28 +160,12 @@ namespace TrainWise.BL
                 });
             }
 
-            result.Summary = BuildSummary(sessions, loadByDay, to);
+            result.Summary = BuildSummary(sessions, loadByDay, to, tzOffsetMinutes);
             return result;
         }
 
-        private static double SumRange(Dictionary<DateTime, double> loadByDay, DateTime start, DateTime end)
-        {
-            double sum = 0;
-            for (DateTime d = start; d <= end; d = d.AddDays(1))
-                sum += loadByDay.GetValueOrDefault(d);
-            return sum;
-        }
-
-        private static int CountActiveDays(Dictionary<DateTime, double> loadByDay, DateTime start, DateTime end)
-        {
-            int n = 0;
-            for (DateTime d = start; d <= end; d = d.AddDays(1))
-                if (loadByDay.GetValueOrDefault(d) > 0) n++;
-            return n;
-        }
-
         private static LoadSummary BuildSummary(
-            List<ActivityLog> sessions, Dictionary<DateTime, double> loadByDay, DateTime today)
+            List<ActivityLog> sessions, Dictionary<DateTime, double> loadByDay, DateTime today, int tzOffsetMinutes)
         {
             var summary = new LoadSummary();
 
@@ -212,7 +194,9 @@ namespace TrainWise.BL
             double lowMin = 0, modMin = 0, highMin = 0;
             foreach (var s in sessions)
             {
-                if (s.StartTime.Date < cutoff || s.StartTime.Date > today) continue;
+                if (!s.IsConfirmed) continue; // same skip rule as the load series
+                var day = s.StartTime.AddMinutes(tzOffsetMinutes).Date;
+                if (day < cutoff || day > today) continue;
                 double minutes = Math.Max(s.Duration, 0);
                 if (s.ExertionLevel <= 3) lowMin += minutes;
                 else if (s.ExertionLevel <= 6) modMin += minutes;
@@ -226,7 +210,7 @@ namespace TrainWise.BL
                 summary.HighPct = Math.Round(highMin / total * 100, 1);
             }
 
-            summary.ActiveDays28 = CountActiveDays(loadByDay, cutoff, today);
+            summary.ActiveDays28 = LoadCalculationBL.CountActiveDays(loadByDay, cutoff, today);
             return summary;
         }
     }

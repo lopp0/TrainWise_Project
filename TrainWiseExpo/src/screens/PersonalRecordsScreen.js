@@ -12,15 +12,17 @@ import { Colors, Spacing } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import ScreenHeader from '../components/ScreenHeader';
 import { useAuth } from '../api/AuthContext';
-import { getRecords } from '../services/api';
+import { getRecords, getActivityLogsByUser, getAllActivityTypes } from '../services/api';
 import { parseServerDate } from '../utils/serverDate';
 import { BADGE_DEFS, findBadgeDef, METRIC_DEFS, METRIC_ORDER } from '../utils/badges';
+import { computePersonalBests, formatPace } from '../utils/personalBests';
 
 const PersonalRecordsScreen = ({ navigation }) => {
   const { userId } = useAuth();
   const styles = useThemedStyles(makeStyles);
   const [records, setRecords] = useState([]);
   const [badges, setBadges] = useState([]);
+  const [activityBests, setActivityBests] = useState([]); // #165
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -35,6 +37,16 @@ const PersonalRecordsScreen = ({ navigation }) => {
       setBadges(res.data?.badges || res.data?.Badges || []);
     } catch (e) {
       console.warn('[PersonalRecords] load failed:', e.message);
+    }
+    // #165 — per-activity bests, computed client-side from the logs.
+    try {
+      const [logsRes, typesRes] = await Promise.all([
+        getActivityLogsByUser(userId),
+        getAllActivityTypes(),
+      ]);
+      setActivityBests(computePersonalBests(logsRes.data || [], typesRes.data || []));
+    } catch (e) {
+      console.warn('[PersonalRecords] activity bests failed:', e.message);
     } finally {
       setLoading(false);
     }
@@ -88,6 +100,46 @@ const PersonalRecordsScreen = ({ navigation }) => {
               );
             })}
           </View>
+
+          {/* #165 — per-activity bests */}
+          {activityBests.length > 0 && (
+            <>
+              <Text style={[styles.sectionTitle, { marginTop: Spacing.lg }]}>BY ACTIVITY</Text>
+              {activityBests.map((a) => {
+                const pace = formatPace(a.bestPaceMinPerKm);
+                return (
+                  <View key={a.typeId} style={styles.actCard}>
+                    <View style={styles.actHeader}>
+                      <Text style={styles.actName}>{a.typeName}</Text>
+                      <Text style={styles.actSessions}>{a.sessions} {a.sessions === 1 ? 'session' : 'sessions'}</Text>
+                    </View>
+                    <View style={styles.actStatsRow}>
+                      <View style={styles.actStat}>
+                        <Text style={styles.actStatVal}>{a.longestDurationMin}m</Text>
+                        <Text style={styles.actStatLabel}>Longest</Text>
+                      </View>
+                      {a.longestDistanceKm > 0 && (
+                        <View style={styles.actStat}>
+                          <Text style={styles.actStatVal}>{a.longestDistanceKm} km</Text>
+                          <Text style={styles.actStatLabel}>Distance</Text>
+                        </View>
+                      )}
+                      {pace && (
+                        <View style={styles.actStat}>
+                          <Text style={styles.actStatVal}>{pace}</Text>
+                          <Text style={styles.actStatLabel}>Best pace</Text>
+                        </View>
+                      )}
+                      <View style={styles.actStat}>
+                        <Text style={styles.actStatVal}>{a.topLoad}</Text>
+                        <Text style={styles.actStatLabel}>Top load</Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </>
+          )}
 
           {/* Badges */}
           <Text style={[styles.sectionTitle, { marginTop: Spacing.lg }]}>
@@ -149,6 +201,22 @@ const makeStyles = (C) => StyleSheet.create({
   recordValue: { color: C.textPrimary, fontSize: 22, fontWeight: '900', marginTop: 6 },
   recordLabel: { color: C.textSecondary, fontSize: 12, fontWeight: '700', marginTop: 2 },
   recordDate: { color: C.textMuted, fontSize: 10, marginTop: 2 },
+
+  actCard: {
+    backgroundColor: C.cardBackground,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  actHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  actName: { color: C.textPrimary, fontSize: 15, fontWeight: '800' },
+  actSessions: { color: C.textMuted, fontSize: 12, fontWeight: '700' },
+  actStatsRow: { flexDirection: 'row', flexWrap: 'wrap' },
+  actStat: { minWidth: '25%', marginBottom: 4 },
+  actStatVal: { color: C.textPrimary, fontSize: 15, fontWeight: '800' },
+  actStatLabel: { color: C.textMuted, fontSize: 11, marginTop: 1 },
 
   badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   badgeCard: {

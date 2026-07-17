@@ -16,6 +16,10 @@ export const DASHBOARD_SECTIONS = {
   recommendation: 'Load recommendation',
   chart: 'Weekly load chart',
   summary: 'This week at a glance',
+  goal: 'Weekly goal',
+  quests: 'Quests',
+  calories: 'Calorie balance',
+  recovery: 'Recovery / readiness', // #129/#130
 };
 
 const SECTION_KEYS = Object.keys(DASHBOARD_SECTIONS);

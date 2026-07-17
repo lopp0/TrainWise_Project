@@ -17,6 +17,7 @@ import { getActivityLogs, putActivityLog, postActivityLog } from '../api/api';
 import { calculateDailyLoad } from '../services/api';
 import { getStructuredWorkouts } from '../api/HealthConnectService';
 import { buildWeeklyData, getBarColor } from './HomeScreen';
+import { parseServerDate } from '../utils/serverDate';
 import { Colors, Fonts } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 
@@ -236,38 +237,63 @@ const StatsScreen = ({ navigation, route }) => {
         return;
       }
 
-      const endTime = baseLog.endTime
-        ? new Date(baseLog.endTime)
-        : new Date(dayData.date.getTime() + 12 * 60 * 60 * 1000);
-      const startTime = baseLog.startTime
-        ? new Date(baseLog.startTime)
-        : new Date(endTime.getTime() - durationMin * 60000);
-
       const exertion = parseInt(editExertion) || 5;
+
+      // Preserve the original workout's timing + source. The old code hardcoded
+      // sourceDevice:'Health Connect' and, when a base time was missing, defaulted
+      // the start to noon-minus-duration — so editing a manual workout silently
+      // turned it into a 9:00 AM Health-Connect entry. Now: keep the real start/
+      // end (parsed as UTC via parseServerDate so there's no per-edit timezone
+      // drift) and keep the real source; only a genuinely new session falls back,
+      // and it stays 'Manual', anchored to a sane time (never shifted by duration).
+      const origStart = baseLog.startTime ?? baseLog.StartTime ?? null;
+      const origEnd = baseLog.endTime ?? baseLog.EndTime ?? null;
+
+      let startTime;
+      if (origStart) {
+        startTime = parseServerDate(origStart);
+      } else {
+        const anchor = new Date(dayData.date);
+        const today = new Date();
+        if (anchor.toDateString() === today.toDateString()) {
+          startTime = today; // logging today's session "now"
+        } else {
+          anchor.setHours(12, 0, 0, 0); // noon of the selected day
+          startTime = anchor;
+        }
+      }
+      const endTime = origEnd
+        ? parseServerDate(origEnd)
+        : new Date(startTime.getTime() + durationMin * 60000);
+
+      // NEVER silently convert a workout to Health Connect on edit — keep the
+      // original source; a brand-new manually-entered session is 'Manual'.
+      const sourceDevice = baseLog.sourceDevice ?? baseLog.SourceDevice ?? 'Manual';
+
       const payload = {
         userID: userId,
-        activityTypeID: baseLog.activityTypeID || 5,
+        activityTypeID: baseLog.activityTypeID ?? baseLog.ActivityTypeID ?? 5,
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
         duration: durationMin,
         exertionLevel: exertion,
         distanceKM: parseFloat(editDistance) || 0,
         avgHeartRate: parseInt(editPulse) || 0,
-        maxHeartRate: baseLog.maxHeartRate || 0,
-        caloriesBurned: baseLog.caloriesBurned || 0,
-        sourceDevice: 'Health Connect',
+        maxHeartRate: baseLog.maxHeartRate ?? baseLog.MaxHeartRate ?? 0,
+        caloriesBurned: baseLog.caloriesBurned ?? baseLog.CaloriesBurned ?? 0,
+        sourceDevice,
         calculatedLoadForSession: Math.round(durationMin * exertion),
         isConfirmed: true,
       };
 
       if (dayData.source === 'backend' && dayData.log) {
-        // Update existing confirmed log
+        // Update the existing confirmed log in place (preserves its source/time).
         await putActivityLog({
           ...payload,
-          activityID: dayData.log.activityID,
+          activityID: dayData.log.activityID ?? dayData.log.ActivityID,
         });
       } else {
-        // Create a new confirmed log from Health Connect data
+        // Create a new manually-entered log for this day.
         await postActivityLog(payload);
       }
 

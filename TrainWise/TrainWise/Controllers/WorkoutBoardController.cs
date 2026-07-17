@@ -108,6 +108,38 @@ namespace TrainWise.Controllers
             catch (Exception ex) { return StatusCode(500, ex.Message); }
         }
 
+        // #143 — GET /api/board/{postId}/comments
+        [HttpGet("{postId:int}/comments")]
+        public IActionResult GetComments(int postId)
+        {
+            try { return Ok(_bl.GetComments(postId)); }
+            catch (ArgumentException ex) { return BadRequest(ex.Message); }
+            catch (Exception ex) { return StatusCode(500, ex.Message); }
+        }
+
+        // #143 — POST /api/board/{postId}/comments  body { userID, text, parentCommentId? }
+        [HttpPost("{postId:int}/comments")]
+        public IActionResult AddComment(int postId, [FromBody] AddCommentRequest request)
+        {
+            if (request == null) return BadRequest("Body required");
+            if (!CallerMayAct(request.UserID)) return Forbid();
+            try { return Ok(_bl.AddComment(postId, request.UserID, request.ParentCommentId, request.Text)); }
+            catch (ArgumentException ex) { return BadRequest(ex.Message); }
+            catch (Exception ex) { return StatusCode(500, ex.Message); }
+        }
+
+        // #143 — DELETE /api/board/comments/{commentId}?userId=  (own comments only)
+        [HttpDelete("comments/{commentId:int}")]
+        public IActionResult DeleteComment(int commentId, [FromQuery] int userId)
+        {
+            var owner = _bl.GetCommentOwner(commentId);
+            if (owner == null) return NotFound("Comment not found");
+            if (!CallerMayAct(owner.Value)) return Forbid();
+            try { _bl.DeleteComment(commentId); return Ok(new { ok = true }); }
+            catch (ArgumentException ex) { return BadRequest(ex.Message); }
+            catch (Exception ex) { return StatusCode(500, ex.Message); }
+        }
+
         // PUT /api/board/leaderboard/optin/{userId}?on=true
         [HttpPut("leaderboard/optin/{userId:int}")]
         public IActionResult SetOptIn(int userId, [FromQuery] bool on = true)
@@ -117,5 +149,12 @@ namespace TrainWise.Controllers
             catch (ArgumentException ex) { return BadRequest(ex.Message); }
             catch (Exception ex) { return StatusCode(500, ex.Message); }
         }
+    }
+
+    public class AddCommentRequest
+    {
+        public int UserID { get; set; }
+        public string Text { get; set; }
+        public int? ParentCommentId { get; set; }
     }
 }

@@ -19,11 +19,13 @@ const LAMBDA_CHRONIC = 2 / (28 + 1);   // ~0.069
 const WARMUP_DAYS = 56;
 
 // Same thresholds as backend DetermineLoadLevel, incl. tighter injured bands.
+// Injured Yellow runs to (not incl.) the 1.2 Red line — the old 1.1 cap left a
+// gap where an injured user at 1.15 read GREEN (fixed 2026-07-06, both sides).
 const determineLevel = (ratio, hasActiveInjury) => {
   if (ratio == null) return 'Green';
   if (hasActiveInjury) {
     if (ratio >= 1.2) return 'Red';
-    if (ratio >= 0.8 && ratio <= 1.1) return 'Yellow';
+    if (ratio >= 0.8) return 'Yellow';
     return 'Green';
   }
   if (ratio > 1.3) return 'Red';
@@ -82,6 +84,27 @@ export const computeLoadAnalytics = (logsRaw, experienceLevel, options = {}) => 
     for (let d = new Date(start); d <= end; d = addDays(d, 1)) if (dayLoad(d) > 0) n++;
     return n;
   };
+  // Mirrors C# LoadCalculationBL.EffectiveChronic: cold-start floor below 7
+  // active days; covered-days ramp after (chronic = sum28 / min(4, covered/7),
+  // covered from the first loaded day in the window) so a steady 2-week-old
+  // user reads ~1.0 instead of a false Red 2.0. Full histories unchanged.
+  const effectiveChronic = (day, bootstrapWeekly) => {
+    const windowStart = addDays(day, -27);
+    const sum28 = sumRange(windowStart, day);
+    if (countActiveDays(windowStart, day) < 7) {
+      return Math.max(sum28 / 4, bootstrapWeekly);
+    }
+    let firstActive = windowStart;
+    for (let d = new Date(windowStart); d <= day; d = addDays(d, 1)) {
+      if (dayLoad(d) > 0) {
+        firstActive = d;
+        break;
+      }
+    }
+    const covered =
+      Math.round((dayKey(day) - dayKey(firstActive)) / 86400000) + 1; // 7..28
+    return sum28 / Math.min(4, covered / 7);
+  };
 
   const bootstrapWeekly = BOOTSTRAP_WEEKLY[experienceLevel] || 150;
   const bootstrapDaily = bootstrapWeekly / 7;
@@ -113,10 +136,11 @@ export const computeLoadAnalytics = (logsRaw, experienceLevel, options = {}) => 
       t > 0 ? ewmaChronic / (1 - Math.pow(1 - LAMBDA_CHRONIC, t)) : 0;
 
     const acute = sumRange(addDays(d, -6), d);
-    const chronic = sumRange(addDays(d, -27), d) / 4;
     const baselineByDay = countActiveDays(addDays(d, -27), d) >= 7;
 
-    const effChronic = baselineByDay ? chronic : Math.max(chronic, bootstrapWeekly);
+    const effChronic = effectiveChronic(d, bootstrapWeekly);
+    // EWMA needs no ramp: its bias correction already yields the sample mean
+    // over a short history (steady training reads ratio 1).
     const effEwmaChronic = baselineByDay
       ? ewmaChronicCorr
       : Math.max(ewmaChronicCorr, bootstrapDaily);
