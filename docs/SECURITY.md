@@ -66,6 +66,9 @@ raise it directly with the project owner — do not open a public issue with rep
   sniffing** (JPEG / PNG / GIF / WebP), and a **server‑derived extension** (the client filename is
   ignored). Files are stored under **GUID** names so URLs aren't enumerable. (Genuinely private images
   should still move to an authorized endpoint rather than public static files — see [backlog](#hardening-backlog).)
+- **Voice + video messages** (`POST /api/messages/upload/audio` · `/upload/video`) upload to
+  `wwwroot/media/` under GUID names with a size cap; the folder is gitignored (uploaded media is never
+  committed, same as `wwwroot/images/`).
 
 ### ML service (Python)
 - The coach‑analytics service has **optional JWT auth** (`ml/auth.py`) validating the *same* token the C#
@@ -96,6 +99,9 @@ Read from environment variables on the backend, never hardcoded:
 - **`GOOGLE_WEB_CLIENT_ID`** *(optional)* — expected audience for Google ID‑token verification. Falls back
   to the public web client ID literal (Firebase project `trainwise-ef6aa`); a web **client ID** is public
   (it ships in the APK), so the fallback is not a secret.
+- **`GOOGLE_PLACES_KEY`** — server‑side Google Places key for the nearby‑gyms proxy (`PlacesService`, a
+  **billable** SKU). Lives only in Azure config, **never** shipped in the app; unset = live Places
+  lookup disabled (seeded gyms still work).
 
 ### DB secret is externalized to Azure config
 `DBservice.Connect()` reads the connection string from **environment variables first** (Azure App Service

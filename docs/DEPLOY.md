@@ -62,6 +62,8 @@ The current Azure target (as of the last redeploy) is:
   - `GOOGLE_WEB_CLIENT_ID` *(optional)* — expected audience for Google ID‑token verification (defaults to
     the project's public web client ID).
   - `FIREBASE_CREDENTIALS_JSON` — service‑account JSON for FCM push (`PushSender`).
+  - `GOOGLE_PLACES_KEY` — server‑side Google Places key for the nearby‑gyms proxy (`PlacesService`, billable
+    SKU). Leave unset to disable the live Places lookup (falls back to the seeded gyms).
 - **Schema parity** — run every `sql/` migration against Azure SQL too (SSMS → connect to
   `<your-sql-server>.database.windows.net`). The schema must match local SQL Express. **Run
   `2026-07-02_security_hardening.sql` (it widens `Users.Password` for the PBKDF2 hash) BEFORE publishing

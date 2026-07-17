@@ -94,6 +94,9 @@ cd TrainWise_Project
    2026-06-21_add_push_token.sql
    2026-06-28_add_green_batch.sql
    2026-07-02_security_hardening.sql   # widens Users.Password for the PBKDF2 hash — run BEFORE the new backend code
+   2026-07-10_fix_injury_link_ondelete.sql
+   2026-07-15_add_workouts_wearables.sql   # nutrition, workout templates, wearables/HR
+   2026-07-16_add_board_comments.sql
    ```
 
 > **`seed_reference_data.sql` is mandatory.** `TWDB.sql` creates schema + procs only — the lookup

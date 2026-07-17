@@ -61,7 +61,7 @@ weather‑aware suggestions, and an ML forecast.
 
 ---
 
-## 4. Complete API surface (22 controllers)
+## 4. Complete API surface (25 controllers)
 
 All controllers route at `api/[controller]` unless noted. POST/PUT bodies are JSON (`[FromBody]`), so
 clients must send `Content-Type: application/json` even for "empty" bodies. Non‑anonymous endpoints are
@@ -86,10 +86,14 @@ subject to the JWT ownership gate above.
 **`UserActivityPreferencesController`** — `api/users/{userId}/activity-preferences` — `POST /{activityTypeId}` · `DELETE /{activityTypeId}`
 
 ### Workouts & Load
-**`ActivityLogController`** — `api/activitylog` — `GET /user/{userId}` · `POST /` · `PUT /` · `DELETE /{id}` · `GET /{id}/notes` · `PUT /{id}/notes`
+**`ActivityLogController`** — `api/activitylog` — `GET /user/{userId}` · `POST /` · `PUT /` · `DELETE /{id}` · `GET /{id}/notes` · `PUT /{id}/notes` · `PUT /{id}/share` · `GET /{id}/public` (shareable public workout link)
 **`ActivityTypeController`** — `api/activitytype` — `GET /` (20 seeded types)
 **`DailyLoadController`** — `api/dailyload` — `GET /user/{userId}` · `GET /user/{userId}/analytics` (rolling + EWMA load analytics; `?days=&end=&tzOffsetMinutes=` — tz shifts session bucketing to the caller's local calendar day) · `POST /user/{userId}/calculate` (body: `{ "date": "<ISO>", "tzOffsetMinutes": 180 }` — tz optional, default 0)
 **`LoadParametersController`** — `api/loadparameters` — `GET /` (tuning row)
+
+### Nutrition, Templates & Exercises
+**`NutritionController`** — `api/nutrition` — `GET /user/{userId}/day?date=` · `POST /user/{userId}` · `DELETE /{entryId}` (calorie + macro log; barcode lookups via Open Food Facts client‑side)
+**`WorkoutTemplatesController`** — `api/workouttemplates` — `GET /user/{userId}` · `POST /` · `DELETE /{templateId}` (saved reusable workout templates)
 
 ### Injuries
 **`InjuryReportController`** — `api/injuryreport` — `GET /user/{userId}` · `GET /user/{userId}/active` · `POST /` · `PUT /{injuryId}/recover` · `GET /{injuryId}/pain` · `POST /{injuryId}/pain` (pain logs)
@@ -106,7 +110,7 @@ subject to the JWT ownership gate above.
 
 ### Chat
 **`MessagesController`** — `api/messages`
-- `POST /` · `POST /upload` (image, validated) · `GET /conversation/{userA}/{userB}` · `PUT /seen/{senderId}/{receiverId}` · `GET /unread/{userId}`
+- `POST /` · `POST /upload` (image) · `POST /upload/audio` · `POST /upload/video` (voice notes + video clips, validated → `wwwroot/media`) · `GET /conversation/{userA}/{userB}` · `PUT /seen/{senderId}/{receiverId}` · `GET /unread/{userId}`
 - `PUT /typing/{fromUserId}/{toUserId}` · `GET /typing/{fromUserId}/{toUserId}` — typing indicator
 - `POST /{messageId}/react/{userId}` · `GET /reactions/{userA}/{userB}` — message reactions
 
@@ -117,7 +121,7 @@ subject to the JWT ownership gate above.
 - coach offers: `POST /coachoffer/{coachUserId}/{traineeUserId}` · `PUT /coachoffer/respond/{offerId}/{accept}` · `GET /coachoffer/trainee/{traineeUserId}` · `GET /coachoffer/sent/{coachUserId}`
 
 **`GymsController`** — `api/gyms`
-- `GET /` · `GET /{gymId}/coaches` · `POST /{gymId}/coaches/{coachUserId}` · `DELETE /{gymId}/coaches/{coachUserId}` · `GET /for-coach/{coachUserId}`
+- `GET /` · `GET /nearby` (server‑side Google Places proxy) · `GET /places-debug` · `GET /{gymId}/coaches` · `POST /{gymId}/coaches/{coachUserId}` · `DELETE /{gymId}/coaches/{coachUserId}` · `GET /for-coach/{coachUserId}`
 
 ### Gamification
 **`RecordsController`** — `api/records` — `GET /{userId}` · `POST /check/{userId}`
@@ -126,6 +130,7 @@ subject to the JWT ownership gate above.
 - `GET /leaderboard?country=IL&metric=load_weekly&limit=50&scope=global|friends&viewerId=` — the
   **friends scope** (#170) ranks only the viewer's accepted friends · `PUT /leaderboard/optin/{userId}?on=true`
 - `POST /kudos/{logId}/{userId}` · `GET /kudos/{logId}?viewerId=` — kudos on a workout (count + viewer's state)
+- `GET /{postId}/comments` · `POST /{postId}/comments` · `DELETE /comments/{commentId}` — post comments
 
 **`CalendarController`** — `api/calendar`
 - `GET /{userId}` · `POST /{userId}` · `PUT /{planId}` · `DELETE /{planId}` · `PUT /{planId}/complete`
@@ -177,6 +182,8 @@ There are **no** server‑side background/hosted services — the C# API is requ
 | Google Health Connect | Workout import (Android) | read‑only; six health permissions |
 | Google Sign‑In / OAuth | Social login | native picker → ID token verified server‑side |
 | Google reCAPTCHA | Signup bot protection | site key in client, secret in Azure (`RECAPTCHA_SECRET`), fail‑open |
+| Google Places API | Nearby‑gyms search (server‑side proxy) | **billable SKU**; key in `GOOGLE_PLACES_KEY` env var, results cached |
+| Open Food Facts | Nutrition barcode lookup | free public API (no key), called client‑side |
 
 ---
 
@@ -219,7 +226,10 @@ There are **no** server‑side background/hosted services — the C# API is requ
 - **Time handling** — the backend stores zone‑less UTC; the client appends `Z` (`utils/serverDate.js`)
   and renders in `Asia/Jerusalem`.
 - **Native** — Health Connect (hand‑maintained manifest aliases), `expo-maps`, `expo-camera`,
-  `expo-notifications`, `expo-image-picker`, optional biometric lock (`utils/biometric.js`).
+  `expo-notifications`, `expo-image-picker`, media (voice + video) recording/playback, optional biometric
+  lock (`utils/biometric.js`).
+- **New screens (2026‑07)** — Nutrition, Exercise Library (body‑map picker), Shared Workout; wearable /
+  heart‑rate / readiness / injury‑risk cards; goals + quests; load‑history + export.
 
 ---
 
@@ -230,12 +240,12 @@ There are **no** server‑side background/hosted services — the C# API is requ
 - **Access** — 100% parameterized stored procedures / `SqlParameter` via ADO.NET; no ORM, no migrations
   framework.
 - **Schema source** — `sql/TWDB.sql` / `sql/TrainWiseV2.sql` (schema + procs, no data) plus **15+ dated
-  migration scripts** (through `2026-07-02_security_hardening.sql`) run in order against both DBs.
+  migration scripts** (through `2026-07-16_add_board_comments.sql`) run in order against both DBs.
 - **Seed data** — `sql/seed_reference_data.sql` (idempotent): 20 activity types (with intensity factors),
   20 injury types + categories, 20 training goals, and the `LoadParameters` tuning row.
 - **Runtime tables** — `Users` (password now `NVARCHAR(200)` for the PBKDF2 hash), `Coaches`,
   `ActivityLogs`, `DailyLoad`, `Messages` (+ reactions), `Friendships`, `Gyms`, `CoachOffers`,
-  `MonthlyForecasts`, plus body‑measurement / pain‑log / board / records / calendar / cosmetics tables.
+  `MonthlyForecasts`, plus body‑measurement / pain‑log / board (+ comments) / records / calendar / cosmetics / **nutrition** / **workout‑template** / wearables tables.
 
 ---
 

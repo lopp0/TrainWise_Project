@@ -173,8 +173,24 @@
 123. Firebase Cloud Messaging — push notifications
 124. Google Health Connect — workout import (Android)
 125. Google Sign‑In / OAuth — social login
+126. Google Places API — nearby‑gyms search (server‑side proxy, `GOOGLE_PLACES_KEY`)
+127. Open Food Facts — nutrition barcode lookup (free public API, no key)
 
 ---
+
+## Nutrition, Wearables & Content (2026‑07 batch)
+128. **Nutrition tracking** — calorie + macro log with a `CalorieRing`, barcode scan via Open Food Facts (`NutritionScreen`, `api/nutrition`)
+129. **Exercise library** — searchable exercise catalog + body‑map picker (`ExerciseLibraryScreen`, `exerciseCatalog`, `BodyMapPicker`)
+130. **Workout templates** — save + reuse workouts (`api/workouttemplates`)
+131. **Shared / public workouts** — share a workout to a public link (`PUT /api/activitylog/{id}/share`, `SharedWorkoutScreen`)
+132. **Workout‑board comments** — comment threads on board posts (`GET/POST /api/board/{postId}/comments`)
+133. **Voice + video messages** — record/upload audio + video in chat (`POST /api/messages/upload/audio|video`, `VideoPlayerModal`, `ZoomableImage`)
+134. **Heart‑rate zones** — HR‑zone breakdown (`HeartRateZones`, `utils/hrZones`)
+135. **Readiness & recovery** — daily readiness + recovery guidance (`ReadinessCard`, `utils/recovery`)
+136. **Injury‑risk gauge + rehab tips** — `RiskGauge`, `RehabSuggestions`, `utils/injuryRisk`, `utils/rehabTips`
+137. **Goals + quests** — goal cards + gamified quests (`GoalCard`, `QuestsCard`, `utils/goals`, `utils/quests`)
+138. **Load history + export** — history card + data export (`LoadHistoryCard`, `utils/loadHistory`, `utils/exportHistory`)
+139. **TrainWise.Tests** — xUnit project pinning the load‑math (18 hand‑computed vectors)
 
 ## Planned / Not yet implemented
 

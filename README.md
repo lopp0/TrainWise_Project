@@ -41,8 +41,10 @@ themselves into an injury:
   read receipts, and unread badges.
 - 🌐 **Connect (social)** — friends, gyms on a map, presence heartbeat, and coach offers, scoped to
   the local area.
-- 🎮 **Gamification** — XP/coins, personal records, badges, a public workout board + weekly
-  leaderboard, a training calendar, and a cosmetics shop.
+- 🎮 **Gamification** — XP/coins, personal records, badges, a public workout board (comments + kudos)
+  + weekly leaderboard, a training calendar, and a cosmetics shop.
+- 🍎 **Nutrition & wearables** — calorie/macro log with barcode scan, an exercise library, reusable
+  workout templates, heart‑rate zones, and daily readiness/recovery.
 - 🤖 **Coach ML analytics** — a separate Python service serves a **PMC** (Fitness/Fatigue/Form) chart,
   an **ACWR safe‑zone** chart, and a **monthly forecast** ("if they keep training like this, what AC
   ratio will they hit?").
@@ -68,7 +70,7 @@ the Python ML service runs **locally** (see the note below the diagram).
 ┌───────────────▼─────────────────────────┐   ┌────────▼───────────────┐
 │  TrainWise/  —  ASP.NET Core 8 Web API   │   │  ml/  —  Python (Flask) │
 │  Controllers → BL → DAL → DBservice      │   │  PMC · ACWR · forecast  │
-│  raw ADO.NET (no EF) · 22 controllers    │   │  · risk (pyodbc, local) │
+│  raw ADO.NET (no EF) · 25 controllers    │   │  · risk (pyodbc, local) │
 └───────────────┬─────────────────────────┘   └────────┬───────────────┘
                 │                                       │
         ┌───────▼────────┐    ┌─────────────────┐       │ reads the same DB
@@ -88,7 +90,7 @@ the Python ML service runs **locally** (see the note below the diagram).
 | Layer | Path | Responsibility |
 |---|---|---|
 | **Database** | [`sql/`](sql) | SQL Server schema + stored procedures (`TWDB.sql` / `TrainWiseV2.sql`), 15 dated migration scripts (through `2026-07-02_security_hardening.sql`), and `seed_reference_data.sql` (lookup data) |
-| **Backend** | [`TrainWise/`](TrainWise) | ASP.NET Core 8 Web API — 22 controllers, three‑layer `Controllers → BL → DAL → DBservice`, raw ADO.NET (no EF Core) |
+| **Backend** | [`TrainWise/`](TrainWise) | ASP.NET Core 8 Web API — 25 controllers, three‑layer `Controllers → BL → DAL → DBservice`, raw ADO.NET (no EF Core) |
 | **Frontend** | [`TrainWiseExpo/`](TrainWiseExpo) | React Native 0.81 / Expo SDK 54 app (Android), 31 screen files (incl. the HomeRouter switcher), `src/{api,services,config,components,navigation,theme,constants,utils}` |
 | **ML service** | [`ml/`](ml) | Python / Flask coach‑analytics microservice (PMC, ACWR, monthly forecast, injury‑risk), pandas / scikit‑learn |
 | **AI context** | [`CLAUDE.md`](CLAUDE.md) · [`tasks/`](tasks) | Deep architecture notes, conventions, and the running lessons log |
