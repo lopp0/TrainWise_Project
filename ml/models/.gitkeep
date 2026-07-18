@@ -1,0 +1,3 @@
+# Holds notebook-exported model artifacts: forecast_model.pkl, risk_model.pkl.
+# These are produced by ml/notebook/TrainWise_Coach_Analytics.ipynb.
+# The service runs fine without them (per-trainee regression + rule-based risk).

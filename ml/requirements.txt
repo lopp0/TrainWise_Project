@@ -1,0 +1,11 @@
+# TrainWise Coach-Analytics ML service + notebook
+# Same libraries used across the Python Course ML lessons.
+flask
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+pyodbc
+joblib
+PyJWT  # only needed when ML_AUTH_ENFORCE=true (JWT validation)
