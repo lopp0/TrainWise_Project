@@ -53,3 +53,4 @@ app-example
 /android/.idea/
 /android/.kotlin/
 android/
+google-services.json
