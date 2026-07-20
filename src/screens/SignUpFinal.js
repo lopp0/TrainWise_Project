@@ -348,8 +348,8 @@ const SignUpFinal = ({ navigation, route }) => {
               javaScriptEnabled
               domStorageEnabled
               mixedContentMode="always"
-              scrollEnabled={false}
-              nestedScrollEnabled={false}
+              scrollEnabled
+              nestedScrollEnabled
             />
           </View>
 
@@ -525,9 +525,11 @@ const makeStyles = (Colors) => StyleSheet.create({
   checkLink: { color: Colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
 
   // reCAPTCHA — keep the widget on a white card (it renders on white).
+  // Tall enough to fit the expanded image-challenge (not just the checkbox);
+  // scrollEnabled on the WebView is a fallback for devices where it's still short.
   recaptchaContainer: {
     width: '100%',
-    height: 100,
+    height: 460,
     marginTop: 28,
     borderRadius: 4,
     overflow: 'hidden',

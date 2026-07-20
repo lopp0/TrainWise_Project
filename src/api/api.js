@@ -129,6 +129,53 @@ export const registerUser = async (payload) => {
   }
 };
 
+/**
+ * Request a password reset code be emailed to the given address.
+ * Always resolves (backend returns a generic message either way, so this
+ * can't be used to probe which emails are registered).
+ * @param {string} email
+ */
+export const requestPasswordReset = async (email) => {
+  try {
+    const response = await apiClient.post('/auth/forgot-password', { email });
+    return response.data;
+  } catch (error) {
+    const data = error.response?.data;
+    throw new Error(typeof data === 'string' && data.trim() ? data : 'Could not send reset code. Please try again.');
+  }
+};
+
+/**
+ * Verify a password reset code without consuming it.
+ * @param {string} email
+ * @param {string} code - 6-digit code from the email
+ */
+export const verifyResetCode = async (email, code) => {
+  try {
+    const response = await apiClient.post('/auth/verify-reset-code', { email, code });
+    return response.data;
+  } catch (error) {
+    const data = error.response?.data;
+    throw new Error(typeof data === 'string' && data.trim() ? data : 'Invalid or expired code.');
+  }
+};
+
+/**
+ * Complete the reset: verifies the code again and sets the new password.
+ * @param {string} email
+ * @param {string} code
+ * @param {string} newPassword
+ */
+export const resetPassword = async (email, code, newPassword) => {
+  try {
+    const response = await apiClient.post('/auth/reset-password', { email, code, newPassword });
+    return response.data;
+  } catch (error) {
+    const data = error.response?.data;
+    throw new Error(typeof data === 'string' && data.trim() ? data : 'Could not reset password. Please try again.');
+  }
+};
+
 // ============================================================================
 // ACTIVITY LOG ENDPOINTS
 // ============================================================================

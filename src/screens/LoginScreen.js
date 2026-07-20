@@ -156,7 +156,7 @@ const LoginScreen = ({ navigation }) => {
 
           <View style={styles.resetRow}>
             <Text style={styles.resetPrompt}>{"CAN'T LOG IN?\nRESET PASSWORD "}</Text>
-            <TouchableOpacity activeOpacity={0.75}>
+            <TouchableOpacity activeOpacity={0.75} onPress={() => navigation.navigate('ForgotPassword')}>
               <Text style={styles.resetHere}>HERE!</Text>
             </TouchableOpacity>
           </View>

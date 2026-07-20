@@ -16,6 +16,9 @@ import WelcomeScreen from '../screens/WelcomeScreen';
 import LoginScreen from '../screens/LoginScreen';
 import SignUpScreen from '../screens/SignUpScreen';
 import SignUpFinal from '../screens/SignUpFinal';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
+import VerifyResetCodeScreen from '../screens/VerifyResetCodeScreen';
+import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import HomeRouter from '../screens/HomeRouter';
 import CoachTraineeDetailScreen from '../screens/CoachTraineeDetailScreen';
 import CoachTraineeAnalyticsScreen from '../screens/CoachTraineeAnalyticsScreen';
@@ -54,6 +57,9 @@ const AuthStack = () => {
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="SignUp" component={SignUpScreen} />
       <Stack.Screen name="SignUpFinal" component={SignUpFinal} />
+      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+      <Stack.Screen name="VerifyResetCode" component={VerifyResetCodeScreen} />
+      <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
     </Stack.Navigator>
   );
 };
