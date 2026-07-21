@@ -42,6 +42,17 @@ raise it directly with the project owner — do not open a public issue with rep
   creating the user. It is **fail‑open**: if `RECAPTCHA_SECRET` isn't configured, verification is skipped
   so signup still works. The site key in `SignUpFinal.js` is public by design; the secret stays in Azure.
 - A locally generated `deviceId` (`dev-<timestamp>-<rand>`) is persisted per install.
+- **Password recovery + email verification** (`AuthRecoveryBL`, `AuthCodes` table) — codes are **PBKDF2‑
+  hashed at rest, single‑use, and TTL‑bound** (reset 15 min, verify 60 min). The request endpoints reply
+  identically whether or not the email exists (no account enumeration). `EmailSender` (`System.Net.Mail`,
+  SMTP from env vars) delivers them best‑effort — an outage never breaks the flow. `AUTH_DEV_CODES=true`
+  (dev only) echoes the code in the response.
+- **Real device sessions + revocation** (`SessionBL`, `UserSessions` table) — every token carries a `sid`
+  claim; `Program.cs` `OnTokenValidated` rejects a token whose session was revoked (10 s validity cache).
+  A user can sign out one device or **all other devices**; revocation is scoped by user id, so nobody can
+  kill another user's session by guessing an id. This replaces the old (numeric, unused) `UserDevices`.
+- **Server‑side input validation** (`InputValidator`) mirrors the client email/password rules so a crafted
+  request can't bypass them.
 
 ### Abuse & error handling
 - **Rate limiting** — .NET 8 built‑in limiter: an `"auth"` fixed‑window policy (10 req/min/IP) on login,
@@ -102,6 +113,9 @@ Read from environment variables on the backend, never hardcoded:
 - **`GOOGLE_PLACES_KEY`** — server‑side Google Places key for the nearby‑gyms proxy (`PlacesService`, a
   **billable** SKU). Lives only in Azure config, **never** shipped in the app; unset = live Places
   lookup disabled (seeded gyms still work).
+- **`SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` / `SMTP_SSL`** — transactional‑email
+  credentials for `EmailSender` (Gmail needs an **App Password**, not the account password). All read from
+  env vars; unset = email disabled. `AUTH_DEV_CODES` is a dev‑only convenience, not a secret.
 
 ### DB secret is externalized to Azure config
 `DBservice.Connect()` reads the connection string from **environment variables first** (Azure App Service
@@ -195,7 +209,14 @@ Run **every time** before committing/pushing:
 - ✅ DB secret read from env (Azure Connection strings) instead of `appsettings.json`.
 - ✅ Optional ML‑service JWT (`ml/auth.py`, gated by `ML_AUTH_ENFORCE`); ML DoS/error‑leak fixes.
 
+**Added since (2026‑07‑17 → 19):**
+- ✅ Password recovery + email verification with PBKDF2‑hashed, single‑use, TTL codes (no enumeration).
+- ✅ Real device sessions + revocation (JWT `sid` claim enforced server‑side) — supersedes `UserDevices`.
+- ✅ Server‑side input validation (`InputValidator`) mirroring the client email/password rules.
+
 **Still open (honest list):**
+- **Turn `AUTH_ENFORCE` on** — still off, so tokenless legacy calls are permitted and session revocation
+  only bites once the client actually sends its token. Flip once the new APK is confirmed logging in.
 - **Rotate the Azure SQL password** — the old weak password sat in the `appsettings.json` working copy;
   treat it as burned, rotate it in the Azure portal, keep the new one only in Azure config.
 - **OpenAI key server‑side** — currently `EXPO_PUBLIC_`, baked into the APK; proxy it through the backend.

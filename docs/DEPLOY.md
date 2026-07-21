@@ -64,6 +64,11 @@ The current Azure target (as of the last redeploy) is:
   - `FIREBASE_CREDENTIALS_JSON` — service‑account JSON for FCM push (`PushSender`).
   - `GOOGLE_PLACES_KEY` — server‑side Google Places key for the nearby‑gyms proxy (`PlacesService`, billable
     SKU). Leave unset to disable the live Places lookup (falls back to the seeded gyms).
+  - `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` / `SMTP_SSL` — transactional email
+    (`EmailSender`) for password‑reset + verification. Unset = emails don't send. Gmail needs an **App
+    Password** (2‑Step Verification on); SendGrid uses host `smtp.sendgrid.net`, user literally `apikey`.
+  - `AUTH_DEV_CODES=true` *(dev/demo only)* — echoes the reset/verify code in the API response so the flows
+    are testable without SMTP. Never set this in a real deployment.
 - **Schema parity** — run every `sql/` migration against Azure SQL too (SSMS → connect to
   `<your-sql-server>.database.windows.net`). The schema must match local SQL Express. **Run
   `2026-07-02_security_hardening.sql` (it widens `Users.Password` for the PBKDF2 hash) BEFORE publishing
@@ -135,15 +140,18 @@ $env:NODE_OPTIONS = "--max-old-space-size=8192"   # avoids the JS-bundle OOM
 
 ---
 
-## Part 3 — ML service (local, not deployed)
+## Part 3 — ML service (Azure deploy in progress)
 
-The Python coach‑analytics service (`ml/app.py`, port 8000) runs on the dev PC and reads the same SQL
-database. It is **not** on Azure today, so the coach Analytics / forecast screen only works on the same
-WiFi as the PC. To run it, see [ml/README.md](../ml/README.md) and [SETUP.md](SETUP.md#step-7--optional-run-the-ml-coachanalytics-service).
+The Python analytics service (`ml/app.py`, port 8000) reads the same SQL database and powers the trainee
+**Load** tab (Python‑primary) as well as the coach PMC / forecast. Historically it ran only on the dev PC;
+it is **now being deployed to Azure** (`ml/AZURE_DEPLOY.md`, `.deployment`, `.vscodeignore`). Until that is
+live, the ML surfaces only work on the same WiFi as the PC and otherwise fall back to the C#/on‑device path.
 
-**To make it cloud‑side (future):** deploy `ml/app.py` to Azure App Service (F1) and rewire `ml/db.py`
-from `pyodbc` + Windows auth to **pymssql + Azure SQL (SQL auth)**. Not done yet — see the
-[roadmap](../README.md#roadmap--planned).
+**Azure path** (`ml/AZURE_DEPLOY.md`): the DB layer auto‑switches — when `AZURE_SQL_USER` **and**
+`AZURE_SQL_PASSWORD` are set it uses **`pymssql` + Azure SQL (SQL auth)**; otherwise it stays on `pyodbc` +
+local Windows auth. Runtime **Python 3.11/3.12** (not 3.13 — `pymssql` wheels lag), served by `gunicorn`.
+Optionally set `ML_AUTH_ENFORCE=true` + `JWT_KEY` (same value as the C# API) to require a token.
+`AZURE_SQL_PASSWORD` is a secret — **never commit it**; set it only in the Web App's Application settings.
 
 ---
 

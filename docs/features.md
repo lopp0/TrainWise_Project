@@ -56,12 +56,18 @@ weather‑aware suggestions, and an ML forecast.
   so a token can't act on another user's data.
 - **PBKDF2** password hashing (`BL/PasswordHasher.cs`) + verify‑and‑upgrade; **rate limiting** (auth
   policy + global backstop); **upload validation** (`BL/UploadValidator.cs`, magic bytes + GUID names);
-  server‑side **Google ID‑token** + **reCAPTCHA** verification. Full detail:
+  server‑side **Google ID‑token** + **reCAPTCHA** verification.
+- **Device sessions + revocation** — login records a `UserSessions` row and the JWT carries a `sid` claim;
+  `Program.cs` `OnTokenValidated` rejects a revoked session. Users list their devices and **sign out
+  others** (`SessionBL`; supersedes the old `UserDevices`). Legacy tokens (no `sid`) keep working.
+- **Password recovery + email verification** — PBKDF2‑hashed, single‑use, TTL codes (`AuthRecoveryBL`,
+  `AuthCodes` table); `EmailSender` (SMTP from env vars, best‑effort) delivers them; flows never reveal
+  whether an email exists. `AUTH_DEV_CODES=true` echoes the code in the response for testing. Full detail:
   [`SECURITY.md`](SECURITY.md) and [`../tasks/security_audit_2026_07_02.md`](../tasks/security_audit_2026_07_02.md).
 
 ---
 
-## 4. Complete API surface (25 controllers)
+## 4. Complete API surface (28 controllers)
 
 All controllers route at `api/[controller]` unless noted. POST/PUT bodies are JSON (`[FromBody]`), so
 clients must send `Content-Type: application/json` even for "empty" bodies. Non‑anonymous endpoints are
@@ -70,6 +76,8 @@ subject to the JWT ownership gate above.
 ### Auth & Users
 **`AuthController`** — `api/auth`
 - `POST /login` — email + password → `{ token, user }` (PBKDF2 verify; rate‑limited; `[AllowAnonymous]`)
+- `POST /forgot` · `POST /reset` — request + confirm a password‑reset code · `POST /verify/request` ·
+  `POST /verify/confirm` — email verification (single‑use TTL codes; all `[AllowAnonymous]`; never reveal whether an email exists)
 
 **`UsersController`** — `api/users`
 - `GET /` — **403** (locked down; no admin role) · `GET /{id}` · `POST /` (register + **reCAPTCHA**
@@ -84,6 +92,7 @@ subject to the JWT ownership gate above.
 **`UserGoalsController`** — `api/users/{userId}/goals` — `POST /{goalId}` · `DELETE /{goalId}`
 **`UserDevicesController`** — `api/users/{userId}/devices` — `GET /` · `POST /` · `PUT /{deviceId}`
 **`UserActivityPreferencesController`** — `api/users/{userId}/activity-preferences` — `POST /{activityTypeId}` · `DELETE /{activityTypeId}`
+**`SessionsController`** — `api/users/{userId}/sessions` — `GET /` (active devices) · `DELETE /{sessionId}` (sign out one) · `POST /revoke-others` (sign out all other devices)
 
 ### Workouts & Load
 **`ActivityLogController`** — `api/activitylog` — `GET /user/{userId}` · `POST /` · `PUT /` · `DELETE /{id}` · `GET /{id}/notes` · `PUT /{id}/notes` · `PUT /{id}/share` · `GET /{id}/public` (shareable public workout link)
@@ -135,17 +144,30 @@ subject to the JWT ownership gate above.
 **`CalendarController`** — `api/calendar`
 - `GET /{userId}` · `POST /{userId}` · `PUT /{planId}` · `DELETE /{planId}` · `PUT /{planId}/complete`
 
+### Community
+**`CommunityController`** — `api/community`
+- **Challenges**: `POST /challenges` · `GET /challenges/user/{userId}` · `GET /challenges/{id}/standings` · `GET /challenges/invites/{userId}` · `PUT /challenges/{id}/invite/{userId}/{accept}` · `POST /challenges/{id}/join/{userId}` · `DELETE /challenges/{id}/leave/{userId}`
+- **Events + group chat**: `POST /events` · `GET /events/user/{userId}` · `GET /events/{id}/attendees` · `PUT /events/{id}/rsvp` · `DELETE /events/{id}` · `GET/POST /events/{id}/messages` · `POST /events/{id}/messages/{messageId}/react` · `GET /events/{id}/reactions`
+- **Coach marketplace**: `GET /coaches` · `GET /coaches/{coachUserId}/reviews` · `POST /coaches/{coachUserId}/reviews`
+- `GET /feed/{userId}` — activity feed *(endpoint present but **dormant** — the feed screen was dropped)*
+
+> **`WorkoutCommentsController`** exists but is **dormant** (coach‑comments feature #134 was dropped); it's counted in the 28 but nothing in the app calls it.
+
 ---
 
-## 5. ML service API (Python / Flask, local)
+## 5. ML service API (Python / Flask)
 
-`ml/app.py` binds `0.0.0.0:8000`, reads the same SQL DB via `pyodbc` (Windows Integrated Security), and
-mirrors the C# load formula exactly. **Optional JWT auth** (`ml/auth.py`, gated by `ML_AUTH_ENFORCE`,
+`ml/app.py` binds `0.0.0.0:8000` and reads the same SQL DB (`pyodbc` + Windows auth locally; `pymssql` +
+Azure SQL once `AZURE_SQL_USER`/`AZURE_SQL_PASSWORD` are set — **Azure deploy in progress**, see
+`ml/AZURE_DEPLOY.md`), mirroring the C# load formula exactly. **Optional JWT auth** (`ml/auth.py`, gated by `ML_AUTH_ENFORCE`,
 default off) validates the same token the C# API issues + a self‑or‑linked‑coach check.
 
 - `GET /health` (always public)
 - `GET /api/ml/trainee/<id>/pmc` — Fitness / Fatigue / Form series
 - `GET /api/ml/trainee/<id>/acwr` — ACWR series with safe‑zone band (`?days=` clamped 1..400)
+- `GET /api/ml/trainee/<id>/analytics` — Classic rolling + Smooth EWMA trend. This is the **primary**
+  source for the trainee **Load** tab (fetch order: Python `/analytics` → C# `LoadAnalyticsBL` fallback →
+  on‑device `utils/loadSeries.js` last resort), so the trainee Load Trend needs this service too.
 - `GET /api/ml/trainee/<id>/forecast[?month=YYYY-MM]` — monthly regression forecast (appends a snapshot to `MonthlyForecasts`)
 - `GET /api/ml/trainee/<id>/forecast/history` — past monthly snapshots
 
@@ -184,6 +206,7 @@ There are **no** server‑side background/hosted services — the C# API is requ
 | Google reCAPTCHA | Signup bot protection | site key in client, secret in Azure (`RECAPTCHA_SECRET`), fail‑open |
 | Google Places API | Nearby‑gyms search (server‑side proxy) | **billable SKU**; key in `GOOGLE_PLACES_KEY` env var, results cached |
 | Open Food Facts | Nutrition barcode lookup | free public API (no key), called client‑side |
+| SMTP (Gmail / SendGrid / …) | Password‑reset + email‑verification emails (`EmailSender`) | creds from `SMTP_*` env vars; unset = disabled (best‑effort, never breaks the auth flow) |
 
 ---
 
@@ -240,12 +263,12 @@ There are **no** server‑side background/hosted services — the C# API is requ
 - **Access** — 100% parameterized stored procedures / `SqlParameter` via ADO.NET; no ORM, no migrations
   framework.
 - **Schema source** — `sql/TWDB.sql` / `sql/TrainWiseV2.sql` (schema + procs, no data) plus **15+ dated
-  migration scripts** (through `2026-07-16_add_board_comments.sql`) run in order against both DBs.
+  migration scripts** (through `2026-07-19_add_user_sessions.sql`) run in order against both DBs.
 - **Seed data** — `sql/seed_reference_data.sql` (idempotent): 20 activity types (with intensity factors),
   20 injury types + categories, 20 training goals, and the `LoadParameters` tuning row.
 - **Runtime tables** — `Users` (password now `NVARCHAR(200)` for the PBKDF2 hash), `Coaches`,
   `ActivityLogs`, `DailyLoad`, `Messages` (+ reactions), `Friendships`, `Gyms`, `CoachOffers`,
-  `MonthlyForecasts`, plus body‑measurement / pain‑log / board (+ comments) / records / calendar / cosmetics / **nutrition** / **workout‑template** / wearables tables.
+  `MonthlyForecasts`, plus body‑measurement / pain‑log / board (+ comments) / records / calendar / cosmetics / **nutrition** / **workout‑template** / wearables tables. Community adds **`Challenges` / `ChallengeParticipants`, `Events` / `EventRSVPs` / `EventChatMessages` (+ reactions + reads), `CoachReviews`**; auth adds **`AuthCodes`** and **`UserSessions`** (device sessions, which supersede `UserDevices`).
 
 ---
 
@@ -256,5 +279,16 @@ There are **no** server‑side background/hosted services — the C# API is requ
 - A few endpoints still need finer ownership rules; client token should move to `expo-secure-store`; add
   refresh tokens + HSTS + tighter CORS (see [SECURITY.md](SECURITY.md)).
 - No CI/CD, automated secret scanning, or static analysis yet (see [roadmap](../README.md#roadmap--planned)).
-- The ML service is local‑only — the coach forecast doesn't work without the dev PC running.
+- The ML service is **being moved to Azure** (`ml/AZURE_DEPLOY.md`, in progress); until it's live it stays
+  LAN‑only, so the trainee Load Trend AND coach PMC/forecast — both **Python‑primary** — fall back to the
+  C#/on‑device path when the PC service is off.
+- `AUTH_ENFORCE` is still **off** (legacy tokenless calls allowed, so session revocation only bites once the
+  client sends its token); **SMTP is unconfigured** (reset/verify emails don't send until `SMTP_HOST` is set);
+  the privacy‑policy `CONTACT_EMAIL` is a placeholder.
+- **Dormant, kept in‑tree**: activity feed (#144), coach comments (#134 + `WorkoutComments*`), the standalone
+  `TimerScreen` (interval timer merged inline), the `UserDevices` table (superseded by `UserSessions`), and
+  the i18n language picker (English‑only now).
+- **Backlog**: the whole 🟡 medium set is shipped; only **9 🔴 hard features** remain — live GPS run
+  recording, assigned training programs, squad/team coaching, in‑app payments, AI video form analysis, Wear
+  OS companion, offline sync queue, home‑screen widget, and the what‑if forecast simulator.
 - AI chat history is in‑memory; profile images on Azure may not survive App Service restarts.

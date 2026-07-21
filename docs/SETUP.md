@@ -97,7 +97,19 @@ cd TrainWise_Project
    2026-07-10_fix_injury_link_ondelete.sql
    2026-07-15_add_workouts_wearables.sql   # nutrition, workout templates, wearables/HR
    2026-07-16_add_board_comments.sql
+   2026-07-17_add_auth_batch.sql            # AuthCodes (reset + verify codes)
+   2026-07-17_add_community_batch.sql       # Challenges, Events, RSVPs, CoachReviews
+   2026-07-17_add_coach_comments_and_cascade.sql   # WorkoutComments (dormant) + sp_DeleteUser cascade
+   2026-07-19_fix_challenges.sql
+   2026-07-19_add_event_chat.sql            # guarded; superseded by event_chat_full
+   2026-07-19_event_chat_full.sql           # group-chat media + reactions + reads (self-contained; re-run this if sp_PostEventMessage errors)
+   2026-07-19_sort_community_by_created.sql
+   2026-07-19_add_user_sessions.sql         # real device sessions + revocation
    ```
+
+> **Optional auth env vars** (backend): `AUTH_DEV_CODES=true` echoes reset/verify codes in the API
+> response so you can test without email; `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`/`SMTP_FROM`
+> turn on real transactional email (`EmailSender`). Both are read from the environment — see [DEPLOY.md](DEPLOY.md).
 
 > **`seed_reference_data.sql` is mandatory.** `TWDB.sql` creates schema + procs only — the lookup
 > tables (ActivityTypes, InjuryTypes, TrainingGoals, LoadParameters) start empty, which breaks the

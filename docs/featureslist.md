@@ -192,6 +192,21 @@
 138. **Load history + export** — history card + data export (`LoadHistoryCard`, `utils/loadHistory`, `utils/exportHistory`)
 139. **TrainWise.Tests** — xUnit project pinning the load‑math (18 hand‑computed vectors)
 
+## Community, Auth Recovery & Sessions (2026‑07‑17 → 19)
+140. **Friend challenges** — load / workouts / distance, invite → accept, live standings with cosmetics (`ChallengesScreen`, `api/community/challenges`)
+141. **Group events + RSVP** — create events, RSVP, attendee list (`EventsScreen`)
+142. **Event group chat** — photos, videos, voice notes, reactions, read receipts (`EventChatScreen`, full 1:1‑chat parity)
+143. **Coach marketplace + reviews / ratings** — discover + rate coaches (`CoachMarketplaceScreen`, merged into the map's Coaches filter)
+144. **Forgot / reset password** — 6‑digit PBKDF2 code, single‑use, 15‑min TTL (`ForgotPasswordScreen`, `api/auth/forgot|reset`)
+145. **Email verification** — 60‑min code flips `Users.EmailVerified` (`api/auth/verify/request|confirm`)
+146. **Transactional email** — reset + verification emails via SMTP (`EmailSender`, env‑var config, best‑effort)
+147. **Real device sessions + revocation** — list devices, "sign out", "sign out all other devices"; JWT `sid` claim enforced server‑side (`api/users/{id}/sessions`)
+148. **Biometric unlock** — face / fingerprint app lock (`utils/biometric.js`)
+149. **Change password + strong‑password rules** — eye‑toggle + live checklist (`PasswordInput`, `PasswordRequirements`, `validation.js`)
+150. **AI weekly recap + AI plan** (`WeekReviewCard`, `AIPlanScreen`)
+151. **Trainee self‑analytics (#174)** — trainees get their own PMC + ACWR + monthly forecast (reuses `CoachTraineeAnalyticsScreen` with an `isSelf` flag)
+152. **GDPR privacy policy + terms** (scrollable modal) + strict in‑app email validation (real TLD check)
+
 ## Planned / Not yet implemented
 
 Empty placeholders for future work — present in comparable projects, **not** built in TrainWise today:
@@ -199,8 +214,13 @@ Empty placeholders for future work — present in comparable projects, **not** b
 - **CI/CD** — GitHub Actions build + test on PRs, gated deploy on merge (today: manual publish from VS 2022)
 - **Secret scanning** — `gitleaks` pre‑commit hook + CI scan (today: manual safe‑push checklist)
 - **Static analysis** — CodeQL + `npm audit` / `dotnet list package --vulnerable` gates
-- **Cloud ML** — deploy the Python service to Azure so the coach forecast works without the PC
+- **Cloud ML** — deploying the Python service to Azure (`pymssql` + Azure SQL) so the ML surfaces work without the PC — **in progress** (`ml/AZURE_DEPLOY.md`)
 - **iOS app** — the Expo iOS shell is unmaintained (Android only)
 - **Content‑safety moderation** — screening of user‑generated text / images
 - **Web / PWA client** — TrainWise is native‑only
 - **Persistent AI chat history** — currently in‑memory per screen visit
+
+**🔴 Hard backlog — the only 9 unbuilt features:** live GPS run recording (#121), assigned training programs
+(#133), squad / team coaching (#136), in‑app coaching payments (#168), AI video form analysis (#177), Wear
+OS watch companion (#182), offline mode + sync queue (#158), Android home‑screen widget (#159), and the
+what‑if forecast simulator (#185). Every 🟡 medium backlog item is now shipped.

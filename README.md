@@ -41,6 +41,8 @@ themselves into an injury:
   read receipts, and unread badges.
 - 🌐 **Connect (social)** — friends, gyms on a map, presence heartbeat, and coach offers, scoped to
   the local area.
+- 🏆 **Community** — friend challenges with live standings, group events + RSVP + group chat, and a coach
+  marketplace with ratings & reviews. Plus password reset / email verification and real device sessions.
 - 🎮 **Gamification** — XP/coins, personal records, badges, a public workout board (comments + kudos)
   + weekly leaderboard, a training calendar, and a cosmetics shop.
 - 🍎 **Nutrition & wearables** — calorie/macro log with barcode scan, an exercise library, reusable
@@ -70,7 +72,7 @@ the Python ML service runs **locally** (see the note below the diagram).
 ┌───────────────▼─────────────────────────┐   ┌────────▼───────────────┐
 │  TrainWise/  —  ASP.NET Core 8 Web API   │   │  ml/  —  Python (Flask) │
 │  Controllers → BL → DAL → DBservice      │   │  PMC · ACWR · forecast  │
-│  raw ADO.NET (no EF) · 25 controllers    │   │  · risk (pyodbc, local) │
+│  raw ADO.NET (no EF) · 28 controllers    │   │  · risk (pyodbc, local) │
 └───────────────┬─────────────────────────┘   └────────┬───────────────┘
                 │                                       │
         ┌───────▼────────┐    ┌─────────────────┐       │ reads the same DB
@@ -90,7 +92,7 @@ the Python ML service runs **locally** (see the note below the diagram).
 | Layer | Path | Responsibility |
 |---|---|---|
 | **Database** | [`sql/`](sql) | SQL Server schema + stored procedures (`TWDB.sql` / `TrainWiseV2.sql`), 15 dated migration scripts (through `2026-07-02_security_hardening.sql`), and `seed_reference_data.sql` (lookup data) |
-| **Backend** | [`TrainWise/`](TrainWise) | ASP.NET Core 8 Web API — 25 controllers, three‑layer `Controllers → BL → DAL → DBservice`, raw ADO.NET (no EF Core) |
+| **Backend** | [`TrainWise/`](TrainWise) | ASP.NET Core 8 Web API — 28 controllers, three‑layer `Controllers → BL → DAL → DBservice`, raw ADO.NET (no EF Core) |
 | **Frontend** | [`TrainWiseExpo/`](TrainWiseExpo) | React Native 0.81 / Expo SDK 54 app (Android), 31 screen files (incl. the HomeRouter switcher), `src/{api,services,config,components,navigation,theme,constants,utils}` |
 | **ML service** | [`ml/`](ml) | Python / Flask coach‑analytics microservice (PMC, ACWR, monthly forecast, injury‑risk), pandas / scikit‑learn |
 | **AI context** | [`CLAUDE.md`](CLAUDE.md) · [`tasks/`](tasks) | Deep architecture notes, conventions, and the running lessons log |
@@ -249,8 +251,8 @@ future work:
   manually from VS 2022).
 - **Automated secret scanning** — a `gitleaks` pre‑commit hook + CI secret scan (today the pre‑push
   scan is manual).
-- **Cloud ML** — deploy `ml/app.py` to Azure (pymssql + Azure SQL) so the coach forecast works without
-  the PC running.
+- **Cloud ML** — deploying `ml/app.py` to Azure (pymssql + Azure SQL) so the trainee Load Trend + coach
+  forecast work without the PC running. **In progress** (see `ml/AZURE_DEPLOY.md`).
 - **Auth follow‑ups** — the core auth hardening (JWT bearer, PBKDF2 hashing, ownership checks, rate
   limiting, upload validation) is **done** (see [docs/SECURITY.md](docs/SECURITY.md)); remaining: rotate
   the old Azure SQL password, move the JWT to `expo-secure-store`, add refresh tokens + HSTS, tighten CORS.
