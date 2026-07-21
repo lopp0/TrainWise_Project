@@ -121,6 +121,10 @@ $env:NODE_OPTIONS = "--max-old-space-size=8192"   # avoids the JS-bundle OOM
   the APK stays ~125 MB.
 - A rotated native Maps key only reaches the manifest via `expo run:android` / prebuild — plain
   `gradlew` does not re‑prebuild.
+- **`expo-task-manager`** (background‑GPS, added for live run tracking) is a **native** module — a full
+  native rebuild is required (delete `app/.cxx` + `app/build` first to force it). It autolinks via gradle;
+  the background‑location manifest permissions were added **by hand** (preserving the Health Connect aliases),
+  so **do not `expo prebuild`** — verify the three permissions + the `location` foreground service merged.
 - **Release signing** uses a dedicated keystore `android/app/trainwise-release.keystore` (not the shared
   debug keystore) so Google Sign‑In's Android OAuth client has a **unique SHA‑1**. The keystore + its
   passwords live only locally (gitignored) — **back them up**. Changing the keystore changes the app
@@ -140,18 +144,28 @@ $env:NODE_OPTIONS = "--max-old-space-size=8192"   # avoids the JS-bundle OOM
 
 ---
 
-## Part 3 — ML service (Azure deploy in progress)
+## Part 3 — ML service (live on Azure)
 
-The Python analytics service (`ml/app.py`, port 8000) reads the same SQL database and powers the trainee
-**Load** tab (Python‑primary) as well as the coach PMC / forecast. Historically it ran only on the dev PC;
-it is **now being deployed to Azure** (`ml/AZURE_DEPLOY.md`, `.deployment`, `.vscodeignore`). Until that is
-live, the ML surfaces only work on the same WiFi as the PC and otherwise fall back to the C#/on‑device path.
+The Python analytics service (`ml/app.py`, port 8000 locally) powers the trainee **Load** tab
+(Python‑primary), the coach PMC / forecast, and the **What‑if planner** (`/whatif`). It is **now live on
+Azure App Service**: `trainwise-ml` → `https://trainwise-ml-…israelcentral-01.azurewebsites.net`, health at
+`/health` → `{"db":true,"status":"ok"}`. The client chooses the instance with **`ML_MODE`** in
+`src/services/mlApi.js` (`local` | `azure` — currently `local`); flip it + rebuild the APK to use the cloud.
 
-**Azure path** (`ml/AZURE_DEPLOY.md`): the DB layer auto‑switches — when `AZURE_SQL_USER` **and**
-`AZURE_SQL_PASSWORD` are set it uses **`pymssql` + Azure SQL (SQL auth)**; otherwise it stays on `pyodbc` +
-local Windows auth. Runtime **Python 3.11/3.12** (not 3.13 — `pymssql` wheels lag), served by `gunicorn`.
-Optionally set `ML_AUTH_ENFORCE=true` + `JWT_KEY` (same value as the C# API) to require a token.
-`AZURE_SQL_PASSWORD` is a secret — **never commit it**; set it only in the Web App's Application settings.
+- **Dual‑mode DB** (`ml/db.py`): `pyodbc` + Windows auth locally; **`pymssql` + Azure SQL (SQL auth)** when
+  `AZURE_SQL_USER` **and** `AZURE_SQL_PASSWORD` are set. `gunicorn` + `pymssql` are Linux‑marked in
+  `requirements.txt` (Azure installs them; local Windows skips).
+- **Required App settings (4):** `TRAINWISE_SQL_SERVER=<server>.database.windows.net` (mind the `01` on the
+  real server name), `AZURE_SQL_USER`, `AZURE_SQL_PASSWORD`, `TRAINWISE_SQL_DATABASE=TrainWiseDB`. Optionally
+  `ML_AUTH_ENFORCE=true` + `JWT_KEY` (same value as the C# API). **`AZURE_SQL_PASSWORD` is a secret — set it
+  only in Application settings, never in source.**
+- **Deploy method:** deploy a clean folder (app.py, db.py, config.py, features.py, forecast.py, risk.py,
+  auth.py, requirements.txt, `.deployment`, `models/`) — VS Code Azure panel → right‑click `trainwise-ml` →
+  Deploy to Web App. Do **not** deploy the working `ml/` folder (its local `venv` breaks the deploy). Runtime
+  **Python 3.11/3.12** (not 3.13 — `pymssql` wheels lag).
+- **Gotcha:** the serverless Azure SQL **auto‑pauses**; the first `/health` after idle can return
+  `{"db":false}` for ~30 s while it wakes — refresh a couple of times. Ensure `/whatif` is present on
+  whichever instance `ML_MODE` points at (redeploy if Azure is behind).
 
 ---
 

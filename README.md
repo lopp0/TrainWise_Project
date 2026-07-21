@@ -47,9 +47,13 @@ themselves into an injury:
   + weekly leaderboard, a training calendar, and a cosmetics shop.
 - 🍎 **Nutrition & wearables** — calorie/macro log with barcode scan, an exercise library, reusable
   workout templates, heart‑rate zones, and daily readiness/recovery.
-- 🤖 **Coach ML analytics** — a separate Python service serves a **PMC** (Fitness/Fatigue/Form) chart,
-  an **ACWR safe‑zone** chart, and a **monthly forecast** ("if they keep training like this, what AC
-  ratio will they hit?").
+- 🤖 **Coach ML analytics** — a separate Python service (**live on Azure**) serves a **PMC**
+  (Fitness/Fatigue/Form) chart, an **ACWR safe‑zone** chart, a **monthly forecast**, and an interactive
+  **What‑if planner** ("add N sessions this week → watch the injury‑risk ratio move before you train them").
+- 🏃 **Live GPS run tracking** — record your own outdoor route with background (screen‑off) tracking, drawn
+  live and saved.
+- 📋 **Assigned training programs** — a coach builds a reusable weekly program and assigns it; it fans out
+  onto the trainee's calendar.
 - 🔔 **Push notifications** — load‑aware daily reminders, workout‑warning pushes, and social pushes.
 - 🌗 **Light / dark theming** — a runtime‑swappable themed palette across every screen.
 
@@ -72,7 +76,7 @@ the Python ML service runs **locally** (see the note below the diagram).
 ┌───────────────▼─────────────────────────┐   ┌────────▼───────────────┐
 │  TrainWise/  —  ASP.NET Core 8 Web API   │   │  ml/  —  Python (Flask) │
 │  Controllers → BL → DAL → DBservice      │   │  PMC · ACWR · forecast  │
-│  raw ADO.NET (no EF) · 28 controllers    │   │  · risk (pyodbc, local) │
+│  raw ADO.NET (no EF) · 29 controllers    │   │  · risk (pyodbc, local) │
 └───────────────┬─────────────────────────┘   └────────┬───────────────┘
                 │                                       │
         ┌───────▼────────┐    ┌─────────────────┐       │ reads the same DB
@@ -83,16 +87,16 @@ the Python ML service runs **locally** (see the note below the diagram).
         └────────────────┘    └─────────────────┘
 ```
 
-> **The ML service is not on Azure.** The C# API + SQL are cloud‑hosted, so login / workouts / chat /
-> coach work from anywhere. The coach **Analytics / forecast** screen only works when the local Python
-> service (`ml/app.py`, port 8000) is running and the phone is on the same WiFi — otherwise it shows
-> the graceful "analytics offline" fallback. Making the forecast cloud‑side is on the
-> [roadmap](#roadmap--planned).
+> **The ML service is now live on Azure** (`trainwise-ml`), alongside the C# API + SQL. The client picks
+> the instance with `ML_MODE` in `mlApi.js` (`local` | `azure`, currently `local`). The Python‑backed
+> surfaces — trainee Load Trend, coach **Analytics / forecast**, and the **What‑if planner** — use whichever
+> `ML_MODE` points at; on `local` they need the PC service on the same WiFi (else a graceful "analytics
+> offline" fallback), and flipping to `azure` + rebuilding runs them off the cloud.
 
 | Layer | Path | Responsibility |
 |---|---|---|
 | **Database** | [`sql/`](sql) | SQL Server schema + stored procedures (`TWDB.sql` / `TrainWiseV2.sql`), 15 dated migration scripts (through `2026-07-02_security_hardening.sql`), and `seed_reference_data.sql` (lookup data) |
-| **Backend** | [`TrainWise/`](TrainWise) | ASP.NET Core 8 Web API — 28 controllers, three‑layer `Controllers → BL → DAL → DBservice`, raw ADO.NET (no EF Core) |
+| **Backend** | [`TrainWise/`](TrainWise) | ASP.NET Core 8 Web API — 29 controllers, three‑layer `Controllers → BL → DAL → DBservice`, raw ADO.NET (no EF Core) |
 | **Frontend** | [`TrainWiseExpo/`](TrainWiseExpo) | React Native 0.81 / Expo SDK 54 app (Android), 31 screen files (incl. the HomeRouter switcher), `src/{api,services,config,components,navigation,theme,constants,utils}` |
 | **ML service** | [`ml/`](ml) | Python / Flask coach‑analytics microservice (PMC, ACWR, monthly forecast, injury‑risk), pandas / scikit‑learn |
 | **AI context** | [`CLAUDE.md`](CLAUDE.md) · [`tasks/`](tasks) | Deep architecture notes, conventions, and the running lessons log |
@@ -251,8 +255,8 @@ future work:
   manually from VS 2022).
 - **Automated secret scanning** — a `gitleaks` pre‑commit hook + CI secret scan (today the pre‑push
   scan is manual).
-- **Cloud ML** — deploying `ml/app.py` to Azure (pymssql + Azure SQL) so the trainee Load Trend + coach
-  forecast work without the PC running. **In progress** (see `ml/AZURE_DEPLOY.md`).
+- **Cloud ML** — ✅ **done**: `ml/app.py` is **live on Azure** (`trainwise-ml`, pymssql + Azure SQL). The
+  client toggles between local and cloud with `ML_MODE` in `mlApi.js` (currently `local`; flip + rebuild for cloud).
 - **Auth follow‑ups** — the core auth hardening (JWT bearer, PBKDF2 hashing, ownership checks, rate
   limiting, upload validation) is **done** (see [docs/SECURITY.md](docs/SECURITY.md)); remaining: rotate
   the old Azure SQL password, move the JWT to `expo-secure-store`, add refresh tokens + HSTS, tighten CORS.

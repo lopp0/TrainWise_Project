@@ -82,10 +82,21 @@ raise it directly with the project owner — do not open a public issue with rep
   committed, same as `wwwroot/images/`).
 
 ### ML service (Python)
-- The coach‑analytics service has **optional JWT auth** (`ml/auth.py`) validating the *same* token the C#
-  API issues (shared `JWT_KEY`, HS256, iss/aud/exp) plus a self‑or‑linked‑coach ownership check. It is
-  gated by `ML_AUTH_ENFORCE` (default **off**, PyJWT lazy‑imported), so the local service is unchanged
-  until you enable it — which you should before ever deploying `ml/` to the internet.
+- The analytics service has **optional JWT auth** (`ml/auth.py`) validating the *same* token the C# API
+  issues (shared `JWT_KEY`, HS256, iss/aud/exp) plus a self‑or‑linked‑coach ownership check. Gated by
+  `ML_AUTH_ENFORCE` (default **off**, PyJWT lazy‑imported). It is now **live on Azure** (`trainwise-ml`),
+  reading Azure SQL via `pymssql` with SQL auth; **`AZURE_SQL_PASSWORD` lives only in the Web App's
+  Application settings, never in source** (`AZURE_DEPLOY.md` uses a placeholder). Turn `ML_AUTH_ENFORCE` on
+  before relying on the internet‑facing instance for anything sensitive.
+- Every input is **server‑clamped** (never trust the client): `/whatif` caps added sessions at 14 and the
+  intensity to one of three keys; `/acwr` clamps `?days=` to 1..400 — so a slider drag can't DoS the projection.
+
+### Native permissions
+- **Background location** for live GPS run tracking uses a **foreground service** with a persistent
+  notification (`expo-task-manager` + `ACCESS_BACKGROUND_LOCATION` / `FOREGROUND_SERVICE_LOCATION`); the
+  route polyline is stored **on‑device only** (AsyncStorage), not uploaded. The user grants "Allow all the
+  time" for screen‑off tracking. Health Connect stays read‑only; the manifest aliases are hand‑maintained
+  (never regenerate with `expo prebuild`).
 
 ---
 

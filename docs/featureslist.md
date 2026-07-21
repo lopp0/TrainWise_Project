@@ -203,9 +203,14 @@
 147. **Real device sessions + revocation** — list devices, "sign out", "sign out all other devices"; JWT `sid` claim enforced server‑side (`api/users/{id}/sessions`)
 148. **Biometric unlock** — face / fingerprint app lock (`utils/biometric.js`)
 149. **Change password + strong‑password rules** — eye‑toggle + live checklist (`PasswordInput`, `PasswordRequirements`, `validation.js`)
-150. **AI weekly recap + AI plan** (`WeekReviewCard`, `AIPlanScreen`)
+150. **AI weekly recap + AI plan** — the recap is now folded into the unified "This week at a glance" card (the separate `WeekReviewCard` was dropped); `AIPlanScreen` builds a chronologically‑sorted suggested week
 151. **Trainee self‑analytics (#174)** — trainees get their own PMC + ACWR + monthly forecast (reuses `CoachTraineeAnalyticsScreen` with an `isSelf` flag)
 152. **GDPR privacy policy + terms** (scrollable modal) + strict in‑app email validation (real TLD check)
+
+## Hard Features Shipped (2026‑07‑21)
+153. **What‑if forecast simulator (#185)** — dial in "add N sessions this week at easy / medium / hard" and watch the projected **ACWR** risk pill flip green → amber → red *before* the sessions are trained (`GET /api/ml/trainee/{id}/whatif`, planner card in the analytics screen, `TrainWise_WhatIf_Planner.ipynb` notebook)
+154. **Assigned training programs (#133)** — a coach builds a reusable **weekly** program and assigns it; sessions fan out onto the trainee's calendar (one per day) (`ProgramBuilder` / `CoachPrograms` / `MyPrograms` / `ProgramDetail`, `api/programs`)
+155. **Live GPS run tracking (#121)** — record your own outdoor route (start / pause / resume / finish), drawn live with a **background foreground service** for screen‑off tracking (`expo-task-manager`, `LiveRunScreen`, `utils/liveTracking.js`); saved as an ActivityLog + an on‑device polyline
 
 ## Planned / Not yet implemented
 
@@ -214,13 +219,13 @@ Empty placeholders for future work — present in comparable projects, **not** b
 - **CI/CD** — GitHub Actions build + test on PRs, gated deploy on merge (today: manual publish from VS 2022)
 - **Secret scanning** — `gitleaks` pre‑commit hook + CI scan (today: manual safe‑push checklist)
 - **Static analysis** — CodeQL + `npm audit` / `dotnet list package --vulnerable` gates
-- **Cloud ML** — deploying the Python service to Azure (`pymssql` + Azure SQL) so the ML surfaces work without the PC — **in progress** (`ml/AZURE_DEPLOY.md`)
+- ~~**Cloud ML**~~ — ✅ **done**: the Python service is **live on Azure** (`trainwise-ml`); the client toggles via `ML_MODE` in `mlApi.js` (currently `local`)
 - **iOS app** — the Expo iOS shell is unmaintained (Android only)
 - **Content‑safety moderation** — screening of user‑generated text / images
 - **Web / PWA client** — TrainWise is native‑only
-- **Persistent AI chat history** — currently in‑memory per screen visit
+- ~~**Persistent AI chat history**~~ — ✅ **done**: chat history now persists per user (AsyncStorage) with a clear button
 
-**🔴 Hard backlog — the only 9 unbuilt features:** live GPS run recording (#121), assigned training programs
-(#133), squad / team coaching (#136), in‑app coaching payments (#168), AI video form analysis (#177), Wear
-OS watch companion (#182), offline mode + sync queue (#158), Android home‑screen widget (#159), and the
-what‑if forecast simulator (#185). Every 🟡 medium backlog item is now shipped.
+**🔴 Hard backlog — the only 6 unbuilt features:** squad / team coaching (#136), in‑app coaching payments
+(#168), AI video form analysis (#177), Wear OS watch companion (#182), offline mode + sync queue (#158), and
+the Android home‑screen widget (#159). Every 🟡 medium item **plus 3 🔴 hard features** (#121 live GPS,
+#133 training programs, #185 what‑if planner) are now shipped.

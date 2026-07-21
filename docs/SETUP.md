@@ -105,6 +105,7 @@ cd TrainWise_Project
    2026-07-19_event_chat_full.sql           # group-chat media + reactions + reads (self-contained; re-run this if sp_PostEventMessage errors)
    2026-07-19_sort_community_by_created.sql
    2026-07-19_add_user_sessions.sql         # real device sessions + revocation
+   2026-07-21_add_programs.sql              # assigned training programs (idempotent) + PlannedWorkouts.SourceAssignmentId
    ```
 
 > **Optional auth env vars** (backend): `AUTH_DEV_CODES=true` echoes reset/verify codes in the API

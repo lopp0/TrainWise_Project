@@ -124,11 +124,12 @@ the weekly leaderboard, plan the next week on the calendar.
     backend change ─► VS 2022 → Publish (TrainWise01-api profile) ─► Azure App Service (auto-restart)
     app change     ─► set BACKEND_MODE (src/config/backend.js) ─► npx expo run:android --variant release ─► app-release.apk
     schema change  ─► run the sql/ migration in SSMS against BOTH Azure SQL and local SQL Express
-    ML change      ─► restart ml/app.py locally (not deployed)
+    ML change      ─► restart ml/app.py locally, and/or redeploy the clean folder to Azure (trainwise-ml);
+                       ML_MODE (mlApi.js) picks local vs cloud
 
   Planned (see README roadmap):
     PR ─► GitHub Actions CI (build + test + gitleaks + audits) ─► merge ─► gated CD ─► Azure
-    + CodeQL static analysis, Dependabot, cloud-hosted ML service
+    + CodeQL static analysis, Dependabot   (cloud-hosted ML service is now DONE — live on Azure)
 ```
 
 ---

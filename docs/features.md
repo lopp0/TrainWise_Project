@@ -67,7 +67,7 @@ weather‑aware suggestions, and an ML forecast.
 
 ---
 
-## 4. Complete API surface (28 controllers)
+## 4. Complete API surface (29 controllers)
 
 All controllers route at `api/[controller]` unless noted. POST/PUT bodies are JSON (`[FromBody]`), so
 clients must send `Content-Type: application/json` even for "empty" bodies. Non‑anonymous endpoints are
@@ -151,15 +151,22 @@ subject to the JWT ownership gate above.
 - **Coach marketplace**: `GET /coaches` · `GET /coaches/{coachUserId}/reviews` · `POST /coaches/{coachUserId}/reviews`
 - `GET /feed/{userId}` — activity feed *(endpoint present but **dormant** — the feed screen was dropped)*
 
-> **`WorkoutCommentsController`** exists but is **dormant** (coach‑comments feature #134 was dropped); it's counted in the 28 but nothing in the app calls it.
+### Coaching programs
+**`ProgramsController`** — `api/programs`
+- **Programs**: `POST /coach/{coachUserId}` · `GET /coach/{coachUserId}` · `GET /{programId}` · `PUT /{programId}` · `DELETE /{programId}`
+- **Assignments**: `POST /{programId}/assign` — a weekly pattern fans out onto the trainee's calendar (one workout per day) · `GET /assignments/trainee/{traineeUserId}` · `GET /assignments/coach/{coachUserId}` · `GET /assignments/{assignmentId}` · `DELETE /assignments/{assignmentId}`
+- **Per‑assignment chat** — `GET/POST /assignments/{id}/messages` · `POST …/messages/{messageId}/react` · `GET …/reactions`. *(The schema + endpoints exist, but the app currently routes program chat to the existing 1:1 coach↔trainee conversation.)*
+
+> **`WorkoutCommentsController`** exists but is **dormant** (coach‑comments feature #134 was dropped); it's counted in the 29 but nothing in the app calls it.
 
 ---
 
 ## 5. ML service API (Python / Flask)
 
-`ml/app.py` binds `0.0.0.0:8000` and reads the same SQL DB (`pyodbc` + Windows auth locally; `pymssql` +
-Azure SQL once `AZURE_SQL_USER`/`AZURE_SQL_PASSWORD` are set — **Azure deploy in progress**, see
-`ml/AZURE_DEPLOY.md`), mirroring the C# load formula exactly. **Optional JWT auth** (`ml/auth.py`, gated by `ML_AUTH_ENFORCE`,
+`ml/app.py` binds `0.0.0.0:8000` and reads the same SQL DB — `pyodbc` + Windows auth locally, or `pymssql` +
+Azure SQL when `AZURE_SQL_USER`/`AZURE_SQL_PASSWORD` are set. **Now LIVE on Azure** (`trainwise-ml`, App
+Service, Israel Central; `ml/AZURE_DEPLOY.md`); the client picks the instance via **`ML_MODE`** in
+`mlApi.js` (`local` | `azure` — one‑line switch, currently `local`). It mirrors the C# load formula exactly. **Optional JWT auth** (`ml/auth.py`, gated by `ML_AUTH_ENFORCE`,
 default off) validates the same token the C# API issues + a self‑or‑linked‑coach check.
 
 - `GET /health` (always public)
@@ -168,6 +175,9 @@ default off) validates the same token the C# API issues + a self‑or‑linked�
 - `GET /api/ml/trainee/<id>/analytics` — Classic rolling + Smooth EWMA trend. This is the **primary**
   source for the trainee **Load** tab (fetch order: Python `/analytics` → C# `LoadAnalyticsBL` fallback →
   on‑device `utils/loadSeries.js` last resort), so the trainee Load Trend needs this service too.
+- `GET /api/ml/trainee/<id>/whatif?addSessions=<0..14>&intensity=easy|medium|hard` — **What‑if planner (#185)**:
+  projects the ACWR if you add N sessions this week (easy 150 / medium 300 / hard 450 load each); returns
+  `baseline` + `simulated` states (acute, chronic, ratio, level, Safe/Warning/High risk). Server‑clamped to 14.
 - `GET /api/ml/trainee/<id>/forecast[?month=YYYY-MM]` — monthly regression forecast (appends a snapshot to `MonthlyForecasts`)
 - `GET /api/ml/trainee/<id>/forecast/history` — past monthly snapshots
 
@@ -249,10 +259,13 @@ There are **no** server‑side background/hosted services — the C# API is requ
 - **Time handling** — the backend stores zone‑less UTC; the client appends `Z` (`utils/serverDate.js`)
   and renders in `Asia/Jerusalem`.
 - **Native** — Health Connect (hand‑maintained manifest aliases), `expo-maps`, `expo-camera`,
-  `expo-notifications`, `expo-image-picker`, media (voice + video) recording/playback, optional biometric
-  lock (`utils/biometric.js`).
-- **New screens (2026‑07)** — Nutrition, Exercise Library (body‑map picker), Shared Workout; wearable /
-  heart‑rate / readiness / injury‑risk cards; goals + quests; load‑history + export.
+  `expo-notifications`, `expo-image-picker`, media (voice + video) recording/playback, **`expo-task-manager`
+  background‑location tracking** (foreground service for screen‑off GPS runs, `utils/liveTracking.js`),
+  optional biometric lock (`utils/biometric.js`).
+- **New screens** — Nutrition, Exercise Library (body‑map picker), Shared Workout; wearable / heart‑rate /
+  readiness / injury‑risk cards; goals + quests; load‑history + export. **Coaching programs** (Program
+  Builder / Coach Programs / My Programs / Program Detail) and **Live GPS run tracking** (`LiveRunScreen`,
+  live route + save). The **What‑if planner** card lives inside the analytics screen (coach + trainee).
 
 ---
 
@@ -263,12 +276,12 @@ There are **no** server‑side background/hosted services — the C# API is requ
 - **Access** — 100% parameterized stored procedures / `SqlParameter` via ADO.NET; no ORM, no migrations
   framework.
 - **Schema source** — `sql/TWDB.sql` / `sql/TrainWiseV2.sql` (schema + procs, no data) plus **15+ dated
-  migration scripts** (through `2026-07-19_add_user_sessions.sql`) run in order against both DBs.
+  migration scripts** (through `2026-07-21_add_programs.sql`) run in order against both DBs.
 - **Seed data** — `sql/seed_reference_data.sql` (idempotent): 20 activity types (with intensity factors),
   20 injury types + categories, 20 training goals, and the `LoadParameters` tuning row.
 - **Runtime tables** — `Users` (password now `NVARCHAR(200)` for the PBKDF2 hash), `Coaches`,
   `ActivityLogs`, `DailyLoad`, `Messages` (+ reactions), `Friendships`, `Gyms`, `CoachOffers`,
-  `MonthlyForecasts`, plus body‑measurement / pain‑log / board (+ comments) / records / calendar / cosmetics / **nutrition** / **workout‑template** / wearables tables. Community adds **`Challenges` / `ChallengeParticipants`, `Events` / `EventRSVPs` / `EventChatMessages` (+ reactions + reads), `CoachReviews`**; auth adds **`AuthCodes`** and **`UserSessions`** (device sessions, which supersede `UserDevices`).
+  `MonthlyForecasts`, plus body‑measurement / pain‑log / board (+ comments) / records / calendar / cosmetics / **nutrition** / **workout‑template** / wearables tables. Community adds **`Challenges` / `ChallengeParticipants`, `Events` / `EventRSVPs` / `EventChatMessages` (+ reactions + reads), `CoachReviews`**; auth adds **`AuthCodes`** and **`UserSessions`** (device sessions, which supersede `UserDevices`). Coaching programs add **`TrainingPrograms` / `ProgramWorkouts` / `ProgramAssignments`** (+ program‑chat tables) and a `PlannedWorkouts.SourceAssignmentId` column.
 
 ---
 
@@ -279,16 +292,19 @@ There are **no** server‑side background/hosted services — the C# API is requ
 - A few endpoints still need finer ownership rules; client token should move to `expo-secure-store`; add
   refresh tokens + HSTS + tighter CORS (see [SECURITY.md](SECURITY.md)).
 - No CI/CD, automated secret scanning, or static analysis yet (see [roadmap](../README.md#roadmap--planned)).
-- The ML service is **being moved to Azure** (`ml/AZURE_DEPLOY.md`, in progress); until it's live it stays
-  LAN‑only, so the trainee Load Trend AND coach PMC/forecast — both **Python‑primary** — fall back to the
-  C#/on‑device path when the PC service is off.
+- The ML service is **now live on Azure** (`trainwise-ml`), but the client default is `ML_MODE='local'` — so
+  by default the trainee Load Trend + coach PMC/forecast + the What‑if planner (all **Python‑primary**) need
+  the local service reachable; flip `ML_MODE='azure'` + rebuild to run off the cloud. The serverless Azure
+  SQL auto‑pauses, so the first request after idle can lag ~30 s.
 - `AUTH_ENFORCE` is still **off** (legacy tokenless calls allowed, so session revocation only bites once the
   client sends its token); **SMTP is unconfigured** (reset/verify emails don't send until `SMTP_HOST` is set);
   the privacy‑policy `CONTACT_EMAIL` is a placeholder.
 - **Dormant, kept in‑tree**: activity feed (#144), coach comments (#134 + `WorkoutComments*`), the standalone
   `TimerScreen` (interval timer merged inline), the `UserDevices` table (superseded by `UserSessions`), and
   the i18n language picker (English‑only now).
-- **Backlog**: the whole 🟡 medium set is shipped; only **9 🔴 hard features** remain — live GPS run
-  recording, assigned training programs, squad/team coaching, in‑app payments, AI video form analysis, Wear
-  OS companion, offline sync queue, home‑screen widget, and the what‑if forecast simulator.
-- AI chat history is in‑memory; profile images on Azure may not survive App Service restarts.
+- **Backlog**: the whole 🟡 medium set **plus 3 🔴 hard features** — live GPS run recording (#121), assigned
+  training programs (#133), and the what‑if forecast simulator (#185) — are shipped. **6 🔴 hard features
+  remain**: squad/team coaching (#136), in‑app coaching payments (#168), AI video form analysis (#177), Wear
+  OS companion (#182), offline mode + sync queue (#158), and the Android home‑screen widget (#159).
+- AI chat history now **persists per user** (AsyncStorage + a clear button); profile images on Azure may not
+  survive App Service restarts.
