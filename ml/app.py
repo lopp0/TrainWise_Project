@@ -15,6 +15,7 @@ Endpoints (<id> = trainee Users.UserID):
     GET /api/ml/trainee/<id>/analytics?days=56
     GET /api/ml/trainee/<id>/forecast[?month=YYYY-MM]
     GET /api/ml/trainee/<id>/forecast/history
+    GET /api/ml/trainee/<id>/whatif?addSessions=&intensity=easy|medium|hard
 """
 import re
 
@@ -146,6 +147,22 @@ def forecast_history(trainee_id):
     except Exception:
         app.logger.exception("forecast history failed")
         return jsonify({"error": _ERR, "months": []}), 500
+
+
+@app.get("/api/ml/trainee/<int:trainee_id>/whatif")
+def whatif_endpoint(trainee_id):
+    # Interactive planning (#185): recompute the ACWR with N hypothetical
+    # sessions added this week. add_sessions/intensity are clamped again in
+    # forecast.simulate_whatif — a slider can't DoS the projection.
+    add_sessions = request.args.get("addSessions", default=0, type=int)
+    intensity = request.args.get("intensity", default="medium", type=str)
+    try:
+        result = forecast.simulate_whatif(trainee_id, add_sessions, intensity, _tz_offset())
+        status = 404 if result.get("error") else 200
+        return jsonify(result), status
+    except Exception:
+        app.logger.exception("whatif failed")
+        return jsonify({"error": _ERR}), 500
 
 
 if __name__ == "__main__":

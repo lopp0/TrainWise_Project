@@ -20,6 +20,10 @@ import {
   postEventMessage,
   reactToEventMessage,
   getEventReactions,
+  getProgramMessages,
+  postProgramMessage,
+  reactToProgramMessage,
+  getProgramReactions,
   uploadChatImage,
   uploadChatAudio,
   uploadChatVideo,
@@ -45,6 +49,34 @@ import { useThemedStyles } from '../theme/useThemedStyles';
  */
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '🔥', '💪', '👏'];
 
+/**
+ * This screen powers TWO group-chat channels with the SAME UI: an event group
+ * chat (#145) and a per-program coach↔trainee thread (#133). The channel is
+ * chosen by `route.params.kind` ('event' default, so existing navigations that
+ * pass eventId/eventTitle keep working). Each channel just plugs in its four
+ * data-access functions, which share an identical signature.
+ */
+const CHANNELS = {
+  event: {
+    getMessages: getEventMessages,
+    postMessage: postEventMessage,
+    react: reactToEventMessage,
+    getReactions: getEventReactions,
+    subtitle: 'Group chat',
+    placeholder: 'Message the group…',
+    emptyHint: 'No messages yet. Say hi, agree on a time, or drop a Google Maps / Waze link 📍',
+  },
+  program: {
+    getMessages: getProgramMessages,
+    postMessage: postProgramMessage,
+    react: reactToProgramMessage,
+    getReactions: getProgramReactions,
+    subtitle: 'Program chat',
+    placeholder: 'Message…',
+    emptyHint: 'No messages yet. Discuss this training program here.',
+  },
+};
+
 // Dual-cased accessors (the API serializes camelCase but stay tolerant).
 const mId = (m) => m.messageId ?? m.MessageId;
 const mSender = (m) => m.senderId ?? m.SenderId;
@@ -67,8 +99,11 @@ const errText = (e) => {
 const EventChatScreen = ({ navigation, route }) => {
   const { userId } = useAuth();
   const styles = useThemedStyles(makeStyles);
-  const eventId = route?.params?.eventId;
-  const eventTitle = route?.params?.eventTitle || 'Event chat';
+  // Channel: 'event' (default, back-compat with eventId/eventTitle) or 'program'.
+  const kind = route?.params?.kind || 'event';
+  const chan = CHANNELS[kind] || CHANNELS.event;
+  const channelId = route?.params?.channelId ?? route?.params?.eventId;
+  const chatTitle = route?.params?.title || route?.params?.eventTitle || 'Chat';
 
   const [messages, setMessages] = useState([]);
   const [reactions, setReactions] = useState({}); // messageId -> [emoji]
@@ -102,11 +137,11 @@ const EventChatScreen = ({ navigation, route }) => {
   }, []);
 
   const load = useCallback(async () => {
-    if (!eventId) return;
+    if (!channelId) return;
     try {
       const [msgRes, rxRes] = await Promise.all([
-        getEventMessages(eventId, userId),
-        getEventReactions(eventId, userId).catch(() => ({ data: [] })),
+        chan.getMessages(channelId, userId),
+        chan.getReactions(channelId, userId).catch(() => ({ data: [] })),
       ]);
       if (!mountedRef.current) return;
       setMessages(Array.isArray(msgRes.data) ? msgRes.data : []);
@@ -125,7 +160,7 @@ const EventChatScreen = ({ navigation, route }) => {
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  }, [eventId, userId]);
+  }, [channelId, userId, chan]);
 
   // Focus-gated 5s poll (cheap; only while the screen is open).
   useFocusEffect(
@@ -144,7 +179,7 @@ const EventChatScreen = ({ navigation, route }) => {
   const post = async (payload, failTitle) => {
     try {
       setSending(true);
-      const res = await postEventMessage(eventId, userId, payload);
+      const res = await chan.postMessage(channelId, userId, payload);
       const saved = res.data;
       if (mountedRef.current && saved) {
         setMessages((prev) => [...prev, saved]);
@@ -197,12 +232,30 @@ const EventChatScreen = ({ navigation, route }) => {
         videoMaxDuration: 60,
       });
       if (result.canceled || !result.assets?.length) return;
+
+      // Reject oversize clips up front with a friendly message instead of a raw
+      // 400 "request body too large" (same as the 1:1 chat).
+      const asset = result.assets[0];
+      const MAX_VIDEO_MB = 100;
+      if (asset.fileSize && asset.fileSize > MAX_VIDEO_MB * 1024 * 1024) {
+        const mb = Math.round(asset.fileSize / (1024 * 1024));
+        Alert.alert('Video too large', `This clip is ${mb} MB. Please send a video under ${MAX_VIDEO_MB} MB — trim it or record a shorter clip.`);
+        return;
+      }
+
       setSending(true);
-      const up = await uploadChatVideo(result.assets[0].uri);
+      const up = await uploadChatVideo(asset.uri);
       setSending(false);
       await post({ videoPath: up.path }, 'Video not sent');
     } catch (e) {
-      if (mountedRef.current) { setSending(false); Alert.alert('Video not sent', errText(e)); }
+      if (mountedRef.current) {
+        setSending(false);
+        const raw = errText(e);
+        const friendly = /too large|body size|413/i.test(raw)
+          ? 'That video is too large to send (max 100 MB). Please trim it or record a shorter clip.'
+          : raw;
+        Alert.alert('Video not sent', friendly);
+      }
     }
   };
 
@@ -303,7 +356,7 @@ const EventChatScreen = ({ navigation, route }) => {
     setReactTarget(null);
     if (!messageId) return;
     try {
-      await reactToEventMessage(eventId, messageId, userId, emoji);
+      await chan.react(channelId, messageId, userId, emoji);
       load();
     } catch (e) {
       Alert.alert('Could not react', errText(e));
@@ -440,18 +493,18 @@ const EventChatScreen = ({ navigation, route }) => {
           <Ionicons name="chevron-back" size={26} color={Colors.primary} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.title} numberOfLines={1}>{eventTitle}</Text>
-          <Text style={styles.subtitle}>Group chat</Text>
+          <Text style={styles.title} numberOfLines={1}>{chatTitle}</Text>
+          <Text style={styles.subtitle}>{chan.subtitle}</Text>
         </View>
         <View style={{ width: 26 }} />
       </View>
 
-      {/* behavior is undefined on Android ON PURPOSE: the manifest sets
-          windowSoftInputMode="adjustResize", so the OS already shrinks the window
-          for the keyboard. Passing 'height' shrinks it a SECOND time and leaves a
-          stale offset when the keyboard closes, which pushed this composer under
-          the tab bar (device-test 2026-07-19). Do not put 'height' back. */}
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* 'padding' on BOTH platforms. Previously undefined on Android relying on
+          windowSoftInputMode="adjustResize", but edge-to-edge (edgeToEdgeEnabled:
+          true) stops the window resizing for the keyboard, leaving the composer
+          hidden underneath. Padding lifts it. (Do NOT use 'height' — it double-
+          shrinks and leaves a stale offset, device-test 2026-07-19.) */}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         {loading ? (
           <ActivityIndicator color={Colors.primary} size="large" style={{ marginTop: 40 }} />
         ) : (
@@ -464,7 +517,7 @@ const EventChatScreen = ({ navigation, route }) => {
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
             ListEmptyComponent={
               <Text style={styles.empty}>
-                {error || 'No messages yet. Say hi, agree on a time, or drop a Google Maps / Waze link 📍'}
+                {error || chan.emptyHint}
               </Text>
             }
           />
@@ -496,7 +549,7 @@ const EventChatScreen = ({ navigation, route }) => {
               style={styles.input}
               value={text}
               onChangeText={setText}
-              placeholder="Message the group…"
+              placeholder={chan.placeholder}
               placeholderTextColor={Colors.textMuted}
               multiline
               maxLength={1000}

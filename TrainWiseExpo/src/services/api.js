@@ -618,6 +618,53 @@ export const reactToEventMessage = (eventId, messageId, userId, emoji) =>
 export const getEventReactions = (eventId, userId) =>
   api.get(`/community/events/${eventId}/reactions`, { params: { userId } });
 
+// ── #133 Assigned training programs ─────────────────────────────────────────
+// Coach builds a program (name + weekly template rows) and assigns it to a
+// trainee; assigning fans the rows onto the trainee's calendar. Each assignment
+// has a per-program chat thread (helpers below mirror the event-chat signatures
+// so EventChatScreen's channel resolver can reuse the exact same UI).
+export const createProgram = (coachUserId, payload) =>
+  api.post(`/programs/coach/${coachUserId}`, payload);
+export const getProgramsByCoach = (coachUserId) =>
+  api.get(`/programs/coach/${coachUserId}`);
+export const getProgram = (programId) =>
+  api.get(`/programs/${programId}`);
+export const updateProgram = (programId, payload) =>
+  api.put(`/programs/${programId}`, payload);
+export const deleteProgram = (programId) =>
+  api.delete(`/programs/${programId}`);
+export const assignProgram = (programId, { traineeUserId, startDate }) =>
+  api.post(`/programs/${programId}/assign`, { traineeUserId, startDate });
+export const getAssignmentsForTrainee = (traineeUserId) =>
+  api.get(`/programs/assignments/trainee/${traineeUserId}`);
+export const getAssignmentsForCoach = (coachUserId) =>
+  api.get(`/programs/assignments/coach/${coachUserId}`);
+export const getProgramAssignment = (assignmentId) =>
+  api.get(`/programs/assignments/${assignmentId}`);
+export const deleteAssignment = (assignmentId) =>
+  api.delete(`/programs/assignments/${assignmentId}`);
+
+// Per-assignment chat (SAME shape as getEventMessages/postEventMessage/… so the
+// group-chat screen treats a program thread as just another channel).
+export const getProgramMessages = (assignmentId, userId) =>
+  api.get(`/programs/assignments/${assignmentId}/messages`, { params: { userId } });
+export const postProgramMessage = (
+  assignmentId,
+  senderId,
+  { text = null, imagePath = null, videoPath = null, audioPath = null } = {}
+) =>
+  api.post(`/programs/assignments/${assignmentId}/messages`, {
+    senderId,
+    text,
+    imagePath,
+    videoPath,
+    audioPath,
+  });
+export const reactToProgramMessage = (assignmentId, messageId, userId, emoji) =>
+  api.post(`/programs/assignments/${assignmentId}/messages/${messageId}/react`, { userId, emoji });
+export const getProgramReactions = (assignmentId, userId) =>
+  api.get(`/programs/assignments/${assignmentId}/reactions`, { params: { userId } });
+
 // #169 coach marketplace + reviews.
 export const getCoachMarketplace = (viewerId, { search = null, sort = 'rating' } = {}) =>
   api.get('/community/coaches', { params: { viewerId, search, sort } });

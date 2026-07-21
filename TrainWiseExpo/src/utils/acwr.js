@@ -1,4 +1,3 @@
-import { getWeekStartDate } from '../constants/weekStart';
 import { parseServerDate } from './serverDate';
 
 /**
@@ -45,27 +44,33 @@ const sumInRange = (logs, start, end) =>
 export const computeACWR = (logsRaw, experienceLevel, weekOffset = 0, hasActiveInjury = false) => {
   const logs = (logsRaw || []).filter((l) => (l.isConfirmed ?? l.IsConfirmed) !== false);
 
-  // weekOffset shifts the whole acute/chronic window by N weeks (0 = current,
-  // -1 = last week) so the same calculation can power a week-over-week delta
-  // (#118) without duplicating the load math.
-  const weekStart = getWeekStartDate(weekOffset);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
-  weekEnd.setHours(23, 59, 59, 999);
+  // ROLLING windows ending "today" (2026-07-21 fix): acute = last 7 days,
+  // chronic = last 28 days — the SAME convention as C# LoadCalculationBL /
+  // ml/features.py and the Load Trend chart. (Previously this used a CALENDAR
+  // week for acute, which read e.g. 0.35 on the coach status card while the
+  // Load Trend showed 1.06 for the same trainee.) weekOffset shifts the whole
+  // window by N weeks (0 = current, -1 = last week) for the #118 delta.
+  const windowEnd = new Date();
+  windowEnd.setDate(windowEnd.getDate() + weekOffset * 7);
+  windowEnd.setHours(23, 59, 59, 999);
 
-  const chronicStart = new Date(weekStart);
-  chronicStart.setDate(weekStart.getDate() - 21); // 21 + 7 displayed = 28-day window
+  const acuteStart = new Date(windowEnd);
+  acuteStart.setDate(windowEnd.getDate() - 6); // 7-day rolling acute
+  acuteStart.setHours(0, 0, 0, 0);
+
+  const chronicStart = new Date(windowEnd);
+  chronicStart.setDate(windowEnd.getDate() - 27); // 28-day rolling chronic
   chronicStart.setHours(0, 0, 0, 0);
 
-  const acute = sumInRange(logs, weekStart, weekEnd);
-  const chronic28Sum = sumInRange(logs, chronicStart, weekEnd);
+  const acute = sumInRange(logs, acuteStart, windowEnd);
+  const chronic28Sum = sumInRange(logs, chronicStart, windowEnd);
 
   // Per-day loads inside the window: distinct LOADED days drive the floor,
   // and the first loaded day drives the covered-days ramp.
   const dayLoads = new Map();
   logs.forEach((log) => {
     const st = parseServerDate(log.startTime || log.StartTime);
-    if (st >= chronicStart && st <= weekEnd) {
+    if (st >= chronicStart && st <= windowEnd) {
       const d = new Date(st);
       d.setHours(0, 0, 0, 0);
       const load = Number(log.calculatedLoadForSession ?? log.CalculatedLoadForSession ?? 0);
@@ -83,7 +88,7 @@ export const computeACWR = (logsRaw, experienceLevel, weekOffset = 0, hasActiveI
     // Covered days run from the first loaded day through the end of the
     // window that data can exist for (today, for the current week).
     const firstActive = Math.min(...activeDayKeys);
-    const coverEnd = Math.min(weekEnd.getTime(), Date.now());
+    const coverEnd = Math.min(windowEnd.getTime(), Date.now());
     const endDay = new Date(coverEnd);
     endDay.setHours(0, 0, 0, 0);
     const covered = Math.min(

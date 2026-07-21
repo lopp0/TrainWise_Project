@@ -338,6 +338,15 @@ const TrainingCalendarScreen = ({ navigation, route }) => {
           </TouchableOpacity>
         )}
 
+        {/* #133 — the trainee's assigned programs from their coach. */}
+        {!coachMode && (
+          <TouchableOpacity style={styles.aiPlanBtn} onPress={() => navigation.navigate('MyPrograms')} activeOpacity={0.85}>
+            <Ionicons name="clipboard-outline" size={16} color={Colors.primary} />
+            <Text style={styles.aiPlanText}>My training programs</Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+          </TouchableOpacity>
+        )}
+
         {/* Weekday header */}
         <View style={styles.weekRow}>
           {DAY_LABELS.map((d, i) => (

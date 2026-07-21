@@ -21,6 +21,9 @@ namespace TrainWise.BL
         public int Create(PlannedWorkout p)
         {
             if (p.UserID <= 0) throw new ArgumentException("UserID required");
+            // One planned workout per day (#12).
+            if (_dal.HasPlannedOnDate(p.UserID, p.PlannedDate))
+                throw new ArgumentException("There is already a planned workout on that day.");
             int id = _dal.Insert(p);
 
             // Item 12 — when a COACH plans a workout for a trainee, push the

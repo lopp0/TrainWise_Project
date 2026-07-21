@@ -79,6 +79,19 @@ UPDATE dbo.PlannedWorkouts
             cmd.ExecuteNonQuery();
         }
 
+        // True if the user already has a planned workout on this date (#12 — one
+        // planned workout per day). Optionally ignore a specific plan (for edits).
+        public bool HasPlannedOnDate(int userId, DateTime date, int ignorePlanId = 0)
+        {
+            using SqlConnection con = Connect();
+            using SqlCommand cmd = new SqlCommand(
+                "SELECT COUNT(*) FROM dbo.PlannedWorkouts WHERE UserID=@u AND PlannedDate=@d AND PlanId<>@ignore", con);
+            cmd.Parameters.AddWithValue("@u", userId);
+            cmd.Parameters.AddWithValue("@d", date.Date);
+            cmd.Parameters.AddWithValue("@ignore", ignorePlanId);
+            return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+        }
+
         // Owner (trainee) of a planned-workout row, for authorization. Null if absent.
         public int? GetOwnerUserId(int planId)
         {

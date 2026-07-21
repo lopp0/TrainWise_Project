@@ -72,7 +72,7 @@ Backend runs in VS 2022 on the user's PC, SQL on the same PC's SQL Express, phon
 ```
 Data Source=Lirone\SQLEXPRESS;Initial Catalog=TrainWise;Integrated Security=True;Encrypt=False
 ```
-The database name is `TrainWise`, not `TrainWiseDB` — local SQL Express was set up with the shorter name. The migrations that ran on Azure SQL also need to run on the local DB. **Run order on a fresh DB** (complete list in docs/SETUP.md on `main`): `TWDB.sql` (schema+procs) → `2026-06-02_add_is_trainee.sql` → `2026-06-04_add_messages.sql` → `2026-06-07_add_message_image.sql` → `seed_reference_data.sql` → `2026-06-08_add_social.sql` (depends on reference data + ActivityTypes for its fake-user seed) → `2026-06-12_add_forecasts.sql` → `2026-06-18_add_injury_link.sql` → the five `2026-06-19_*` scripts (calendar, cosmetics, live_location, records, workout_board) → `2026-06-21_add_board_image.sql` → `2026-06-21_add_push_token.sql` → `2026-06-28_add_green_batch.sql` (notes/photos, pain logs, body measurements, typing, reactions, kudos) → `2026-07-02_security_hardening.sql` (widens `Users.Password` for the PBKDF2 hash — must run BEFORE deploying the hashing backend) → `2026-07-10_fix_injury_link_ondelete.sql` (recreates `FK_InjuriesReports_ActivityLogs` with `ON DELETE SET NULL` so deleting a workout that has a linked injury no longer fails; also unblocks `sp_DeleteUser`). 16 dated migrations total; scripts at `c:\Dev\TrainWise\sql\`.
+The database name is `TrainWise`, not `TrainWiseDB` — local SQL Express was set up with the shorter name. The migrations that ran on Azure SQL also need to run on the local DB. **Run order on a fresh DB** (complete list in docs/SETUP.md on `main`): `TWDB.sql` (schema+procs) → `2026-06-02_add_is_trainee.sql` → `2026-06-04_add_messages.sql` → `2026-06-07_add_message_image.sql` → `seed_reference_data.sql` → `2026-06-08_add_social.sql` (depends on reference data + ActivityTypes for its fake-user seed) → `2026-06-12_add_forecasts.sql` → `2026-06-18_add_injury_link.sql` → the five `2026-06-19_*` scripts (calendar, cosmetics, live_location, records, workout_board) → `2026-06-21_add_board_image.sql` → `2026-06-21_add_push_token.sql` → `2026-06-28_add_green_batch.sql` (notes/photos, pain logs, body measurements, typing, reactions, kudos) → `2026-07-02_security_hardening.sql` (widens `Users.Password` for the PBKDF2 hash — must run BEFORE deploying the hashing backend) → `2026-07-10_fix_injury_link_ondelete.sql` (recreates `FK_InjuriesReports_ActivityLogs` with `ON DELETE SET NULL` so deleting a workout that has a linked injury no longer fails; also unblocks `sp_DeleteUser`) → … → `2026-07-19_event_chat_full.sql` → `2026-07-21_add_programs.sql` (#133 assigned programs: `TrainingPrograms` + `ProgramWorkouts` + `ProgramAssignments`, a `SourceAssignmentId` column on `PlannedWorkouts`, and per-assignment chat `ProgramMessages`/`ProgramMessageReactions`/`ProgramMessageReads`). Scripts at `c:\Dev\TrainWise\sql\`.
 
 ### Reference / seed data (must run on any fresh DB)
 
@@ -516,8 +516,10 @@ screen calls the Python service directly over the LAN.
   covered-days ramp, confirmed-only, AC thresholds 0.8 / 1.3 with injured tightening —
   recomputed from `ActivityLogs`, NOT the stored `DailyLoad` rows, so charts never go stale).
   Endpoints: `GET /health`, `/api/ml/trainee/<id>/pmc`, `/acwr`, `/forecast[?month=YYYY-MM]`,
-  `/forecast/history` — all accept `?tzOffsetMinutes=` (sent by mlApi.js) for local-day
-  bucketing.
+  `/forecast/history`, and **`/whatif?addSessions=&intensity=easy|medium|hard`** (#185 what-if
+  simulator — recomputes the ACWR with N hypothetical sessions added this week via the same
+  `rolling_loads`, returning `{baseline, simulated}`) — all accept `?tzOffsetMinutes=` (sent by
+  mlApi.js) for local-day bucketing.
 - **Forecast** ([ml/forecast.py](ml/forecast.py)): per-trainee regression on the current
   month's completed weekly loads (naive carry for week 1, `LinearRegression` at 2 weeks,
   `PolynomialFeatures(2)` upgrade at 3+ if it clearly fits better), projecting remaining weeks
@@ -551,6 +553,25 @@ screen calls the Python service directly over the LAN.
   Allow -Profile Private`. Needs **ODBC Driver 17/18 for SQL Server** (ships with SSMS). The PC
   must run both the C# API (5249) AND this service (8000) for the coach analytics screen to work.
   See [ml/README.md](ml/README.md).
+
+## Live GPS background tracking (#121, 2026-07-21)
+
+`LiveRunScreen` records outdoor routes in the **background** (screen off / app backgrounded, Samsung-Health
+style) via a foreground-service location task in [src/utils/liveTracking.js](TrainWiseExpo/src/utils/liveTracking.js)
+(`expo-task-manager` + `Location.startLocationUpdatesAsync` with a `foregroundService`). The task appends
+locations to an AsyncStorage buffer; the screen polls it to draw the live route and reconstructs distance
+honouring pause windows. On save it writes an ActivityLog (`sourceDevice='GPS'`) + the polyline (keyed by
+log id) so `WorkoutRouteScreen` redraws it.
+- **New dependency**: `expo-task-manager` (~14, autolinks via gradle — no prebuild needed).
+- **New manifest permissions** (added MANUALLY to [AndroidManifest.xml](TrainWiseExpo/android/app/src/main/AndroidManifest.xml),
+  alongside the existing FINE/COARSE): `ACCESS_BACKGROUND_LOCATION`, `FOREGROUND_SERVICE`,
+  `FOREGROUND_SERVICE_LOCATION`. The `LocationTaskService` (foregroundServiceType=location) merges from
+  expo-location's own library manifest — do NOT declare it again.
+- **Build**: `gradlew assembleRelease` autolinks `expo-task-manager` and keeps the manual manifest (HC aliases
+  + these perms) intact. Do NOT `expo prebuild` (would regenerate the manifest and could wipe the HC aliases).
+- On device: the user must grant **"Allow all the time"** location for screen-off tracking; "while using the
+  app" still records while the screen is on. The GPS activity set (Run/Walk/Cycle/Trail/Hike/Nordic/Brisk/Interval)
+  is `GPS_TRACKABLE_IDS` in LiveRunScreen, reused to gate AddWorkout's live-tab "Track route with GPS" button.
 
 ## Known pending items
 

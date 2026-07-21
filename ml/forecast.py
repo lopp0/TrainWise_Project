@@ -176,6 +176,73 @@ def _state_from_rolled(rolled, as_of, has_injury=False):
 
 
 # --------------------------------------------------------------------------
+# What-if simulator (#185): "if I add N sessions this week, where does my
+# ACWR land?" — interactive planning over the SAME load math as everywhere else.
+# --------------------------------------------------------------------------
+# Per-session load by intensity, aligned with the app's daily bar-colour bands
+# (green < 150, yellow < 300, orange < 500 in HomeScreen.getBarColor). One
+# "hard" session lands a trainee's day in the orange/red zone; "easy" keeps it
+# green. Returned in the response so the UI can SHOW the assumption, not hide it.
+WHATIF_SESSION_LOAD = {"easy": 150.0, "medium": 300.0, "hard": 450.0}
+WHATIF_MAX_SESSIONS = 14   # server-side clamp (also debounced client-side)
+
+
+def simulate_whatif(trainee_id, add_sessions, intensity, tz_offset_minutes=0):
+    """Add `add_sessions` hypothetical sessions at `intensity` onto today and
+    recompute acute / chronic / AC ratio with the SAME `rolling_loads` the rest
+    of the app uses — so the simulated number is consistent with every other
+    load surface. Chronic is recomputed (a few added sessions barely move the
+    28-day average, so the ratio rises mostly through acute — the real effect).
+
+    Acute is a rolling 7-day SUM, so placing all the added load on `as_of` gives
+    the same weekly acute as spreading it across the week, but keeps the
+    comparison at a single time point (today) so the delta isolates exactly the
+    sessions the user dialed in. Inputs are clamped server-side (backlog rule 2).
+    """
+    user = features.get_user(trainee_id)
+    if user is None:
+        return {"error": "trainee not found"}
+
+    add_sessions = max(0, min(int(add_sessions or 0), WHATIF_MAX_SESSIONS))
+    intensity = intensity if intensity in WHATIF_SESSION_LOAD else "medium"
+    session_load = WHATIF_SESSION_LOAD[intensity]
+
+    has_injury = features.count_active_injuries(trainee_id) > 0
+    as_of = date.today()
+    sim_start = as_of - timedelta(days=config.CHRONIC_WINDOW_DAYS)
+    logs = features.get_trainee_logs(trainee_id, sim_start, tz_offset_minutes)
+
+    daily = features.daily_load_series(logs, sim_start, as_of)
+    exp = user["ExperienceLevel"]
+
+    base = _state_from_rolled(features.rolling_loads(daily.copy(), exp), as_of, has_injury)
+
+    daily_wi = daily.copy()
+    today = pd.Timestamp(as_of)
+    daily_wi.loc[today] = float(daily_wi.loc[today]) + add_sessions * session_load
+    sim = _state_from_rolled(features.rolling_loads(daily_wi, exp), as_of, has_injury)
+
+    return {
+        "traineeId": trainee_id,
+        "addSessions": add_sessions,
+        "intensity": intensity,
+        "sessionLoad": session_load,
+        "addedLoad": round(add_sessions * session_load, 0),
+        "hasInjury": has_injury,
+        "baseline": {
+            "acRatio": base["acRatio"], "acute": base["acute"],
+            "chronic": base["chronic"], "level": base["level"],
+            "risk": risk.rule_class(base["acRatio"], has_injury),
+        },
+        "simulated": {
+            "acRatio": sim["acRatio"], "acute": sim["acute"],
+            "chronic": sim["chronic"], "level": sim["level"],
+            "risk": risk.rule_class(sim["acRatio"], has_injury),
+        },
+    }
+
+
+# --------------------------------------------------------------------------
 # Global model projection
 # --------------------------------------------------------------------------
 def _global_projection(state, user, completed, current_chronic, weeks_elapsed):

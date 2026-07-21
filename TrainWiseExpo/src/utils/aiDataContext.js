@@ -7,11 +7,14 @@
  * Kept small (a summary, not raw rows) to bound the prompt size. Session load =
  * duration × exertion, matching the rest of the app.
  */
+import { computeACWR } from './acwr';
+import { computeWeeklySummary } from './weeklyStats';
+
 const dayMs = 24 * 60 * 60 * 1000;
 
 const num = (v) => Number(v) || 0;
 
-export const buildDataContext = (logs, activityTypes = []) => {
+export const buildDataContext = (logs, activityTypes = [], experienceLevel = 1) => {
   const rows = (Array.isArray(logs) ? logs : []).filter((l) => {
     const conf = l.isConfirmed ?? l.IsConfirmed;
     return conf === undefined || conf === null || conf === true || conf === 1;
@@ -43,14 +46,18 @@ export const buildDataContext = (logs, activityTypes = []) => {
 
   const inWindow = (from, to) => parsed.filter((p) => p.t >= from && p.t < to);
   const sum = (arr, k) => arr.reduce((s, p) => s + p[k], 0);
-
-  const last7 = inWindow(now - 7 * dayMs, now + dayMs);
-  const prev7 = inWindow(now - 14 * dayMs, now - 7 * dayMs);
   const last28 = inWindow(now - 28 * dayMs, now + dayMs);
 
-  const acute = sum(last7, 'load');
-  const chronic = last28.length ? sum(last28, 'load') / 4 : 0;
-  const acRatio = chronic > 0 ? acute / chronic : 0;
+  // THIS WEEK numbers come from the SAME computeWeeklySummary the "This week at a
+  // glance" card renders (calendar week, Sun-Sat), so the AI recap can never
+  // contradict the card the user is looking at (previously the rolling-7-day
+  // window reported 4 workouts / 540 load while the card showed 1 / 180).
+  const summary = computeWeeklySummary(logs, activityTypes, experienceLevel);
+
+  // AC ratio + acute/chronic from computeACWR (rolling + cold-start floor +
+  // covered-days ramp) — the same number the card and Load tab show.
+  const acwr = computeACWR(rows, experienceLevel);
+  const acRatio = acwr.ratio;
 
   // top activities in the last 28 days
   const counts = {};
@@ -58,16 +65,18 @@ export const buildDataContext = (logs, activityTypes = []) => {
   const top = Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
-    .map(([id, c]) => `${typeName(Number(id))} ×${c}`)
+    .map(([id, c]) => `${typeName(Number(id))} x${c}`)
     .join(', ');
 
   const lines = [
-    'ATHLETE TRAINING DATA (use these real numbers when answering):',
-    `- Last 7 days: ${last7.length} workouts, total load ${Math.round(acute)}, ${sum(last7, 'dur')} min, ${sum(last7, 'dist').toFixed(1)} km.`,
-    `- Previous 7 days: ${prev7.length} workouts, total load ${Math.round(sum(prev7, 'load'))}.`,
-    `- Last 28 days: ${last28.length} workouts, total load ${Math.round(sum(last28, 'load'))}.`,
-    `- Acute:Chronic workload ratio ≈ ${acRatio.toFixed(2)} (sweet spot 0.8–1.3; >1.3 = spike/injury risk; <0.8 = detraining).`,
-    top ? `- Most frequent activities (28d): ${top}.` : null,
+    'ATHLETE TRAINING DATA - use ONLY these real numbers; never invent or inflate figures:',
+    `- THIS WEEK (matches the app card "This week at a glance"): ${summary.sessions} workout${summary.sessions === 1 ? '' : 's'}, total load ${summary.totalLoad}.`,
+    summary.longest ? `- Longest session this week: ${summary.longest.typeName || 'session'}, ${summary.longest.duration} min.` : null,
+    summary.mostFrequent ? `- Most-done this week: ${summary.mostFrequent.typeName || 'activity'} x${summary.mostFrequent.count}.` : null,
+    `- Current day streak: ${summary.streak}.`,
+    `- Last 28 days (BACKGROUND CONTEXT only, do NOT call this "this week"): ${last28.length} workouts, total load ${Math.round(sum(last28, 'load'))}.`,
+    `- Acute:Chronic workload ratio = ${acRatio.toFixed(2)} (acute ${acwr.acute}, chronic ${acwr.chronic}; sweet spot 0.8 to 1.3; above 1.3 spike/injury risk; below 0.8 detraining).`,
+    top ? `- Most frequent activities (last 28 days): ${top}.` : null,
     `- All-time logged workouts: ${parsed.length}.`,
   ].filter(Boolean);
 

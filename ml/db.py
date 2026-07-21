@@ -135,9 +135,5 @@ def ping():
         finally:
             conn.close()
         return True
-    except Exception as e:
-        # TEMP DIAGNOSTIC (2026-07-20): print the real DB connection error to
-        # the Azure Log stream instead of silently returning False. Remove this
-        # print once the Azure DB connection is confirmed working.
-        print(f"[db.ping] connection failed: {type(e).__name__}: {e}", flush=True)
+    except Exception:
         return False

@@ -103,6 +103,8 @@ export const AppAlertProvider = ({ children }) => {
                   >
                     <Text
                       numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.7}
                       style={[
                         styles.btnText,
                         isCancel && styles.btnTextCancel,

@@ -31,7 +31,6 @@ import {
 import DraggableChatBubble from '../components/DraggableChatBubble';
 import HomeHeader from '../components/HomeHeader';
 import WeeklySummaryCard from '../components/WeeklySummaryCard';
-import WeekReviewCard from '../components/WeekReviewCard';
 import SmartSuggestionCard from '../components/SmartSuggestionCard';
 import TodayPlanCard from '../components/TodayPlanCard';
 import CalorieRing from '../components/CalorieRing';
@@ -709,13 +708,13 @@ const HomeScreen = ({ navigation }) => {
       case 'summary':
         return !loading ? (
           <>
+            {/* Unified "This week" — stat glance + AI recap in one card. */}
             <WeeklySummaryCard
               logs={backendLogs}
               activityTypes={activityTypes}
               experienceLevel={user?.experienceLevel}
+              userId={userId}
             />
-            {/* #153 — AI-written weekly recap (cached per week, generated on tap). */}
-            <WeekReviewCard userId={userId} logs={backendLogs} activityTypes={activityTypes} />
           </>
         ) : null;
       case 'calories':

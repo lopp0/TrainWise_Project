@@ -29,7 +29,7 @@ const EMPTY_WEEK = DAY_LABELS.map((label) => ({ label, hours: 0 }));
 const ReadinessCard = ({ acRatio = null }) => {
   const styles = useThemedStyles(makeStyles);
   const C = styles._colors;
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false); // recovery block collapsed by default
   const [loading, setLoading] = useState(true);
   const [recovery, setRecovery] = useState(null);
   const [noData, setNoData] = useState(false);

@@ -7,6 +7,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import ScreenHeader from '../components/ScreenHeader';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import HealthConnectService from '../api/HealthConnectService';
@@ -104,6 +105,35 @@ const WorkoutRouteScreen = ({ navigation, route }) => {
     (async () => {
       try {
         setLoading(true);
+
+        // 1) Points handed in directly by the live tracker (#121) — show at once.
+        const direct = route?.params?.routePoints;
+        if (Array.isArray(direct) && direct.length >= 2) {
+          if (!cancelled) { setPoints(direct); setStatus('data'); }
+          return;
+        }
+
+        // 2) A self-tracked route saved on-device (#121). Try the STABLE log-id
+        //    key first (the Health list passes activityID), then startTime.
+        const routeKeys = [];
+        const logId = workout.activityID ?? workout.ActivityID;
+        if (logId != null) routeKeys.push(`@trainwise_route_log_${logId}`);
+        if (workout.startTime) routeKeys.push(`@trainwise_route_${workout.startTime}`);
+        for (const key of routeKeys) {
+          try {
+            const raw = await AsyncStorage.getItem(key);
+            if (raw) {
+              const saved = JSON.parse(raw);
+              if (!cancelled && Array.isArray(saved?.points) && saved.points.length >= 2) {
+                setPoints(saved.points);
+                setStatus('data');
+                return;
+              }
+            }
+          } catch { /* try the next key / Health Connect */ }
+        }
+
+        // 3) Health Connect route (HC-sourced workouts).
         const result = await HealthConnectService.fetchRouteForWorkout(
           workout.startTime,
           workout.endTime

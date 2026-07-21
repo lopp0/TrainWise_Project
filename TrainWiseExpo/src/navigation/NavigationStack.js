@@ -49,6 +49,11 @@ import ExerciseLibraryScreen from '../screens/ExerciseLibraryScreen';
 import ChallengesScreen from '../screens/ChallengesScreen';
 import EventsScreen from '../screens/EventsScreen';
 import EventChatScreen from '../screens/EventChatScreen';
+import ProgramBuilderScreen from '../screens/ProgramBuilderScreen';
+import CoachProgramsScreen from '../screens/CoachProgramsScreen';
+import MyProgramsScreen from '../screens/MyProgramsScreen';
+import ProgramDetailScreen from '../screens/ProgramDetailScreen';
+import LiveRunScreen from '../screens/LiveRunScreen';
 import CoachMarketplaceScreen from '../screens/CoachMarketplaceScreen';
 import ErrorBoundary from '../components/ErrorBoundary';
 
@@ -81,6 +86,8 @@ const HealthStack = () => {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="HealthConnectMain" component={GoogleFitScreen} />
       <Stack.Screen name="WorkoutRoute" component={WorkoutRouteScreen} />
+      {/* #121 — live GPS run tracking (records your own route, saves an ActivityLog). */}
+      <Stack.Screen name="LiveRun" component={LiveRunScreen} />
     </Stack.Navigator>
   );
 };
@@ -118,6 +125,15 @@ const HomeStack = () => {
       <Stack.Screen name="ExerciseLibrary" component={ExerciseLibraryScreen} />
       <Stack.Screen name="Nutrition" component={NutritionScreen} />
       <Stack.Screen name="SharedWorkout" component={SharedWorkoutScreen} />
+      {/* #133 — assigned training programs. Coach builds/assigns; trainee views.
+          ProgramChat reuses EventChatScreen with kind:'program' (per-program thread). */}
+      <Stack.Screen name="ProgramBuilder" component={ProgramBuilderScreen} />
+      <Stack.Screen name="CoachPrograms" component={CoachProgramsScreen} />
+      <Stack.Screen name="MyPrograms" component={MyProgramsScreen} />
+      <Stack.Screen name="ProgramDetail" component={ProgramDetailScreen} />
+      <Stack.Screen name="ProgramChat" component={EventChatScreen} />
+      {/* #121 — live GPS run, also reachable from AddWorkout's live tab. */}
+      <Stack.Screen name="LiveRun" component={LiveRunScreen} />
     </Stack.Navigator>
   );
 };

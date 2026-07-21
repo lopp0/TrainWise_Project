@@ -619,7 +619,11 @@ const ChatScreen = ({ route, navigation }) => {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      // 'padding' on BOTH platforms: with edge-to-edge (edgeToEdgeEnabled:true,
+      // SDK 54 default) the window no longer resizes for the keyboard, so
+      // behavior:undefined left the composer hidden under the keyboard. Padding
+      // lifts it reliably.
+      behavior="padding"
     >
       {/* Header */}
       <View style={styles.header}>

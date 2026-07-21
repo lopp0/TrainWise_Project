@@ -1,17 +1,43 @@
 import axios from 'axios';
 import { getAuthToken } from '../api/authToken';
 
-// Client for the Python ML service (ml/app.py), a SEPARATE process from the C#
-// backend. It runs on port 8000 on the same PC; the coach screen calls it
-// directly over the LAN. The IP MUST track the PC's current LAN IP exactly like
-// API_BASE_URL in services/api.js (DHCP can shift it — `ipconfig | findstr IPv4`).
-// The Python service must be running (`cd ml && python app.py`) and TCP 8000
-// allowed through the firewall on the Private profile, or these calls time out.
-const ML_BASE_URL = 'http://192.168.1.117:8000'; // Home LAN (wireless). USB-anywhere alt (school WiFi): http://127.0.0.1:8000 + `adb reverse tcp:8000 tcp:8000`.
+/**
+ * Central switch for the Python ML service (ml/app.py) — a SEPARATE process from
+ * the C# backend, mirroring the pattern in src/config/backend.js so switching is
+ * ONE line. Change `ML_MODE` below, then rebuild the APK (the URL is baked in at
+ * build time).
+ *
+ *   'local'  → the Python service on your PC over WiFi (free; PC + phone same
+ *              network; `cd ml && python app.py` running + TCP 8000 open on the
+ *              Private firewall profile). Coach analytics / trainee Load Trend /
+ *              #174 "My analytics" only work when the PC is on the same WiFi.
+ *   'azure'  → the hosted Azure App Service (works anywhere; independent of the
+ *              PC being on). Confirmed live 2026-07-21 (/health → db:true).
+ *
+ * NOTE: this is INDEPENDENT of backend.js's BACKEND_MODE — the C# API and the
+ * Python ML service are two separate hosts and switch separately. A mixed combo
+ * (C# local + ML azure) works but is odd: if the C# API is home-WiFi-only there's
+ * little point in the ML service being reachable from anywhere. Usually keep both
+ * on the same mode.
+ */
+const ML_MODE = 'local'; // 'local' | 'azure'  ← flip this to switch
+
+// PC LAN IP for local mode. DHCP can shift it — re-check with
+// `ipconfig | findstr IPv4` and keep it in sync with LOCAL_PC_IP in
+// src/config/backend.js (both point at the same PC).
+const LOCAL_PC_IP = '192.168.1.117';
+
+const AZURE_ML_URL = 'https://trainwise-ml-gqb8fvbzhbajfqdx.israelcentral-01.azurewebsites.net';
+const LOCAL_ML_URL = `http://${LOCAL_PC_IP}:8000`; // USB-anywhere alt (school WiFi): http://127.0.0.1:8000 + `adb reverse tcp:8000 tcp:8000`.
+
+const ML_BASE_URL = ML_MODE === 'azure' ? AZURE_ML_URL : LOCAL_ML_URL;
 
 const ml = axios.create({
   baseURL: ML_BASE_URL,
-  timeout: 12000,
+  // Azure F1 cold start + serverless SQL wake can take 10-30s on the FIRST
+  // request after idle; a 12s cap would falsely trip the "offline" path there.
+  // Local is fast, so keep it snappy.
+  timeout: ML_MODE === 'azure' ? 35000 : 12000,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -68,5 +94,15 @@ export const getTraineeForecast = (traineeId, month) =>
 // { months: [{ monthKey, asOf, projACRatio, projAcuteLoad, riskClass, weeksElapsed }] }.
 export const getForecastHistory = (traineeId) =>
   ml.get(`/api/ml/trainee/${traineeId}/forecast/history`);
+
+// What-if simulator (#185): recompute the ACWR with `addSessions` hypothetical
+// sessions at `intensity` ('easy'|'medium'|'hard') added this week. Returns
+// { addSessions, intensity, sessionLoad, addedLoad, baseline:{acRatio,acute,
+// chronic,level,risk}, simulated:{...} }. Debounce the caller — dragging a
+// slider must not hammer the service.
+export const getTraineeWhatIf = (traineeId, addSessions, intensity = 'medium') =>
+  ml.get(`/api/ml/trainee/${traineeId}/whatif`, {
+    params: { addSessions, intensity, tzOffsetMinutes: tzOffsetMinutes() },
+  });
 
 export const mlHealth = () => ml.get('/health');

@@ -16,6 +16,25 @@ import { computeLoadAnalytics } from './loadSeries';
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
 export const computeInjuryRisk = (logs, experienceLevel, hasActiveInjury = false) => {
+  // No confirmed workouts at all (e.g. a brand-new account): there is nothing to
+  // assess. Without this, the cold-start floor makes ratio 0 (not null), which
+  // hits the "detraining" branch and shows a misleading amber ~50. Show the
+  // "log a workout first" state instead.
+  const confirmedCount = (logs || []).filter((l) => {
+    const c = l.isConfirmed ?? l.IsConfirmed;
+    return c === undefined || c === null || c === true || c === 1;
+  }).length;
+  if (confirmedCount === 0) {
+    return {
+      score: null,
+      band: 'unknown',
+      ratio: null,
+      monotony: 0,
+      strain: 0,
+      tip: 'Log a workout first — your injury-risk read appears once you have training data.',
+    };
+  }
+
   const a = computeLoadAnalytics(logs, experienceLevel, { hasActiveInjury });
   const monotony = a.summary.monotony;              // 0..5 (mean / stdev, last 7 days)
   const strain = a.summary.strain;                  // weekly load x monotony

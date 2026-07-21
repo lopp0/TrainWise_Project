@@ -81,7 +81,18 @@ const NutritionScreen = ({ navigation }) => {
     }
   };
 
-  const addWater = (ml) => addEntry({ kind: 'water', waterMl: ml });
+  // Daily hydration is capped at 2 L. Block once the cap is reached; if the tap
+  // would exceed it, add only the amount that fits.
+  const WATER_CAP_ML = 2000;
+  const addWater = (ml) => {
+    const current = totals.waterMl || 0;
+    if (current >= WATER_CAP_ML) {
+      Alert.alert('Daily limit reached', 'You have logged the 2 L daily maximum.');
+      return;
+    }
+    const toAdd = Math.min(ml, WATER_CAP_ML - current);
+    addEntry({ kind: 'water', waterMl: toAdd });
+  };
 
   const addFood = () => {
     const cals = parseInt(String(foodCals).replace(/[^0-9]/g, ''), 10);
@@ -247,7 +258,7 @@ const NutritionScreen = ({ navigation }) => {
                   size={18}
                   color={(e.kind ?? e.Kind) === 'water' ? '#39a0ff' : C.primary}
                 />
-                <Text style={styles.entryLabel} numberOfLines={1}>{labelFor(e)}</Text>
+                <Text style={styles.entryLabel} numberOfLines={2}>{labelFor(e)}</Text>
                 <TouchableOpacity onPress={() => removeEntry(idOf(e))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                   <Ionicons name="trash-outline" size={18} color={C.textMuted} />
                 </TouchableOpacity>

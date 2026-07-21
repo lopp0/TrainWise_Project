@@ -121,6 +121,10 @@ const AIPlanScreen = ({ navigation }) => {
       ];
       const reply = await getGPTResponse(messages);
       const parsed = parsePlan(reply, types);
+      // Show the preview in the SAME order the sessions will land on the calendar
+      // (chronological from today) — a "Mon" whose Monday already passed is next
+      // week, so it sorts after this week's Wed/Fri.
+      parsed.sort((a, b) => a.date - b.date);
       if (parsed.length === 0) {
         Alert.alert('Could not read the plan', 'The AI response was not usable. Please try again.');
       }

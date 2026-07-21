@@ -214,7 +214,13 @@ Minimum viable version:
 - **Touches:** new `TimerScreen`/modal; `expo-haptics` (present) + `expo-av` or `expo-audio` for the beep; configurable work/rest/rounds. No backend.
 - **Acceptance:** start a 30s/15s × 5 timer → audible + haptic transitions; runs in foreground.
 
-### 121. Live GPS run tracking  🔴 ⭐
+### 121. Live GPS run tracking  🔴 ⭐  ✅ BUILT 2026-07-21
+> `LiveRunScreen` (expo-location foreground `watchPositionAsync`, live polyline on expo-maps,
+> live time/distance/pace, start/pause/resume/finish + effort review). On save → `createActivityLog`
+> (+ `calculateDailyLoad` ×2) and the route polyline persists to AsyncStorage (`@trainwise_route_<startISO>`);
+> `WorkoutRouteScreen` now accepts a `routePoints` param (immediate view) and reads that AsyncStorage key
+> before the HC fallback. Entry: "Track a run with GPS" on the Health tab. JS-only (no prebuild; expo-location/
+> expo-maps already native). Limitation: route is on-device only (not synced/coach-visible) — deliberate scope.
 - **Goal:** record your own outdoor route (not only HC imports).
 - **Touches:** `expo-location` (present) background/foreground tracking; draw the polyline on `expo-maps`; on stop, compute distance/duration → POST an ActivityLog + save the route. Reuse `WorkoutRouteScreen` for display.
 - **Notes:** foreground-only is fine for a demo (background location needs extra perms). Big effort: tracking lifecycle, pause/resume, battery.
@@ -318,7 +324,16 @@ Minimum viable version:
 
 ## Coach ↔ Trainee
 
-### 133. Assigned training programs  🔴 ⭐
+### 133. Assigned training programs  🔴 ⭐  ✅ BUILT 2026-07-21
+> Scope chosen: **per-program thread** (coach → ONE trainee). SQL `2026-07-21_add_programs.sql`
+> (`TrainingPrograms`/`ProgramWorkouts`/`ProgramAssignments` + `PlannedWorkouts.SourceAssignmentId` +
+> `ProgramMessages`/`Reactions`/`Reads`). C# `ProgramsController`/`ProgramBL`/`ProgramDAL`/`ProgramModels`
+> (inline parameterized SQL). **Assigning fans the template onto the trainee's existing calendar**
+> (`PlannedWorkouts`, tagged with `SourceAssignmentId` for a clean unassign). Per-assignment chat reuses
+> the group-chat UI: `EventChatScreen` is now **channel-aware** (`route.params.kind` 'event'|'program',
+> back-compatible). Screens: `ProgramBuilderScreen`, `CoachProgramsScreen` (manage + pick-to-assign),
+> `MyProgramsScreen`, `ProgramDetailScreen`, + `ProgramChat` route. Entry: coach → CoachTraineeDetail
+> "Assign a program"; trainee → TrainingCalendar "My training programs".
 - **Goal:** a coach builds a multi-week program and assigns it to a trainee.
 - **Touches:** `Programs` + `ProgramWorkouts` + `ProgramAssignments` tables + controller; coach builder screen; trainee sees the plan on the calendar (#117 ties in).
 - **Acceptance:** coach assigns a 4-week plan → it populates the trainee's calendar.
@@ -594,7 +609,12 @@ Minimum viable version:
   Offline-degraded like the rest of the ML screen.
 - **Acceptance:** after a heavy block the badge reads Fatigued; after a taper it reads Fresh.
 
-### 185. What-if forecast simulator  🔴 ⭐ — coach + trainee
+### 185. What-if forecast simulator  🔴 ⭐ — coach + trainee  ✅ BUILT 2026-07-21
+> `forecast.simulate_whatif` + `GET /api/ml/trainee/<id>/whatif?addSessions=&intensity=` inject N sessions
+> (easy/medium/hard = 150/300/450 load) onto today and recompute acute/chronic/ACWR via the SAME
+> `rolling_loads`, returning `{baseline, simulated}` (clamped server-side). UI = a debounced (350ms)
+> segmented-intensity + slider card on `CoachTraineeAnalyticsScreen` (serves coach AND trainee via #174
+> `self`), showing Now → simulated AC + risk pills. Verified vs local DB (add 3 hard: 1.06→1.93, Warning→High).
 - **Goal:** make the monthly forecast **interactive** — a slider for "add **N** sessions at **easy / medium /
   hard** this week" recomputes the projected **ACWR + risk** live, so coach/trainee can plan load safely
   ("can I add a long run Saturday without going red?"). Turns a static chart into a planning tool.

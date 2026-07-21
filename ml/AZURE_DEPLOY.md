@@ -41,9 +41,14 @@ Web App → **Configuration → Application settings → + New** for each:
 | Name | Value |
 |---|---|
 | `AZURE_SQL_USER` | `TrainWiseAdmin` |
-| `AZURE_SQL_PASSWORD` | *(your Azure SQL password — never commit it)* |
-| `TRAINWISE_SQL_SERVER` | `trainwiseadmin.database.windows.net` |
+| `AZURE_SQL_PASSWORD` | *(your Azure SQL password — never commit it; same one SSMS uses)* |
+| `TRAINWISE_SQL_SERVER` | `trainwiseadmin01.database.windows.net` |
 | `TRAINWISE_SQL_DATABASE` | `TrainWiseDB` |
+
+> **CONFIRMED WORKING 2026-07-21** with exactly these values. The server name is
+> `trainwiseadmin01` (with the **`01`**) — an older `trainwiseadmin` server also
+> exists and will give a misleading `18456 Login failed` if you point at it.
+> Verify the server name against SSMS (Object Explorer) if login ever fails.
 
 (Optionally `ML_AUTH_ENFORCE=true` + `JWT_KEY=<same as C# API>` to require the
 signed token — leave off for the first deploy.)
@@ -61,12 +66,24 @@ Azure SQL **server** (`trainwiseadmin`) → **Networking** →
 **"Allow Azure services and resources to access this server" = ON** → Save.
 (Without this every DB call from the Web App is refused.)
 
-### 5. Deploy the `ml/` folder (pick one)
-- **VS Code**: Azure App Service extension → right-click `ml/` → *Deploy to Web App* → pick `trainwise-ml`.
-- **CLI**: `cd ml && az login && az webapp up --name trainwise-ml --resource-group <rg> --runtime "PYTHON:3.12"`
-- **GitHub**: Web App → Deployment Center → connect the repo (point at `ml/`).
+### 5. Deploy a CLEAN folder (NOT `ml/` directly)
+**Do NOT deploy the `ml/` folder as-is** — it contains the local `_venv_local_only`
+Windows virtualenv (13,000+ Win-binary files), which both bloats the upload and
+breaks Oryx's Linux build. The VS Code extension's ignore patterns were NOT
+reliably excluding it. Instead deploy a folder that only contains the source:
 
-Deploy **only the `ml/` folder contents** — `app.py` must be at the app root.
+```
+# rebuild ml_deploy_clean/ (source files + models/, no venv/caches)
+python -c "import shutil,os; src='ml'; out='ml_deploy_clean'; [ ... see repo history ... ]"
+```
+
+A ready-made `ml_deploy_clean/` sits at the repo root. Then in **VS Code**:
+Azure panel → right-click `trainwise-ml` → *Deploy to Web App...* →
+pick the folder **`ml_deploy_clean`** (NOT `ml`). A clean deploy is ~1-2 min;
+a venv-bloated one is many minutes and can exhaust the F1 daily CPU quota
+("État: Quota dépassé" on the Overview page → app auto-stops → 403).
+
+`app.py` must be at the deployed folder's root (it is, in `ml_deploy_clean`).
 
 ### 6. Verify
 ```
