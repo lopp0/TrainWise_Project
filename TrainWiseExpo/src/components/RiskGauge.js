@@ -77,11 +77,15 @@ const RiskGauge = ({ risk }) => {
 
 const makeStyles = (C) => {
   const s = StyleSheet.create({
+    // Matches the shared <Card> rhythm exactly (no top margin, 16 below) so the
+    // gaps above and below this gauge equal every other block on the Load tab.
+    // It used to add marginTop:14 ON TOP of the parent's margins, which stacked
+    // into a 46px gap above and 0 below (device-test #5).
     card: {
       backgroundColor: C.cardBackground,
       borderRadius: 16,
       padding: 16,
-      marginTop: 14,
+      marginBottom: 16,
       borderWidth: 1,
       borderColor: C.border,
     },

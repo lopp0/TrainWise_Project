@@ -32,9 +32,13 @@ export const computeBMR = ({ weight, height, birthYear, gender }) => {
 };
 
 /**
- * Total Daily Energy Expenditure = BMR × activity factor. This is the "Base"
- * budget shown in the ring. Falls back to null when the profile is incomplete
- * (the caller then uses the flat default).
+ * Total Daily Energy Expenditure = BMR × activity factor.
+ *
+ * NOTE (2026-07-19): this is NOT what the Home calorie ring uses for its "Base".
+ * The ring already ADDS the day's exercise calories as a separate term
+ * (Base + Exercise − Food = Remaining), so multiplying the base by an activity
+ * factor here would count training twice. The ring uses the raw `computeBMR`.
+ * Kept for any surface that wants a true all-in daily expenditure figure.
  */
 export const computeTDEE = (user) => {
   const bmr = computeBMR(user || {});

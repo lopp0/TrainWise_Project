@@ -14,6 +14,7 @@ import { InAppBannerProvider } from './src/components/InAppBanner';
 import WhatsNewModal from './src/components/WhatsNewModal';
 import BiometricLockOverlay from './src/components/BiometricLockOverlay';
 import { initWeekStart } from './src/constants/weekStart';
+import { initLanguage } from './src/i18n/i18n';
 import { loadHcTombstones } from './src/constants/hcTombstones';
 import {
   requestNotificationPermission,
@@ -58,6 +59,7 @@ const ThemedRoot = () => {
 export default function App() {
   useEffect(() => {
     initWeekStart();
+    initLanguage(); // #156 — load the saved language before the UI reads t()
     loadHcTombstones();
     (async () => {
       await requestNotificationPermission();

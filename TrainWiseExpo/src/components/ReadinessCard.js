@@ -21,6 +21,11 @@ const bandColor = (band, C) =>
 const factorColor = (status, C) =>
   status === 'good' ? C.success : status === 'warn' ? C.warning : C.danger;
 
+// Day labels + an all-zero skeleton so the weekly sleep chart can render its
+// 7-bar frame even before any data loads (keeps the chart permanent — #6).
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const EMPTY_WEEK = DAY_LABELS.map((label) => ({ label, hours: 0 }));
+
 const ReadinessCard = ({ acRatio = null }) => {
   const styles = useThemedStyles(makeStyles);
   const C = styles._colors;
@@ -30,6 +35,8 @@ const ReadinessCard = ({ acRatio = null }) => {
   const [noData, setNoData] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [connectedOnce, setConnectedOnce] = useState(false); // #7 — tried granting already
+  const [weekOffset, setWeekOffset] = useState(0); // #5 — 0 = this week, -1 = last week…
+  const [sleepWeek, setSleepWeek] = useState(null); // [{ label, hours }]
 
   const load = useCallback(async () => {
     try {
@@ -59,6 +66,37 @@ const ReadinessCard = ({ acRatio = null }) => {
       setLoading(true);
       load();
     }, [load])
+  );
+
+  // #5 — weekly sleep bar chart. Fetches the selected week's sleep-per-day from
+  // Health Connect (Sun→Sat), so the user can review sleep and page back weeks.
+  const loadSleepWeek = useCallback(async () => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(now.getDate() - now.getDay() + weekOffset * 7); // Sunday of the target week
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 7);
+    try {
+      const byDay = await HealthConnectService.fetchSleepRange(start, end);
+      const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const week = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        week.push({ label: DAYS[i], hours: Math.round((byDay[key] || 0) * 10) / 10 });
+      }
+      setSleepWeek(week);
+    } catch {
+      setSleepWeek(null);
+    }
+  }, [weekOffset]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadSleepWeek();
+    }, [loadSleepWeek])
   );
 
   const connect = async () => {
@@ -92,47 +130,104 @@ const ReadinessCard = ({ acRatio = null }) => {
         <>
           {loading ? (
             <ActivityIndicator color={C.primary} style={{ marginVertical: 18 }} />
-          ) : noData || !recovery ? (
-            <View style={styles.connectWrap}>
-              <Text style={styles.connectText}>
-                {connectedOnce
-                  ? 'No sleep or heart-rate data found in Health Connect yet. Make sure your watch/phone syncs Sleep, Resting heart rate or HRV to Health Connect, then retry.'
-                  : 'Connect sleep, resting heart rate and HRV from Health Connect to see your daily readiness score.'}
-              </Text>
-              <TouchableOpacity style={styles.connectBtn} onPress={connect} disabled={requesting} activeOpacity={0.85}>
-                {requesting ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={styles.connectBtnText}>
-                    {connectedOnce ? 'Retry' : 'Connect Health Connect'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
           ) : (
             <>
-              <View style={styles.scoreRow}>
-                <View style={[styles.scoreCircle, { borderColor: bandColor(recovery.band, C) }]}>
-                  <Text style={[styles.scoreNum, { color: bandColor(recovery.band, C) }]}>
-                    {recovery.score}
-                  </Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.bandLabel, { color: bandColor(recovery.band, C) }]}>
-                    {recovery.label}
-                  </Text>
-                  <Text style={styles.message}>{recovery.message}</Text>
-                </View>
-              </View>
-
-              <View style={styles.factorRow}>
-                {recovery.factors.map((f) => (
-                  <View key={f.key} style={styles.factorTile}>
-                    <Ionicons name={f.icon} size={15} color={factorColor(f.status, C)} />
-                    <Text style={styles.factorValue}>{f.value}</Text>
-                    <Text style={styles.factorLabel}>{f.label}</Text>
+              {/* Readiness score when Health Connect has sleep + heart data; else a
+                  compact prompt. Either way the weekly sleep chart below stays. */}
+              {recovery ? (
+                <>
+                  <View style={styles.scoreRow}>
+                    <View style={[styles.scoreCircle, { borderColor: bandColor(recovery.band, C) }]}>
+                      <Text style={[styles.scoreNum, { color: bandColor(recovery.band, C) }]}>
+                        {recovery.score}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.bandLabel, { color: bandColor(recovery.band, C) }]}>
+                        {recovery.label}
+                      </Text>
+                      <Text style={styles.message}>{recovery.message}</Text>
+                    </View>
                   </View>
-                ))}
+
+                  <View style={styles.factorRow}>
+                    {recovery.factors.map((f) => (
+                      <View key={f.key} style={styles.factorTile}>
+                        <Ionicons name={f.icon} size={15} color={factorColor(f.status, C)} />
+                        <Text style={styles.factorValue}>{f.value}</Text>
+                        <Text style={styles.factorLabel}>{f.label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              ) : (
+                <View style={styles.connectWrap}>
+                  <Text style={styles.connectText}>
+                    {connectedOnce
+                      ? 'We couldn’t find resting heart rate or HRV in Health Connect yet, so the readiness score is on hold. Your sleep still shows below.'
+                      : 'Connect resting heart rate and HRV from Health Connect to unlock your daily readiness score. Your sleep log is shown below.'}
+                  </Text>
+                  <TouchableOpacity style={styles.connectBtn} onPress={connect} disabled={requesting} activeOpacity={0.85}>
+                    {requesting ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.connectBtnText}>
+                        {connectedOnce ? 'Retry' : 'Connect Health Connect'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* #6 — weekly sleep chart is PERMANENT: the 7-day bar frame + week
+                  navigation always render (even with no data / no readiness score)
+                  so the user can always review and page through their sleep logs.
+                  Empty days show a muted stub bar; a friendly note replaces the old
+                  terse "No sleep logged" error text. */}
+              <View style={styles.sleepBlock}>
+                <View style={styles.sleepHeader}>
+                  <TouchableOpacity onPress={() => setWeekOffset((w) => w - 1)} hitSlop={8}>
+                    <Ionicons name="chevron-back" size={18} color={C.primary} />
+                  </TouchableOpacity>
+                  <Text style={styles.sleepTitle}>
+                    {weekOffset === 0 ? 'This week' : weekOffset === -1 ? 'Last week' : `${-weekOffset} weeks ago`} · sleep
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setWeekOffset((w) => Math.min(0, w + 1))}
+                    hitSlop={8}
+                    disabled={weekOffset === 0}
+                  >
+                    <Ionicons name="chevron-forward" size={18} color={weekOffset === 0 ? C.textMuted : C.primary} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.sleepBars}>
+                  {(sleepWeek || EMPTY_WEEK).map((d, i) => {
+                    const maxH = 60; // px for ~10h
+                    const h = Math.max(2, Math.min(maxH, (d.hours / 10) * maxH));
+                    const good = d.hours >= 7;
+                    const some = d.hours > 0;
+                    return (
+                      <View key={i} style={styles.sleepCol}>
+                        <Text style={styles.sleepHrs}>{d.hours > 0 ? d.hours : ''}</Text>
+                        <View
+                          style={[
+                            styles.sleepBar,
+                            { height: h, backgroundColor: good ? C.success : some ? C.warning : C.cardBackgroundLight },
+                          ]}
+                        />
+                        <Text style={styles.sleepDay}>{d.label}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+
+                {!(sleepWeek && sleepWeek.some((d) => d.hours > 0)) && (
+                  <Text style={styles.sleepEmpty}>
+                    😴 No sleep recorded for this week yet. Sleep shows up here automatically once your
+                    watch or phone syncs it to Health Connect. Use the arrows to look back at other weeks.
+                  </Text>
+                )}
               </View>
             </>
           )}
@@ -193,6 +288,17 @@ const makeStyles = (C) => {
     factorTile: { flex: 1, minWidth: '25%', alignItems: 'center', gap: 2 },
     factorValue: { color: C.textPrimary, fontSize: 14, fontWeight: '800' },
     factorLabel: { color: C.textMuted, fontSize: 10 },
+
+    // #5 weekly sleep chart
+    sleepBlock: { marginTop: 18, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 14 },
+    sleepHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+    sleepTitle: { color: C.textSecondary, fontSize: 12, fontWeight: '800' },
+    sleepBars: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: 92 },
+    sleepCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
+    sleepHrs: { color: C.textMuted, fontSize: 9, marginBottom: 2, height: 12 },
+    sleepBar: { width: 14, borderRadius: 3 },
+    sleepDay: { color: C.textMuted, fontSize: 10, marginTop: 4 },
+    sleepEmpty: { color: C.textMuted, fontSize: 12, textAlign: 'center', lineHeight: 17, marginTop: 12, paddingHorizontal: 4 },
   });
   s._colors = C;
   return s;

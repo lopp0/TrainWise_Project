@@ -10,11 +10,15 @@ const PrimaryButton = ({title, onPress, loading, disabled, style}) => {
       style={[styles.button, disabled && styles.disabled, style]}
       onPress={onPress}
       disabled={loading || disabled}
-      activeOpacity={0.8}>
+      activeOpacity={0.8}
+      // #157 — accessibility: expose role/label/state to screen readers.
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityState={{ disabled: !!(loading || disabled), busy: !!loading }}>
       {loading ? (
         <ActivityIndicator color={Colors.textPrimary} />
       ) : (
-        <Text style={styles.text}>{title}</Text>
+        <Text style={styles.text} maxFontSizeMultiplier={1.4}>{title}</Text>
       )}
     </TouchableOpacity>
   );

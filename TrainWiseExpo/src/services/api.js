@@ -30,6 +30,20 @@ export const updateUser = (userId, data) =>
 export const changePassword = (userId, currentPassword, newPassword) =>
   api.put(`/users/${userId}/password`, { currentPassword, newPassword });
 
+// #110 — forgot / reset password. `forgot` never reveals whether the email
+// exists; in dev (AUTH_DEV_CODES=true) it returns { devCode } so the flow is
+// testable without an email provider.
+export const forgotPassword = (email) =>
+  api.post('/auth/forgot', { email });
+export const resetPassword = (email, code, newPassword) =>
+  api.post('/auth/reset', { email, code, newPassword });
+
+// #114 — email verification.
+export const requestEmailVerification = (userId) =>
+  api.post('/auth/verify/request', { userId });
+export const confirmEmailVerification = (userId, code) =>
+  api.post('/auth/verify/confirm', { userId, code });
+
 // #131 — body-measurement tracking (weight / body-fat over time).
 export const getBodyMeasurements = (userId) =>
   api.get(`/users/${userId}/measurements`);
@@ -454,11 +468,27 @@ export const removeUserActivityPreference = (userId, activityTypeId) =>
   api.delete(`/useractivitypreferences/${userId}/${activityTypeId}`);
 
 // ==================== DEVICES ====================
+// #163 — multi-device sessions. Routes match UserDevicesController
+// (api/users/{userId}/devices), NOT the older /userdevice path.
 export const getUserDevices = (userId) =>
-  api.get(`/userdevice/user/${userId}`);
+  api.get(`/users/${userId}/devices`);
+export const deleteUserDevice = (userId, deviceId) =>
+  api.delete(`/users/${userId}/devices/${deviceId}`);
 
 export const registerDevice = (data) =>
   api.post('/userdevice', data);
+
+// ==================== SESSIONS (real device sign-out) ====================
+// 2026-07-19 — replaces the advisory UserDevices list. Each login creates a
+// server-side session whose id is embedded in the JWT ("sid"); revoking it makes
+// that device's token stop working on its next request. Requires
+// sql/2026-07-19_add_user_sessions.sql.
+export const getUserSessions = (userId) =>
+  api.get(`/users/${userId}/sessions`);
+export const revokeUserSession = (userId, sessionId) =>
+  api.delete(`/users/${userId}/sessions/${sessionId}`);
+export const revokeOtherUserSessions = (userId) =>
+  api.post(`/users/${userId}/sessions/revoke-others`);
 
 // ==================== SOCIAL: PRESENCE / LOCATION (#3) ====================
 // Heartbeat — marks the user online (LastSeen = now). Call periodically while
@@ -533,5 +563,83 @@ export const removeCoachFromGym = (gymId, coachUserId) =>
 
 export const getGymsForCoach = (coachUserId) =>
   api.get(`/gyms/for-coach/${coachUserId}`);
+
+// ==================== COMMUNITY (medium batch 2026-07-17) ====================
+// #142 friend challenges. Metric ∈ load | workouts | distance. `inviteeCsv` is
+// a comma-separated list of friend UserIDs to auto-enrol.
+export const createChallenge = (payload) =>
+  api.post('/community/challenges', payload);
+export const getChallengesForUser = (userId) =>
+  api.get(`/community/challenges/user/${userId}`);
+export const getChallengeStandings = (challengeId) =>
+  api.get(`/community/challenges/${challengeId}/standings`);
+export const joinChallenge = (challengeId, userId) =>
+  api.post(`/community/challenges/${challengeId}/join/${userId}`, {});
+export const leaveChallenge = (challengeId, userId) =>
+  api.delete(`/community/challenges/${challengeId}/leave/${userId}`);
+export const getChallengeInvites = (userId) =>
+  api.get(`/community/challenges/invites/${userId}`);
+export const respondChallengeInvite = (challengeId, userId, accept) =>
+  api.put(`/community/challenges/${challengeId}/invite/${userId}/${accept}`, {});
+
+// #145 group runs / events.
+export const createEvent = (payload) =>
+  api.post('/community/events', payload);
+export const getEventsForUser = (userId) =>
+  api.get(`/community/events/user/${userId}`);
+export const getEventAttendees = (eventId) =>
+  api.get(`/community/events/${eventId}/attendees`);
+export const rsvpEvent = (eventId, userId, status) =>
+  api.put(`/community/events/${eventId}/rsvp`, { userID: userId, status });
+export const deleteEvent = (eventId, userId) =>
+  api.delete(`/community/events/${eventId}`, { params: { userId } });
+// #145 group chat — attendees discuss the event (time/place/links).
+// #7 — full parity with the 1:1 chat: a message may carry text and/or an image,
+// video or voice note. Fetching also marks the thread seen (read receipts), and
+// the POST returns the SAVED message so the caller can append it directly.
+// Media is uploaded with the SAME generic uploadChatImage/Audio/Video helpers.
+export const getEventMessages = (eventId, userId) =>
+  api.get(`/community/events/${eventId}/messages`, { params: { userId } });
+export const postEventMessage = (
+  eventId,
+  senderId,
+  { text = null, imagePath = null, videoPath = null, audioPath = null } = {}
+) =>
+  api.post(`/community/events/${eventId}/messages`, {
+    senderId,
+    text,
+    imagePath,
+    videoPath,
+    audioPath,
+  });
+// Toggle one emoji per user per message; fetch all reactions for the thread.
+export const reactToEventMessage = (eventId, messageId, userId, emoji) =>
+  api.post(`/community/events/${eventId}/messages/${messageId}/react`, { userId, emoji });
+export const getEventReactions = (eventId, userId) =>
+  api.get(`/community/events/${eventId}/reactions`, { params: { userId } });
+
+// #169 coach marketplace + reviews.
+export const getCoachMarketplace = (viewerId, { search = null, sort = 'rating' } = {}) =>
+  api.get('/community/coaches', { params: { viewerId, search, sort } });
+export const getCoachReviews = (coachUserId) =>
+  api.get(`/community/coaches/${coachUserId}/reviews`);
+export const upsertCoachReview = (coachUserId, reviewerUserId, rating, text) =>
+  api.post(`/community/coaches/${coachUserId}/reviews`, { reviewerUserID: reviewerUserId, rating, text });
+
+// #144 activity feed (friends' recent workouts + board posts, merged).
+export const getActivityFeed = (userId, limit = 40) =>
+  api.get(`/community/feed/${userId}`, { params: { limit } });
+
+// #134 — coach comments on a workout log.
+export const getWorkoutComments = (activityId) =>
+  api.get(`/workoutcomments/${activityId}`);
+export const addWorkoutComment = (activityId, authorUserId, text) =>
+  api.post(`/workoutcomments/${activityId}`, { authorUserID: authorUserId, text });
+export const deleteWorkoutComment = (commentId, userId) =>
+  api.delete(`/workoutcomments/comment/${commentId}`, { params: { userId } });
+
+// #165 — per-activity personal bests.
+export const getActivityBests = (userId) =>
+  api.get(`/records/${userId}/activity-bests`);
 
 export default api;

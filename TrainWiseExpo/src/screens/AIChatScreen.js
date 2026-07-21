@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,14 +15,39 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { getGPTResponse } from '../api/openai';
+import { useAuth } from '../api/AuthContext';
+import { getActivityLogsByUser, getAllActivityTypes } from '../services/api';
+import { buildDataContext } from '../utils/aiDataContext';
 
 const SYSTEM_PROMPT = `You are TrainWise AI, a specialized fitness assistant built into the TrainWise training app.
 You ONLY answer questions about workouts, training plans, exercise technique, injury prevention, and injury recovery.
 If the user asks about anything unrelated to fitness, workouts, or injuries, politely decline and redirect them to ask a fitness-related question.
+When the athlete's own training data is provided below, use those real numbers to answer questions about their week, load, or overtraining.
 Keep responses concise, practical, and motivating. Use bullet points when listing multiple items.`;
 
 const AIChatScreen = ({ navigation }) => {
   const styles = useThemedStyles(makeStyles);
+  const { userId } = useAuth();
+  // #176 — the user's own training data, injected into the system prompt so the
+  // assistant can answer grounded questions ("how was my week?").
+  const dataContextRef = useRef('');
+
+  useEffect(() => {
+    if (!userId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const [logsRes, typesRes] = await Promise.all([
+          getActivityLogsByUser(userId),
+          getAllActivityTypes(),
+        ]);
+        if (alive) dataContextRef.current = buildDataContext(logsRes.data || [], typesRes.data || []);
+      } catch {
+        // best-effort — the assistant still works without grounding data
+      }
+    })();
+    return () => { alive = false; };
+  }, [userId]);
   const [messages, setMessages] = useState([
     {
       id: '0',
@@ -44,8 +69,11 @@ const AIChatScreen = ({ navigation }) => {
     setInputText('');
     setLoading(true);
 
+    const systemContent = dataContextRef.current
+      ? `${SYSTEM_PROMPT}\n\n${dataContextRef.current}`
+      : SYSTEM_PROMPT;
     const apiMessages = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: systemContent },
       ...updatedMessages.map(({ role, content }) => ({ role, content })),
     ];
 
@@ -96,7 +124,7 @@ const AIChatScreen = ({ navigation }) => {
 
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
       >
         {/* Messages list */}

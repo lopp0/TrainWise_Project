@@ -16,6 +16,7 @@ import {
   Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import Slider from '@react-native-community/slider';
 import ThemedDateTimePicker from '../components/ThemedDateTimePicker';
 import { Colors, Fonts, Spacing } from '../theme/colors';
@@ -77,6 +78,26 @@ const formatElapsed = (sec) => {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 };
 
+// #10 — compact stepper for the inline interval config (work / rest / rounds).
+// styles is passed in so it uses the screen's themed stylesheet.
+const LiveIntervalStepper = ({ label, value, set, min, max, step, suffix, styles }) => {
+  const clamp = (n) => Math.max(min, Math.min(max, n));
+  return (
+    <View style={styles.intCfgRow}>
+      <Text style={styles.intCfgLabel}>{label}</Text>
+      <View style={styles.intStepper}>
+        <TouchableOpacity style={styles.intStepBtn} onPress={() => set((v) => clamp(v - step))} hitSlop={6}>
+          <Text style={styles.intStepBtnText}>−</Text>
+        </TouchableOpacity>
+        <Text style={styles.intStepVal}>{value}{suffix}</Text>
+        <TouchableOpacity style={styles.intStepBtn} onPress={() => set((v) => clamp(v + step))} hitSlop={6}>
+          <Text style={styles.intStepBtnText}>+</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
 const AddWorkoutScreen = ({ navigation, route }) => {
   const { userId } = useAuth();
   const styles = useThemedStyles(makeStyles);
@@ -112,6 +133,16 @@ const AddWorkoutScreen = ({ navigation, route }) => {
   const [showExertionModal, setShowExertionModal] = useState(false);
   const [liveExertion, setLiveExertion] = useState(5);
   const [liveDistance, setLiveDistance] = useState('');
+
+  // #10 — interval (work/rest) mode MERGED into the single live stopwatch, so
+  // there is ONE clock instead of a stopwatch here + a separate full-screen
+  // interval timer. When on, the running elapsed clock also drives work/rest
+  // phases (haptic cue + phase chip); the stopwatch still logs total duration.
+  const [intervalOn, setIntervalOn] = useState(false);
+  const [workSec, setWorkSec] = useState(30);
+  const [restSec, setRestSec] = useState(15);
+  const [rounds, setRounds] = useState(5);
+  const lastPhaseKeyRef = useRef(null);
 
   // Already Done state
   const [startTime, setStartTime] = useState(new Date());
@@ -502,13 +533,53 @@ const AddWorkoutScreen = ({ navigation, route }) => {
       ? Math.min(1, elapsedSec / (Number(targetValue) * 60))
       : null;
 
+  // #10 — derive the current interval phase from the SAME elapsed clock. Each
+  // round = work then rest; after `rounds` cycles the intervals are done but the
+  // stopwatch keeps running so the user can finish/log whenever they like.
+  const cycleLen = Math.max(1, workSec + restSec);
+  let intPhase = null;      // 'work' | 'rest' | null
+  let intRound = 0;
+  let intPhaseRemain = 0;
+  let intervalsDone = false;
+  if (intervalOn && running) {
+    const totalSpan = rounds * cycleLen;
+    if (elapsedSec >= totalSpan) {
+      intervalsDone = true;
+    } else {
+      const pos = elapsedSec % cycleLen;
+      intRound = Math.floor(elapsedSec / cycleLen) + 1;
+      if (pos < workSec) { intPhase = 'work'; intPhaseRemain = workSec - pos; }
+      else { intPhase = 'rest'; intPhaseRemain = cycleLen - pos; }
+    }
+  }
+  // Buzz once on every phase/round transition (and on completion). The key only
+  // changes at a boundary, so this fires on transitions, not every second.
+  const phaseKey = intervalsDone ? 'done' : intPhase ? `${intPhase}-${intRound}` : null;
+  useEffect(() => {
+    if (!intervalOn || !running || paused) { lastPhaseKeyRef.current = phaseKey; return; }
+    if (phaseKey && phaseKey !== lastPhaseKeyRef.current && lastPhaseKeyRef.current !== null) {
+      try {
+        Haptics.notificationAsync(
+          phaseKey === 'done'
+            ? Haptics.NotificationFeedbackType.Success
+            : intPhase === 'work'
+            ? Haptics.NotificationFeedbackType.Warning
+            : Haptics.NotificationFeedbackType.Success
+        );
+      } catch {}
+    }
+    lastPhaseKeyRef.current = phaseKey;
+  }, [phaseKey, intervalOn, running, paused, intPhase]);
+
+  const intClock = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
   // ─────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.container}>
         <ScreenHeader
@@ -742,6 +813,32 @@ const AddWorkoutScreen = ({ navigation, route }) => {
                   <View style={styles.timerWrap}>
                     <Text style={styles.timerValue}>{formatElapsed(elapsedSec)}</Text>
                     {paused && <Text style={styles.pausedTag}>On break</Text>}
+
+                    {/* #10 — interval phase, driven by the SAME elapsed clock. */}
+                    {intervalOn && !paused && (intPhase || intervalsDone) && (
+                      <View
+                        style={[
+                          styles.phaseChip,
+                          {
+                            backgroundColor: intervalsDone
+                              ? Colors.primary + '22'
+                              : (intPhase === 'work' ? Colors.danger : Colors.success) + '22',
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.phaseChipText,
+                            { color: intervalsDone ? Colors.primary : intPhase === 'work' ? Colors.danger : Colors.success },
+                          ]}
+                        >
+                          {intervalsDone
+                            ? `✓ Intervals done · ${rounds} rounds`
+                            : `${intPhase === 'work' ? 'WORK' : 'REST'} ${intClock(intPhaseRemain)} · Round ${intRound}/${rounds}`}
+                        </Text>
+                      </View>
+                    )}
+
                     {timeProgress != null && (
                       <View style={styles.progressTrack}>
                         <View style={[styles.progressFill, { width: `${timeProgress * 100}%` }]} />
@@ -770,20 +867,39 @@ const AddWorkoutScreen = ({ navigation, route }) => {
                 ) : (
                   <View style={styles.timerWrap}>
                     <Text style={styles.timerIdle}>Ready when you are</Text>
-                    <TouchableOpacity style={styles.startBtn} onPress={startLive} activeOpacity={0.85}>
-                      <Ionicons name="play" size={20} color="#fff" />
-                      <Text style={styles.startBtnText}>START</Text>
-                    </TouchableOpacity>
-                    {/* Interval / rest timer (#120) — lives here in the Live tab
-                        (moved off Home). Separate from the stopwatch above: this
-                        structures work/rest rounds, the stopwatch logs duration. */}
+
+                    {/* #10 — ONE timer: the stopwatch below can optionally run
+                        work/rest intervals (#120 merged in). Toggle it on and set
+                        work/rest/rounds; START then runs a single clock that logs
+                        duration AND cues the intervals — no separate timer screen. */}
                     <TouchableOpacity
-                      style={styles.intervalBtn}
-                      onPress={() => navigation.navigate('Timer')}
+                      style={styles.intervalToggle}
+                      onPress={() => {
+                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        setIntervalOn((v) => !v);
+                      }}
                       activeOpacity={0.85}
                     >
                       <Ionicons name="timer-outline" size={18} color={Colors.primary} />
-                      <Text style={styles.intervalBtnText}>Interval / rest timer</Text>
+                      <Text style={styles.intervalToggleText}>Interval mode (work / rest)</Text>
+                      <Ionicons
+                        name={intervalOn ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={20}
+                        color={intervalOn ? Colors.primary : Colors.textMuted}
+                      />
+                    </TouchableOpacity>
+
+                    {intervalOn && (
+                      <View style={styles.intervalCfg}>
+                        <LiveIntervalStepper label="Work" value={workSec} set={setWorkSec} min={5} max={600} step={5} suffix="s" styles={styles} />
+                        <LiveIntervalStepper label="Rest" value={restSec} set={setRestSec} min={0} max={600} step={5} suffix="s" styles={styles} />
+                        <LiveIntervalStepper label="Rounds" value={rounds} set={setRounds} min={1} max={30} step={1} suffix="" styles={styles} />
+                      </View>
+                    )}
+
+                    <TouchableOpacity style={styles.startBtn} onPress={startLive} activeOpacity={0.85}>
+                      <Ionicons name="play" size={20} color="#fff" />
+                      <Text style={styles.startBtnText}>START</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -1128,18 +1244,32 @@ const makeStyles = (Colors) => StyleSheet.create({
 
   // Timer
   timerWrap: { alignItems: 'center', paddingVertical: Spacing.xs },
-  intervalBtn: {
+  // #10 — inline interval (work/rest) mode, merged into the one live stopwatch.
+  intervalToggle: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
     paddingVertical: 10,
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: Colors.primary,
+    alignSelf: 'stretch',
   },
-  intervalBtnText: { color: Colors.primary, fontSize: Fonts.bodySize, fontWeight: '800' },
+  intervalToggleText: { color: Colors.primary, fontSize: Fonts.bodySize, fontWeight: '800', flex: 1 },
+  intervalCfg: { alignSelf: 'stretch', gap: 8, marginBottom: Spacing.md },
+  intCfgRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  intCfgLabel: { color: Colors.textPrimary, fontSize: Fonts.bodySize, fontWeight: '700' },
+  intStepper: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.inputBackground,
+    borderRadius: 10, borderWidth: 1, borderColor: Colors.inputBorder, paddingHorizontal: 6,
+  },
+  intStepBtn: { paddingHorizontal: 14, paddingVertical: 4 },
+  intStepBtnText: { color: Colors.primary, fontSize: 22, fontWeight: '800' },
+  intStepVal: { color: Colors.textPrimary, fontSize: 16, fontWeight: '800', minWidth: 54, textAlign: 'center' },
+  phaseChip: { marginTop: 8, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 },
+  phaseChipText: { fontSize: 14, fontWeight: '900', letterSpacing: 0.5 },
   pausedTag: { color: Colors.warning, fontSize: Fonts.captionSize, fontWeight: '800', marginTop: 4 },
   liveBtnRow: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg },
   breakBtn: {

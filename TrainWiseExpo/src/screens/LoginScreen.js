@@ -21,6 +21,7 @@ import { signInWithGoogle, signOutGoogle, statusCodes } from '../api/googleAuth'
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { useTheme } from '../theme/ThemeContext';
+import PasswordInput from '../components/PasswordInput';
 
 const LoginScreen = ({ navigation }) => {
   const { login, loginWithGoogleUser } = useAuth();
@@ -73,7 +74,7 @@ const LoginScreen = ({ navigation }) => {
       <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
           contentContainerStyle={styles.scroll}
@@ -114,15 +115,12 @@ const LoginScreen = ({ navigation }) => {
           />
 
           <Text style={[styles.fieldLabel, { marginTop: 22 }]}>YOUR PASSWORD:</Text>
-          <TextInput
+          <PasswordInput
             style={styles.input}
             placeholder="Your password here..."
             placeholderTextColor={Colors.textMuted}
             value={password}
             onChangeText={setPassword}
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
           />
 
           <TouchableOpacity
@@ -156,7 +154,7 @@ const LoginScreen = ({ navigation }) => {
 
           <View style={styles.resetRow}>
             <Text style={styles.resetPrompt}>{"CAN'T LOG IN?\nRESET PASSWORD "}</Text>
-            <TouchableOpacity activeOpacity={0.75}>
+            <TouchableOpacity activeOpacity={0.75} onPress={() => navigation.navigate('ForgotPassword')}>
               <Text style={styles.resetHere}>HERE!</Text>
             </TouchableOpacity>
           </View>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -9,8 +9,12 @@ import Animated, {
 
 /**
  * Pinch-to-zoom + pan + double-tap image, used by the chat + board full-screen
- * viewers (#3 / #11). Works on Android via the gesture-handler + reanimated
- * pipeline (the app is wrapped in GestureHandlerRootView in App.js).
+ * viewers (#3 / #11).
+ *
+ * IMPORTANT: this renders inside a React Native <Modal>, which on Android is a
+ * SEPARATE native window NOT covered by the GestureHandlerRootView in App.js —
+ * so it wraps its own GestureHandlerRootView here, otherwise the GestureDetector
+ * never receives touches and zoom does nothing.
  */
 const ZoomableImage = ({ uri, style }) => {
   const scale = useSharedValue(1);
@@ -20,7 +24,10 @@ const ZoomableImage = ({ uri, style }) => {
   const savedTx = useSharedValue(0);
   const savedTy = useSharedValue(0);
 
+  // 'worklet' so the gesture callbacks (which run on the UI thread) can call it
+  // directly without a runOnJS hop.
   const reset = () => {
+    'worklet';
     scale.value = withTiming(1);
     savedScale.value = 1;
     tx.value = withTiming(0);
@@ -74,17 +81,20 @@ const ZoomableImage = ({ uri, style }) => {
   }));
 
   return (
-    <GestureDetector gesture={gesture}>
-      <Animated.Image
-        source={{ uri }}
-        style={[styles.image, style, animStyle]}
-        resizeMode="contain"
-      />
-    </GestureDetector>
+    <GestureHandlerRootView style={styles.root}>
+      <GestureDetector gesture={gesture}>
+        <Animated.Image
+          source={{ uri }}
+          style={[styles.image, style, animStyle]}
+          resizeMode="contain"
+        />
+      </GestureDetector>
+    </GestureHandlerRootView>
   );
 };
 
 const styles = StyleSheet.create({
+  root: { width: '100%', height: '100%' },
   image: { width: '100%', height: '100%' },
 });
 

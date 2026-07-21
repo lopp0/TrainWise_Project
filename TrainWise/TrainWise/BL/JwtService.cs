@@ -63,8 +63,16 @@ namespace TrainWise.BL
 
         public static SymmetricSecurityKey SigningKey => new SymmetricSecurityKey(_keyBytes);
 
-        /// <summary>Create a signed JWT for a successfully authenticated user.</summary>
-        public static string CreateToken(User u)
+        /// <summary>
+        /// Create a signed JWT for a successfully authenticated user.
+        ///
+        /// <paramref name="sessionId"/> (2026-07-19) is the dbo.UserSessions row for
+        /// this device login. It rides along as the "sid" claim so Program.cs can
+        /// reject the token the moment that session is revoked from
+        /// Settings → Devices &amp; sessions. Pass 0 to mint a session-less token
+        /// (legacy paths); those are accepted but cannot be remotely revoked.
+        /// </summary>
+        public static string CreateToken(User u, int sessionId = 0, string tokenId = null)
         {
             var creds = new SigningCredentials(SigningKey, SecurityAlgorithms.HmacSha256);
             var claims = new List<Claim>
@@ -73,10 +81,11 @@ namespace TrainWise.BL
                 // regardless of how the framework maps the standard "sub" claim.
                 new Claim("uid", u.UserID.ToString()),
                 new Claim(JwtRegisteredClaimNames.Sub, u.UserID.ToString()),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")),
+                new Claim(JwtRegisteredClaimNames.Jti, tokenId ?? Guid.NewGuid().ToString("N")),
                 new Claim("isCoach", u.IsCoach ? "1" : "0"),
                 new Claim("isTrainee", u.IsTrainee ? "1" : "0"),
             };
+            if (sessionId > 0) claims.Add(new Claim("sid", sessionId.ToString()));
             if (!string.IsNullOrEmpty(u.Email)) claims.Add(new Claim(JwtRegisteredClaimNames.Email, u.Email));
             if (!string.IsNullOrEmpty(u.FullName)) claims.Add(new Claim("name", u.FullName));
 

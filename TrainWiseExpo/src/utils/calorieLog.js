@@ -61,6 +61,20 @@ export const setCalorieGoal = async (userId, goal) => {
   return g;
 };
 
+/**
+ * #11 — drop the manual override so the Base goes back to the value computed
+ * from the profile (Mifflin-St Jeor). Without this, once a user nudged the
+ * stepper their base was frozen forever and stopped tracking weight/height.
+ */
+export const clearCalorieGoal = async (userId) => {
+  if (!userId) return;
+  try {
+    await AsyncStorage.removeItem(goalKey(userId));
+  } catch {
+    // best-effort — caller resets its own state either way
+  }
+};
+
 export const getIntakeToday = async (userId, day = todayKey()) => {
   if (!userId) return 0;
   try {

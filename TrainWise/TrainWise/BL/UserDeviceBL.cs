@@ -25,5 +25,12 @@ namespace TrainWise.BL
             if (userId <= 0) throw new ArgumentException("UserID must be positive");
             return _dal.GetByUser(userId);
         }
+
+        // #163 — revoke a device/session.
+        public void Delete(int userId, int deviceId)
+        {
+            if (userId <= 0 || deviceId <= 0) throw new ArgumentException("Invalid ids");
+            _dal.Delete(userId, deviceId);
+        }
     }
 }

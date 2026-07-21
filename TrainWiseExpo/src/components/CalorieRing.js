@@ -25,7 +25,7 @@ const WATER_ADDS = [250, 500, 750];
 
 const CalorieRing = ({
   goal = 0, intake = 0, burned = 0, water = 0, waterGoal = 2500,
-  onAdd, onAddWater, onReset, onSetGoal, onOpenDetail,
+  onAdd, onAddWater, onReset, onSetGoal, onOpenDetail, usingFormula = true, onResetGoal,
 }) => {
   const styles = useThemedStyles(makeStyles);
   const C = styles._colors;
@@ -121,9 +121,10 @@ const CalorieRing = ({
         </View>
       </View>
 
-      {/* Daily goal stepper */}
+      {/* Daily goal stepper. #11 — when the base still comes from the profile
+          formula we say so; once overridden we offer a way back to it. */}
       <View style={styles.goalRow}>
-        <Text style={styles.goalLabel}>Daily goal</Text>
+        <Text style={styles.goalLabel}>Daily base</Text>
         <TouchableOpacity style={styles.goalStep} onPress={() => onSetGoal?.(goal - 50)} activeOpacity={0.8}>
           <Text style={styles.goalStepText}>−</Text>
         </TouchableOpacity>
@@ -132,6 +133,15 @@ const CalorieRing = ({
           <Text style={styles.goalStepText}>+</Text>
         </TouchableOpacity>
       </View>
+      {usingFormula ? (
+        <Text style={styles.goalHint}>
+          Calculated from your height, weight, age and sex. Updates with your profile.
+        </Text>
+      ) : (
+        <TouchableOpacity onPress={() => onResetGoal?.()} activeOpacity={0.8}>
+          <Text style={styles.goalHintLink}>Custom base · tap to use the calculated one</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Log food eaten */}
       <Text style={styles.logLabel}>Log food eaten</Text>
@@ -256,6 +266,9 @@ const makeStyles = (C) => {
     },
     goalStepText: { color: C.primary, fontSize: 20, fontWeight: '900' },
     goalVal: { color: C.textPrimary, fontSize: 16, fontWeight: '800', minWidth: 52, textAlign: 'center' },
+    // #11 — provenance of the daily base (formula vs manual override)
+    goalHint: { color: C.textMuted, fontSize: 11, marginTop: 6, textAlign: 'center', lineHeight: 15 },
+    goalHintLink: { color: C.primary, fontSize: 11, marginTop: 6, textAlign: 'center', fontWeight: '700' },
 
     logLabel: { color: C.textSecondary, fontSize: 12, fontWeight: '700', marginTop: 14, marginBottom: 8 },
     quickRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

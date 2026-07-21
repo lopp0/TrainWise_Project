@@ -60,6 +60,7 @@ const getStructuredWorkouts = async (_startDate, _endDate) => {
 // #129/#130 — readiness stubs (no data in Expo Go / web).
 const requestReadinessPermissions = async () => ({ granted: [] });
 const fetchSleepLastNight = async () => null;
+const fetchSleepRange = async () => ({});
 const fetchRestingHeartRate = async () => null;
 const fetchHrv = async () => null;
 
@@ -78,6 +79,7 @@ const api = {
   getStructuredWorkouts,
   requestReadinessPermissions,
   fetchSleepLastNight,
+  fetchSleepRange,
   fetchRestingHeartRate,
   fetchHrv,
 };

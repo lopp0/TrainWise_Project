@@ -21,6 +21,7 @@ SELECT p.PostId, p.UserID, p.ActivityLogId, p.PostType, p.Title, p.Description,
        u.FullName AS AuthorName, u.ProfileImagePath AS AuthorImagePath,
        u.EquippedBadge, u.EquippedTitle, u.EquippedFrame,
        (SELECT COUNT(*) FROM dbo.WorkoutPostLikes l WHERE l.PostId = p.PostId) AS LikeCount,
+       (SELECT COUNT(*) FROM dbo.WorkoutPostComments c WHERE c.PostId = p.PostId) AS CommentCount,
        CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.WorkoutPostLikes l WHERE l.PostId = p.PostId AND l.UserID = @viewer)
                  THEN 1 ELSE 0 END AS BIT) AS LikedByMe,
        (SELECT TOP 1 f.Status FROM dbo.Friendships f
@@ -58,6 +59,7 @@ OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;", con);
                     EquippedTitle = Str(r, "EquippedTitle"),
                     EquippedFrame = Str(r, "EquippedFrame"),
                     LikeCount = Int(r, "LikeCount"),
+                    CommentCount = Int(r, "CommentCount"),
                     LikedByMe = r["LikedByMe"] != DBNull.Value && Convert.ToBoolean(r["LikedByMe"]),
                     FriendStatus = Str(r, "FriendStatus"),
                 });

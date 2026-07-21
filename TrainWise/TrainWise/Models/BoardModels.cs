@@ -23,6 +23,7 @@ namespace TrainWise.BL.Models
         public string EquippedTitle { get; set; }
         public string EquippedFrame { get; set; }
         public int LikeCount { get; set; }
+        public int CommentCount { get; set; } // #11 — shown on the feed without opening the post
         public bool LikedByMe { get; set; }
         public string FriendStatus { get; set; } // null | pending | accepted | declined (viewer↔author)
     }

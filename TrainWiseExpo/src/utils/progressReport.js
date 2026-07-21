@@ -1,0 +1,140 @@
+import { File, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import { getRecords, getActivityBests, getActivityLogsByUser, getAllActivityTypes } from '../services/api';
+import { parseServerDate } from './serverDate';
+
+/**
+ * #137 — Trainee progress report. Builds a styled, self-contained HTML report of
+ * the athlete's records, per-activity bests and recent training load, writes it
+ * to a file and opens the OS share sheet. The recipient can open it in any
+ * browser and "Print → Save as PDF".
+ *
+ * Kept HTML (not a native PDF) on purpose: it needs no extra native module, so
+ * it ships with a plain JS/gradlew build and never triggers an expo prebuild
+ * (which can wipe the Health Connect manifest aliases). All dynamic text is
+ * HTML-escaped (untrusted user data rule).
+ */
+const esc = (v) =>
+  String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+const num = (v) => Number(v) || 0;
+
+// Prettify the stored PR metric keys (e.g. "longest_distance_km" → "Longest
+// distance (km)") so the report reads cleanly.
+const METRIC_LABELS = {
+  longest_distance_km: 'Longest distance (km)',
+  longest_duration_min: 'Longest session (min)',
+  highest_load: 'Highest session load',
+  most_weekly_sessions: 'Most workouts in a week',
+  longest_streak_days: 'Longest day streak',
+  fastest_pace: 'Fastest pace (min/km)',
+};
+const prettyMetric = (key) =>
+  METRIC_LABELS[key] ||
+  String(key || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+const buildReportHtml = ({ name, records, bests, logs, typeNameById }) => {
+  const now = new Date();
+  const dayMs = 86400000;
+  const confirmed = logs.filter((l) => {
+    const c = l.isConfirmed ?? l.IsConfirmed;
+    return c === undefined || c === null || c === true || c === 1;
+  });
+  const load = (l) => num(l.calculatedLoadForSession ?? l.CalculatedLoadForSession)
+    || num(l.duration ?? l.Duration) * num(l.exertionLevel ?? l.ExertionLevel);
+  const tOf = (l) => parseServerDate(l.startTime ?? l.StartTime)?.getTime() || 0;
+  const inWin = (from) => confirmed.filter((l) => tOf(l) >= from);
+  const sum = (arr) => arr.reduce((s, l) => s + load(l), 0);
+
+  const last7 = inWin(now.getTime() - 7 * dayMs);
+  const last28 = inWin(now.getTime() - 28 * dayMs);
+  const acute = sum(last7);
+  const chronic = last28.length ? sum(last28) / 4 : 0;
+  const acwr = chronic > 0 ? (acute / chronic) : 0;
+
+  const recRows = (records || []).map((r) =>
+    `<tr><td>${esc(prettyMetric(r.metricType ?? r.MetricType))}</td><td>${esc(Math.round(num(r.recordValue ?? r.RecordValue)))}</td></tr>`
+  ).join('') || '<tr><td colspan="2">No records yet</td></tr>';
+
+  const bestRows = (bests || []).map((b) =>
+    `<tr>
+       <td>${esc(b.typeName ?? b.TypeName)}</td>
+       <td>${esc(b.sessions ?? b.Sessions)}</td>
+       <td>${esc(num(b.maxDistanceKm ?? b.MaxDistanceKm).toFixed(1))} km</td>
+       <td>${esc(b.maxDurationMin ?? b.MaxDurationMin)} min</td>
+       <td>${esc(b.maxLoad ?? b.MaxLoad)}</td>
+     </tr>`
+  ).join('') || '<tr><td colspan="5">No activity data yet</td></tr>';
+
+  return `<!doctype html><html><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>TrainWise progress report</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1a1a2e;margin:0;padding:24px;background:#fff}
+  h1{color:#ff2d6f;font-style:italic;margin:0 0 4px}
+  .sub{color:#666;margin:0 0 20px}
+  .cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px}
+  .card{flex:1;min-width:120px;border:1px solid #eee;border-radius:12px;padding:14px}
+  .card .v{font-size:26px;font-weight:800}
+  .card .l{color:#888;font-size:12px}
+  h2{font-size:15px;color:#ff2d6f;margin:22px 0 8px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #f0f0f0}
+  th{color:#888;font-weight:700;text-transform:uppercase;font-size:11px}
+  .foot{color:#aaa;font-size:11px;margin-top:28px}
+</style></head><body>
+  <h1>TrainWise</h1>
+  <p class="sub">Progress report for <b>${esc(name)}</b> &middot; ${esc(now.toLocaleDateString())}</p>
+  <div class="cards">
+    <div class="card"><div class="v">${last7.length}</div><div class="l">Workouts (7d)</div></div>
+    <div class="card"><div class="v">${Math.round(acute)}</div><div class="l">Load (7d)</div></div>
+    <div class="card"><div class="v">${acwr.toFixed(2)}</div><div class="l">AC ratio</div></div>
+    <div class="card"><div class="v">${confirmed.length}</div><div class="l">Total workouts</div></div>
+  </div>
+  <h2>Personal records</h2>
+  <table><thead><tr><th>Metric</th><th>Best</th></tr></thead><tbody>${recRows}</tbody></table>
+  <h2>By activity</h2>
+  <table><thead><tr><th>Activity</th><th>Sessions</th><th>Distance</th><th>Duration</th><th>Top load</th></tr></thead>
+  <tbody>${bestRows}</tbody></table>
+  <p class="foot">Generated by TrainWise &middot; AC ratio sweet spot 0.8&ndash;1.3. Open in a browser and Print (Save as PDF).</p>
+</body></html>`;
+};
+
+export const shareProgressReport = async (userId, name = 'Athlete') => {
+  if (!userId) throw new Error('Not signed in.');
+  const [recRes, bestRes, logsRes, typesRes] = await Promise.all([
+    getRecords(userId).catch(() => ({ data: {} })),
+    getActivityBests(userId).catch(() => ({ data: [] })),
+    getActivityLogsByUser(userId).catch(() => ({ data: [] })),
+    getAllActivityTypes().catch(() => ({ data: [] })),
+  ]);
+  const typeNameById = {};
+  (Array.isArray(typesRes.data) ? typesRes.data : []).forEach((t) => {
+    typeNameById[t.activityTypeID ?? t.ActivityTypeID] = t.typeName ?? t.TypeName;
+  });
+  const html = buildReportHtml({
+    name,
+    records: recRes.data?.records || recRes.data?.Records || [],
+    bests: Array.isArray(bestRes.data) ? bestRes.data : [],
+    logs: Array.isArray(logsRes.data) ? logsRes.data : [],
+    typeNameById,
+  });
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  const file = new File(Paths.cache, `trainwise_report_${stamp}.html`);
+  try { if (file.exists) file.delete(); } catch {}
+  file.create();
+  file.write(html);
+
+  if (await Sharing.isAvailableAsync()) {
+    await Sharing.shareAsync(file.uri, {
+      mimeType: 'text/html',
+      dialogTitle: 'Share progress report',
+      UTI: 'public.html',
+    });
+  } else {
+    throw new Error('Sharing is not available on this device.');
+  }
+};

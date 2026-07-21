@@ -7,7 +7,7 @@ import { getAuthToken } from '../api/authToken';
 // API_BASE_URL in services/api.js (DHCP can shift it — `ipconfig | findstr IPv4`).
 // The Python service must be running (`cd ml && python app.py`) and TCP 8000
 // allowed through the firewall on the Private profile, or these calls time out.
-const ML_BASE_URL = 'http://192.168.1.118:8000'; // Home LAN (wireless). USB-anywhere alt (school WiFi): http://127.0.0.1:8000 + `adb reverse tcp:8000 tcp:8000`.
+const ML_BASE_URL = 'http://192.168.1.117:8000'; // Home LAN (wireless). USB-anywhere alt (school WiFi): http://127.0.0.1:8000 + `adb reverse tcp:8000 tcp:8000`.
 
 const ml = axios.create({
   baseURL: ML_BASE_URL,

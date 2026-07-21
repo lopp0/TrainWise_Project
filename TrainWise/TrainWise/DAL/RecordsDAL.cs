@@ -32,6 +32,31 @@ namespace TrainWise.DAL
             return list;
         }
 
+        // #165 — per-activity personal bests (one row per activity type).
+        public List<ActivityBest> GetActivityBests(int userId)
+        {
+            var list = new List<ActivityBest>();
+            using (SqlConnection con = Connect())
+            {
+                var param = new Dictionary<string, object> { { "@UserID", userId } };
+                using (SqlCommand cmd = CreateCommandWithStoredProcedure("sp_GetActivityBests", con, param))
+                using (var r = cmd.ExecuteReader())
+                    while (r.Read())
+                        list.Add(new ActivityBest
+                        {
+                            ActivityTypeID = Convert.ToInt32(r["ActivityTypeID"]),
+                            TypeName = r["TypeName"].ToString(),
+                            Sessions = Convert.ToInt32(r["Sessions"]),
+                            MaxDistanceKm = r["MaxDistanceKm"] == DBNull.Value ? 0 : Convert.ToDouble(r["MaxDistanceKm"]),
+                            MaxDurationMin = r["MaxDurationMin"] == DBNull.Value ? 0 : Convert.ToInt32(r["MaxDurationMin"]),
+                            MaxLoad = r["MaxLoad"] == DBNull.Value ? 0 : Convert.ToInt32(r["MaxLoad"]),
+                            BestPaceMinPerKm = r["BestPaceMinPerKm"] == DBNull.Value ? (double?)null : Convert.ToDouble(r["BestPaceMinPerKm"]),
+                            LastDone = r["LastDone"] == DBNull.Value ? (DateTime?)null : Convert.ToDateTime(r["LastDone"])
+                        });
+            }
+            return list;
+        }
+
         public List<EarnedBadge> GetBadges(int userId)
         {
             var list = new List<EarnedBadge>();

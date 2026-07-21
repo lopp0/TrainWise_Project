@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {
   View,
   Text,
@@ -12,12 +12,14 @@ import {
   Switch,
 } from 'react-native';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 import {Colors, Fonts, Spacing} from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import ScreenHeader from '../components/ScreenHeader';
 import Card from '../components/Card';
 import PrimaryButton from '../components/PrimaryButton';
-import {getUserById, updateUser as updateUserApi, deleteUser as deleteUserApi, setShareLiveLocation} from '../services/api';
+import ErrorBoundary from '../components/ErrorBoundary';
+import {getUserById, updateUser as updateUserApi, deleteUser as deleteUserApi, setShareLiveLocation, getUserSessions, revokeUserSession, revokeOtherUserSessions, requestEmailVerification, confirmEmailVerification} from '../services/api';
 import { getShareLocation, setShareLocationLocal } from '../utils/locationSharing';
 import { useAuth } from '../api/AuthContext';
 import { useTheme } from '../theme/ThemeContext';
@@ -43,6 +45,98 @@ import {
 import { changePassword as changePasswordApi } from '../services/api';
 import { sendWeeklyRecapNow } from '../api/NotificationService';
 import { exportWorkoutHistory } from '../utils/exportHistory';
+import { parseServerDate } from '../utils/serverDate';
+import PasswordInput from '../components/PasswordInput';
+import PasswordRequirements from '../components/PasswordRequirements';
+import { isValidPassword } from '../utils/validation';
+
+// ── Legal texts (GDPR-structured, 2026-07-19) ───────────────────────────────
+// Written to describe what TrainWise ACTUALLY does today. If the data flows
+// change (new third party, new category of data), update these too.
+// NOTE: replace CONTACT_EMAIL with the real controller contact before any
+// public release. Under GDPR a policy must name a reachable controller.
+const CONTACT_EMAIL = 'lironeouak@gmail.com';
+
+const PRIVACY_POLICY = `Last updated: 19 July 2026
+
+1. WHO IS RESPONSIBLE (DATA CONTROLLER)
+TrainWise is a student training-load project. The controller responsible for your personal data is the TrainWise project owner, reachable at ${CONTACT_EMAIL}.
+
+2. WHAT WE COLLECT
+a) Account data you enter: name, username, email, birth year, gender, height, weight, activity and experience level, and your role (trainee, coach, or both).
+b) Training data: workouts (type, duration, distance, exertion), calculated training load, injuries you report (type, severity, notes, and any photo you attach), body measurements, and nutrition or hydration entries you log.
+c) Health data from Google Health Connect, only if you grant permission: exercise sessions, heart rate, resting heart rate, HRV, steps, distance, calories, and sleep.
+d) Social data: friends, coach links, challenges, events, workout-board posts, and the content of messages you send, including images and voice notes.
+e) Location, only if you switch on live-location sharing: your approximate coordinates, used to place you on the Connect map and to find nearby gyms.
+f) Technical data: a device identifier, your push-notification token, and the time you were last active.
+
+3. SPECIAL CATEGORY DATA (ARTICLE 9)
+Health and fitness data, including injuries, heart rate and sleep, is special category data. We process it only on the basis of your explicit consent, which you give by granting Health Connect permission and by choosing to log this information. You can withdraw that consent at any time by revoking the permission or deleting the data.
+
+4. LEGAL BASIS (ARTICLE 6)
+Contract: to provide the account and training features you asked for. Consent: for health data, live location, push notifications and optional AI features. Legitimate interests: to keep the service secure and working correctly.
+
+5. WHY WE USE IT
+To calculate your training load and injury risk, to show your history and trends, to let you connect with coaches and friends, to send reminders you enabled, and to keep your account secure.
+
+6. WHO ELSE SEES IT
+Coaches you are linked to can see your training data, load and injuries. Friends see only what you post publicly, such as workout-board posts. We also use these processors: Microsoft Azure (hosting and database), Google (Health Connect on your device, plus Maps, Weather, Air Quality and Places when those features are used), Firebase Cloud Messaging (push notifications), and OpenAI (only the text of the questions you send to the AI coach or injury advice features). We do not sell your data and we do not use it for advertising.
+
+7. INTERNATIONAL TRANSFERS
+Some processors listed above operate outside the European Economic Area. Where that happens, transfers rely on the European Commission's Standard Contractual Clauses or an adequacy decision.
+
+8. HOW LONG WE KEEP IT
+We keep your data for as long as your account exists. When you delete your account from Settings, your profile, workouts, injuries, messages, connections and posts are permanently erased from our database. Backups are overwritten on their normal cycle.
+
+9. YOUR RIGHTS
+You have the right to access your data, to correct it, to erase it, to restrict or object to processing, to withdraw consent at any time, and to data portability. In the app you can already: edit your profile, export your workout history to a CSV file, and permanently delete your account. For anything else, contact ${CONTACT_EMAIL}. You also have the right to complain to your national data protection authority.
+
+10. SECURITY
+Passwords are stored only as salted PBKDF2 hashes and are never readable by us. Access to the API requires a signed token, and each request is checked so you can only read your own records. No system is perfectly secure, so please use a strong, unique password.
+
+11. CHILDREN
+TrainWise is not intended for children under 16. We do not knowingly collect their data.
+
+12. CHANGES
+If this policy changes we will update the date above and show the new version here.`;
+
+const TERMS_OF_SERVICE = `Last updated: 19 July 2026
+
+1. AGREEMENT
+By creating a TrainWise account or using the app you accept these terms. If you do not accept them, please do not use TrainWise.
+
+2. WHO MAY USE IT
+You must be at least 16 years old and able to enter into a binding agreement. You are responsible for the accuracy of the information you provide and for keeping your password confidential.
+
+3. MEDICAL DISCLAIMER (PLEASE READ)
+TrainWise is a training-load and fitness tracking tool. It is NOT a medical device and it does NOT provide medical advice, diagnosis or treatment. Its load figures, injury-risk scores, readiness scores, calorie estimates and AI suggestions are informational estimates produced by algorithms, and they can be wrong. Always consult a qualified doctor or physiotherapist before starting, changing or continuing any training programme, and especially if you are injured or in pain. Never ignore professional advice because of something you read in this app. If you think you have a medical emergency, contact your local emergency services immediately.
+
+4. YOUR RESPONSIBILITY FOR TRAINING
+You train at your own risk. You decide what exercise to do and how hard to push. TrainWise is not responsible for injury, illness or loss resulting from your training decisions.
+
+5. YOUR CONTENT
+You keep ownership of the content you create, such as notes, photos, voice messages and posts. You grant us the limited right to store and display it so the app can work, for example showing your post to your friends or your workout to your coach. Do not upload content that is unlawful, abusive, hateful, or that infringes someone else's rights, and do not upload other people's personal data without their permission.
+
+6. ACCEPTABLE USE
+Do not attempt to access another user's account or data, do not reverse engineer, overload or disrupt the service, and do not use the app to harass anyone. We may suspend or remove accounts that break these rules.
+
+7. COACHES AND OTHER USERS
+Coaches on TrainWise are other users, not our employees, and we do not verify their qualifications, certifications or advice. Any coaching relationship, review or recommendation is between you and that person. Check credentials yourself before acting on their guidance.
+
+8. THIRD-PARTY SERVICES
+The app relies on services such as Google Health Connect, Google Maps and OpenAI. Their own terms apply to your use of them, and their availability is outside our control.
+
+9. AVAILABILITY
+TrainWise is a student project provided "as is", without warranties of any kind. We do not guarantee that it will be available, uninterrupted, or free of errors, and features may change or be removed.
+
+10. LIABILITY
+To the fullest extent permitted by law, we are not liable for indirect or consequential loss, for lost data, or for loss arising from your use of or reliance on the app. Nothing in these terms limits liability that cannot lawfully be limited, such as liability for death or personal injury caused by negligence.
+
+11. ENDING YOUR ACCOUNT
+You can delete your account at any time from Settings, which permanently erases your data as described in the Privacy Policy.
+
+12. CHANGES
+We may update these terms. Continued use after an update means you accept the new version.`;
 
 const SettingsScreen = ({navigation}) => {
   const { userId, updateUser: updateAuthUser, logout } = useAuth();
@@ -70,6 +164,7 @@ const SettingsScreen = ({navigation}) => {
   // accidental wipes: a native Alert ("are you sure?"), then a modal
   // that requires the user to retype their email exactly. Final delete
   // only fires after both pass.
+  const [policyDoc, setPolicyDoc] = useState(null); // { title, body } | null
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -90,6 +185,108 @@ const SettingsScreen = ({navigation}) => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPw, setChangingPw] = useState(false);
+  // #163 — multi-device sessions (real, revocable)
+  const [devices, setDevices] = useState([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  // #114 — email verification
+  const [verifyStep, setVerifyStep] = useState(0); // 0 idle · 1 code sent
+  const [verifyCode, setVerifyCode] = useState('');
+  const [verifyBusy, setVerifyBusy] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+
+  const sendVerifyCode = async () => {
+    setVerifyBusy(true);
+    try {
+      const res = await requestEmailVerification(userId);
+      if (res.data?.devCode) setVerifyCode(String(res.data.devCode));
+      setVerifyStep(1);
+    } catch (e) {
+      Alert.alert('Could not send', e?.response?.data?.toString?.() || 'Please try again.');
+    } finally {
+      setVerifyBusy(false);
+    }
+  };
+
+  const submitVerifyCode = async () => {
+    if (!verifyCode.trim()) { Alert.alert('Enter the code', 'Enter the code you received.'); return; }
+    setVerifyBusy(true);
+    try {
+      await confirmEmailVerification(userId, verifyCode.trim());
+      setEmailVerified(true);
+      setVerifyStep(0);
+      setVerifyCode('');
+      Alert.alert('Email verified', 'Your email address has been verified.');
+    } catch (e) {
+      Alert.alert('Could not verify', e?.response?.data?.toString?.() || 'The code may be wrong or expired.');
+    } finally {
+      setVerifyBusy(false);
+    }
+  };
+
+  // #163 / 2026-07-19 — REAL sessions. Each login registers a server-side session
+  // whose id is embedded in the JWT, so revoking one genuinely signs that device
+  // out (its next request is rejected) instead of only deleting a row.
+  const loadSessions = useCallback(() => {
+    if (!userId) return;
+    setDevicesLoading(true);
+    getUserSessions(userId)
+      .then((res) => setDevices(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setDevices([]))
+      .finally(() => setDevicesLoading(false));
+  }, [userId]);
+
+  useEffect(() => { loadSessions(); }, [loadSessions]);
+
+  const sVal = (s, camel, pascal) => s[camel] ?? s[pascal];
+
+  const revokeDevice = (s) => {
+    const id = sVal(s, 'sessionId', 'SessionId');
+    const isCurrent = !!sVal(s, 'isCurrent', 'IsCurrent');
+    const name = sVal(s, 'deviceName', 'DeviceName') || 'this device';
+    Alert.alert(
+      isCurrent ? 'Sign out this device?' : 'Sign out that device?',
+      isCurrent
+        ? `"${name}" is the device you are using now. Signing it out will log you out of TrainWise here.`
+        : `"${name}" will be signed out of your account immediately and will need your password to get back in.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign out', style: 'destructive',
+          onPress: async () => {
+            try {
+              await revokeUserSession(userId, id);
+              if (isCurrent) { await logout(); return; }
+              setDevices((prev) => prev.filter((x) => sVal(x, 'sessionId', 'SessionId') !== id));
+            } catch (e) {
+              Alert.alert('Could not sign out', e?.response?.data?.toString?.() || 'Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const revokeAllOthers = () => {
+    Alert.alert(
+      'Sign out all other devices?',
+      'Every device except this one will be signed out immediately. Use this if you think someone else has access to your account.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign out others', style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await revokeOtherUserSessions(userId);
+              loadSessions();
+              Alert.alert('Done', `Signed out ${res.data?.revoked ?? 0} other device(s).`);
+            } catch (e) {
+              Alert.alert('Could not sign out', e?.response?.data?.toString?.() || 'Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
   // Server-managed fields the BL requires on update — kept hidden but echoed back.
   const [serverFields, setServerFields] = useState({
     activityLevel: 1,
@@ -122,8 +319,8 @@ const SettingsScreen = ({navigation}) => {
 
   // #111 — change password (Google-only accounts have no password to change).
   const handleChangePassword = async () => {
-    if (!newPassword || newPassword.length < 6) {
-      Alert.alert('Weak password', 'New password must be at least 6 characters.');
+    if (!isValidPassword(newPassword)) {
+      Alert.alert('Weak password', 'New password must be at least 8 characters and include an uppercase letter, a lowercase letter, and a number.');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -283,9 +480,9 @@ const SettingsScreen = ({navigation}) => {
     }
   };
 
-  const showPolicy = (title, text) => {
-    Alert.alert(title, text, [{text: 'OK'}]);
-  };
+  // The GDPR texts are far too long for Alert.alert (Android truncates and can't
+  // scroll), so legal documents open in a scrollable modal instead.
+  const showPolicy = (title, body) => setPolicyDoc({ title, body });
 
   // Step 1 of delete: native Alert. If the user taps Continue we open the
   // modal (step 2) where they must type their email exactly. Cancelling
@@ -580,32 +777,27 @@ const SettingsScreen = ({navigation}) => {
           )}
 
           <Text style={[styles.label, { marginTop: Spacing.md }]}>Change password</Text>
-          <TextInput
+          <PasswordInput
             style={styles.input}
             value={curPassword}
             onChangeText={setCurPassword}
             placeholder="Current password"
             placeholderTextColor={Colors.textMuted}
-            secureTextEntry
-            autoCapitalize="none"
           />
-          <TextInput
+          <PasswordInput
             style={[styles.input, { marginTop: Spacing.sm }]}
             value={newPassword}
             onChangeText={setNewPassword}
             placeholder="New password"
             placeholderTextColor={Colors.textMuted}
-            secureTextEntry
-            autoCapitalize="none"
           />
-          <TextInput
+          <PasswordRequirements password={newPassword} />
+          <PasswordInput
             style={[styles.input, { marginTop: Spacing.sm }]}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             placeholder="Confirm new password"
             placeholderTextColor={Colors.textMuted}
-            secureTextEntry
-            autoCapitalize="none"
           />
           <TouchableOpacity
             style={[styles.changePwBtn, changingPw && { opacity: 0.6 }]}
@@ -698,23 +890,13 @@ const SettingsScreen = ({navigation}) => {
           <Text style={styles.cardTitle}>Legal</Text>
           <TouchableOpacity
             style={styles.linkRow}
-            onPress={() =>
-              showPolicy(
-                'Privacy Policy',
-                'TrainWise collects only the data you provide and activity from your connected devices. We never share personal data with third parties without your consent.',
-              )
-            }>
+            onPress={() => showPolicy('Privacy Policy', PRIVACY_POLICY)}>
             <Text style={styles.linkText}>Privacy Policy</Text>
             <Text style={styles.linkArrow}>{'>'}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.linkRow}
-            onPress={() =>
-              showPolicy(
-                'Terms of Service',
-                'By using TrainWise you agree to use the app as a guide, not as medical advice. Always consult a qualified professional before making changes to your training routine.',
-              )
-            }>
+            onPress={() => showPolicy('Terms of Service', TERMS_OF_SERVICE)}>
             <Text style={styles.linkText}>Terms of Service</Text>
             <Text style={styles.linkArrow}>{'>'}</Text>
           </TouchableOpacity>
@@ -762,6 +944,112 @@ const SettingsScreen = ({navigation}) => {
           </TouchableOpacity>
         </Card>
 
+        {/* #114 — email verification. In dev (AUTH_DEV_CODES=true) the code is
+            returned by the API and prefilled; otherwise it is emailed. */}
+        <ErrorBoundary inline label="Email verification card">
+        <Card>
+          <Text style={styles.cardTitle}>Email verification</Text>
+          {emailVerified ? (
+            <View style={styles.verifyRow}>
+              <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+              <Text style={styles.verifiedText}>Your email is verified.</Text>
+            </View>
+          ) : verifyStep === 0 ? (
+            <>
+              <Text style={styles.verifyBlurb}>Verify {email || 'your email'} to secure your account.</Text>
+              <TouchableOpacity style={styles.actionRow} onPress={sendVerifyCode} disabled={verifyBusy} activeOpacity={0.8}>
+                <Text style={styles.actionText}>{verifyBusy ? 'Sending…' : 'Send verification code'}</Text>
+                {verifyBusy ? <ActivityIndicator color={Colors.primary} size="small" /> : <Text style={styles.linkArrow}>{'>'}</Text>}
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Text style={styles.verifyBlurb}>Enter the 6-digit code sent to {email}.</Text>
+              <TextInput
+                style={styles.verifyInput}
+                value={verifyCode}
+                onChangeText={setVerifyCode}
+                placeholder="123456"
+                placeholderTextColor={Colors.textMuted}
+                keyboardType="number-pad"
+                maxLength={6}
+              />
+              <TouchableOpacity style={styles.verifyBtn} onPress={submitVerifyCode} disabled={verifyBusy} activeOpacity={0.85}>
+                {verifyBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.verifyBtnText}>Verify email</Text>}
+              </TouchableOpacity>
+            </>
+          )}
+        </Card>
+        </ErrorBoundary>
+
+        {/* #163 / 2026-07-19 — REAL devices & sessions. Every login registers a
+            server-side session whose id is inside that device's token, so "Sign
+            out" here rejects that device on its very next request. */}
+        <ErrorBoundary inline label="Devices & sessions card">
+        <Card>
+          <View style={styles.deviceHeaderRow}>
+            <Text style={[styles.cardTitle, { marginBottom: 0 }]}>Devices & sessions</Text>
+            <TouchableOpacity onPress={loadSessions} hitSlop={8} disabled={devicesLoading}>
+              <Ionicons name="refresh" size={18} color={Colors.primary} />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.deviceIntro}>
+            Everywhere you are signed in. Sign out any device you don’t recognise. It loses access straight away.
+          </Text>
+
+          {devicesLoading && devices.length === 0 ? (
+            <ActivityIndicator color={Colors.primary} style={{ marginVertical: Spacing.md }} />
+          ) : devices.length === 0 ? (
+            <Text style={styles.deviceEmpty}>
+              No active sessions recorded yet. Sign out and back in on this device to register it.
+            </Text>
+          ) : (
+            devices.map((d) => {
+              const id = d.sessionId ?? d.SessionId;
+              const isCurrent = !!(d.isCurrent ?? d.IsCurrent);
+              const lastSeen = d.lastSeenAt ?? d.LastSeenAt;
+              const platform = d.platform ?? d.Platform;
+              return (
+                <View key={id} style={styles.deviceRow}>
+                  <Ionicons
+                    name={platform === 'ios' ? 'phone-portrait-outline' : 'phone-portrait-outline'}
+                    size={20}
+                    color={isCurrent ? Colors.primary : Colors.textSecondary}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.deviceNameRow}>
+                      <Text style={styles.deviceName} numberOfLines={1}>
+                        {d.deviceName ?? d.DeviceName ?? 'Unknown device'}
+                      </Text>
+                      {isCurrent && (
+                        <View style={styles.deviceCurrentPill}>
+                          <Text style={styles.deviceCurrentText}>This device</Text>
+                        </View>
+                      )}
+                    </View>
+                    {lastSeen ? (
+                      <Text style={styles.deviceMeta}>
+                        Last active {parseServerDate(lastSeen).toLocaleString()}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <TouchableOpacity onPress={() => revokeDevice(d)} hitSlop={8}>
+                    <Text style={styles.deviceRevoke}>Sign out</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })
+          )}
+
+          {devices.length > 1 && (
+            <TouchableOpacity style={styles.revokeAllBtn} onPress={revokeAllOthers} activeOpacity={0.85}>
+              <Ionicons name="shield-checkmark-outline" size={18} color={Colors.red} />
+              <Text style={styles.revokeAllText}>Sign out all other devices</Text>
+            </TouchableOpacity>
+          )}
+        </Card>
+        </ErrorBoundary>
+
         {/* Danger zone — separated visually so a stray tap on Save Changes
             can never land on the destructive action. Confirmation lives
             inside startDeleteFlow → modal, see top of file. */}
@@ -780,6 +1068,29 @@ const SettingsScreen = ({navigation}) => {
           </TouchableOpacity>
         </Card>
       </ScrollView>
+
+      {/* Legal documents (Privacy Policy / Terms). Scrollable because the GDPR
+          text is long; an Alert would truncate it. */}
+      <Modal
+        visible={!!policyDoc}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPolicyDoc(null)}
+      >
+        <View style={styles.policyBackdrop}>
+          <View style={styles.policyCard}>
+            <View style={styles.policyHeader}>
+              <Text style={styles.policyTitle} numberOfLines={1}>{policyDoc?.title}</Text>
+              <TouchableOpacity onPress={() => setPolicyDoc(null)} hitSlop={10}>
+                <Ionicons name="close" size={24} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.policyScroll} contentContainerStyle={{ paddingBottom: Spacing.lg }}>
+              <Text style={styles.policyBody}>{policyDoc?.body}</Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Step 2 of delete: type-your-email modal. The final red button is
           disabled until the typed text matches the user's email (case-
@@ -1105,6 +1416,39 @@ const makeStyles = (Colors) => StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: Fonts.bodySize,
   },
+  // NOTE: this file's factory param is `Colors` (not `C`). Referencing `C.*`
+  // here throws ReferenceError inside useThemedStyles → Settings crashed on
+  // mount with no visible message (fixed 2026-07-19).
+
+  // #114 email verification
+  verifyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  verifiedText: { color: Colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  verifyBlurb: { color: Colors.textSecondary, fontSize: 13, marginTop: 6, marginBottom: 8 },
+  verifyInput: {
+    backgroundColor: Colors.inputBackground, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+    color: Colors.textPrimary, fontSize: 16, borderWidth: 1, borderColor: Colors.inputBorder, letterSpacing: 4,
+  },
+  verifyBtn: { backgroundColor: Colors.primary, borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 10 },
+  verifyBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+
+  // #163 devices & sessions
+  deviceHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.sm },
+  deviceIntro: { color: Colors.textSecondary, fontSize: 12, lineHeight: 17, marginBottom: 4 },
+  deviceEmpty: { color: Colors.textMuted, fontSize: 13, marginTop: 6, lineHeight: 18 },
+  deviceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
+  deviceNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  deviceName: { color: Colors.textPrimary, fontSize: 14, fontWeight: '700', flexShrink: 1 },
+  deviceCurrentPill: { backgroundColor: Colors.primary + '22', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
+  deviceCurrentText: { color: Colors.primary, fontSize: 10, fontWeight: '800' },
+  deviceMeta: { color: Colors.textMuted, fontSize: 11, marginTop: 1 },
+  deviceRevoke: { color: '#ff5252', fontSize: 13, fontWeight: '800' },
+  revokeAllBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    marginTop: Spacing.md, paddingVertical: Spacing.sm + 2, borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.red,
+  },
+  revokeAllText: { color: Colors.red, fontSize: 14, fontWeight: '800' },
+
   // Danger zone — semantic red (theme-independent) so the destructive
   // action reads as destructive on both light and dark.
   dangerTitle: {
@@ -1129,6 +1473,41 @@ const makeStyles = (Colors) => StyleSheet.create({
     color: '#fff',
     fontSize: Fonts.bodySize,
     fontWeight: Fonts.bold,
+  },
+  // Legal document modal (Privacy / Terms)
+  policyBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'flex-end',
+  },
+  policyCard: {
+    backgroundColor: Colors.cardBackground,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    maxHeight: '88%',
+  },
+  policyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+    paddingBottom: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  policyTitle: {
+    flex: 1,
+    color: Colors.primary,
+    fontSize: Fonts.subtitleSize,
+    fontWeight: Fonts.bold,
+  },
+  policyScroll: { marginTop: Spacing.md },
+  policyBody: {
+    color: Colors.textSecondary,
+    fontSize: Fonts.captionSize + 1,
+    lineHeight: 20,
   },
   // Delete-confirm modal
   modalBackdrop: {

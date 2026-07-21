@@ -15,6 +15,8 @@ import {
   Switch,
   Image,
   Pressable,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -105,7 +107,18 @@ const WorkoutBoardScreen = ({ navigation }) => {
     if (!userId) return;
     try {
       const res = await getBoardFeed(userId, { country: 'IL', page: 0, limit: 30 });
-      setPosts(Array.isArray(res.data) ? res.data : []);
+      const list = Array.isArray(res.data) ? res.data : [];
+      setPosts(list);
+      // #11 — seed comment counts from the feed so each post shows its count
+      // WITHOUT the user having to open it first.
+      setCommentCounts((prev) => {
+        const next = { ...prev };
+        list.forEach((p) => {
+          const pid = p.postId ?? p.PostId;
+          next[pid] = p.commentCount ?? p.CommentCount ?? 0;
+        });
+        return next;
+      });
     } catch (e) {
       // keep last list
     } finally {
@@ -416,7 +429,8 @@ const WorkoutBoardScreen = ({ navigation }) => {
           <TouchableOpacity style={styles.commentBtn} onPress={() => openComments(item)} activeOpacity={0.7}>
             <Ionicons name="chatbubble-outline" size={19} color={styles._muted} />
             <Text style={styles.likeCount}>
-              {commentCounts[item.postId ?? item.PostId] ?? ''}
+              {commentCounts[item.postId ?? item.PostId] ??
+                item.commentCount ?? item.CommentCount ?? 0}
             </Text>
           </TouchableOpacity>
         </View>
@@ -580,6 +594,10 @@ const WorkoutBoardScreen = ({ navigation }) => {
         animationType="slide"
         onRequestClose={() => setCommentsPost(null)}
       >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
         <Pressable style={styles.backdrop} onPress={() => setCommentsPost(null)}>
           <Pressable style={styles.sheet} onPress={() => {}}>
             <View style={styles.sheetHandle} />
@@ -653,6 +671,7 @@ const WorkoutBoardScreen = ({ navigation }) => {
             </View>
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* #11 — full-screen zoomable image viewer */}

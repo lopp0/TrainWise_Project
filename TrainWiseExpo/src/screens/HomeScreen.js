@@ -11,6 +11,7 @@ import {
   Image,
   LayoutAnimation,
   Modal,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -30,6 +31,7 @@ import {
 import DraggableChatBubble from '../components/DraggableChatBubble';
 import HomeHeader from '../components/HomeHeader';
 import WeeklySummaryCard from '../components/WeeklySummaryCard';
+import WeekReviewCard from '../components/WeekReviewCard';
 import SmartSuggestionCard from '../components/SmartSuggestionCard';
 import TodayPlanCard from '../components/TodayPlanCard';
 import CalorieRing from '../components/CalorieRing';
@@ -64,8 +66,9 @@ import {
   DEFAULT_CALORIE_GOAL,
   getStoredCalorieGoal,
   setCalorieGoal,
+  clearCalorieGoal,
 } from '../utils/calorieLog';
-import { computeTDEE, estimateWorkoutCalories } from '../utils/calories';
+import { computeBMR, estimateWorkoutCalories } from '../utils/calories';
 import { getNutritionDay, addNutritionEntry } from '../services/api';
 
 const { width } = Dimensions.get('window');
@@ -521,10 +524,16 @@ const HomeScreen = ({ navigation }) => {
     return sum + kcal;
   }, 0);
 
-  // #2d — the Base budget is the user's BMR-derived TDEE (adapts to profile), or
-  // their manual override when set, or the flat default as a last resort.
-  const tdee = computeTDEE(user);
-  const calGoal = storedCalGoal ?? tdee ?? DEFAULT_CALORIE_GOAL;
+  // #11 — the Base is the Mifflin-St Jeor BMR computed from the LIVE profile, so
+  // it re-derives itself whenever height / weight / age / sex change.
+  // It is the BMR, not the TDEE: the ring adds the day's exercise calories as a
+  // separate term, so an activity multiplier here would count training twice.
+  // A manual override still wins, but only after an explicit confirmation, and
+  // it can be cleared (previously ANY nudge of the stepper froze the base for
+  // good, which is why a 186cm/77kg profile was stuck showing 1550).
+  const formulaBase = computeBMR(user);
+  const usingFormulaBase = storedCalGoal == null;
+  const calGoal = storedCalGoal ?? formulaBase ?? DEFAULT_CALORIE_GOAL;
 
   // #2b — food + water now write to the shared server nutrition log, then refresh
   // both totals so the ring + hydration bar stay consistent with the detail screen.
@@ -548,9 +557,46 @@ const HomeScreen = ({ navigation }) => {
     } catch {}
   };
   const resetCalories = () => { refreshNutrition(); };
+  // #11 — before the FIRST manual change, explain that the current base is a real
+  // formula and ask the user to confirm they want to override it.
   const changeCalGoal = async (g) => {
-    const next = await setCalorieGoal(userId, g);
-    setStoredCalGoal(next);
+    const apply = async () => {
+      const next = await setCalorieGoal(userId, g);
+      setStoredCalGoal(next);
+    };
+    if (usingFormulaBase && formulaBase != null) {
+      Alert.alert(
+        'Set your own daily base?',
+        `Your base of ${formulaBase} kcal is not a guess: it is calculated from your profile (height, weight, age and sex) with the Mifflin-St Jeor equation, and it updates by itself whenever you change your profile.\n\n` +
+          'If you set your own number it stays fixed at that value until you reset it.',
+        [
+          { text: 'Keep formula', style: 'cancel' },
+          { text: 'Set my own', onPress: apply },
+        ],
+      );
+      return;
+    }
+    apply();
+  };
+
+  // #11 — hand the base back to the formula.
+  const resetCalGoal = () => {
+    Alert.alert(
+      'Use the calculated base?',
+      formulaBase != null
+        ? `This puts your daily base back to ${formulaBase} kcal, calculated from your profile with the Mifflin-St Jeor equation, and lets it follow your profile again.`
+        : 'This puts your daily base back to the value calculated from your profile.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Use formula',
+          onPress: async () => {
+            await clearCalorieGoal(userId);
+            setStoredCalGoal(null);
+          },
+        },
+      ],
+    );
   };
   const recommendation = acRatio > 0 ? buildRestRecommendation({ acRatio }) : null;
   const equippedTitleItem = equippedTitleId ? findShopItem(equippedTitleId) : null;
@@ -590,21 +636,15 @@ const HomeScreen = ({ navigation }) => {
     const label = day.date.toLocaleDateString('en-US', {
       weekday: 'long', day: 'numeric', month: 'short',
     });
-    setDayDrill({ label, workouts });
+    setDayDrill({ label, workouts, dayIndex: i });
   };
 
-  const openWorkoutFromDrill = (w) => {
+  // #4 — edit a specific workout from the drill-down: open the Stats editor
+  // pre-targeted to THAT workout (duration / exertion / distance / pulse).
+  const editWorkoutFromDrill = (w) => {
+    const di = dayDrill?.dayIndex;
     setDayDrill(null);
-    navigation.navigate('WorkoutSummary', {
-      logId: w.id,
-      summary: {
-        activityName: w.name,
-        duration: w.duration,
-        exertion: w.exertion,
-        sessionLoad: w.load,
-        activityId: w.id,
-      },
-    });
+    navigation.navigate('Stats', { selectedDayIndex: di, editLogId: w.id });
   };
 
   const toggleSection = (setter) => {
@@ -668,16 +708,22 @@ const HomeScreen = ({ navigation }) => {
         );
       case 'summary':
         return !loading ? (
-          <WeeklySummaryCard
-            logs={backendLogs}
-            activityTypes={activityTypes}
-            experienceLevel={user?.experienceLevel}
-          />
+          <>
+            <WeeklySummaryCard
+              logs={backendLogs}
+              activityTypes={activityTypes}
+              experienceLevel={user?.experienceLevel}
+            />
+            {/* #153 — AI-written weekly recap (cached per week, generated on tap). */}
+            <WeekReviewCard userId={userId} logs={backendLogs} activityTypes={activityTypes} />
+          </>
         ) : null;
       case 'calories':
         return (
           <CalorieRing
             goal={calGoal}
+            usingFormula={usingFormulaBase}
+            onResetGoal={resetCalGoal}
             intake={calIntake}
             burned={burnedToday}
             water={waterMl}
@@ -741,10 +787,16 @@ const HomeScreen = ({ navigation }) => {
         )}
 
         {/* ── Greeting ── */}
+        {/* #10 — the equipped title sits BESIDE the name (as a pill), not on a
+            line underneath it. */}
         <View style={styles.greetingWrap}>
-          <Text style={styles.greeting}>Hi, {user?.fullName || 'Athlete'}!</Text>
+          <Text style={styles.greeting} numberOfLines={1}>
+            Hi, {user?.fullName || 'Athlete'}!
+          </Text>
           {equippedTitleItem?.titleText ? (
-            <Text style={styles.greetingTitle}>{equippedTitleItem.titleText}</Text>
+            <View style={styles.greetingTitlePill}>
+              <Text style={styles.greetingTitle}>{equippedTitleItem.titleText}</Text>
+            </View>
           ) : null}
         </View>
 
@@ -1098,8 +1150,8 @@ const HomeScreen = ({ navigation }) => {
               <TouchableOpacity
                 key={w.id ?? idx}
                 style={styles.drillRow}
-                activeOpacity={0.8}
-                onPress={() => openWorkoutFromDrill(w)}
+                activeOpacity={0.7}
+                onPress={() => editWorkoutFromDrill(w)}
               >
                 <View style={styles.drillDot}>
                   <Ionicons name="barbell" size={16} color={Colors.primary} />
@@ -1111,9 +1163,10 @@ const HomeScreen = ({ navigation }) => {
                   </Text>
                 </View>
                 <Text style={styles.drillLoad}>{w.load}</Text>
-                <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+                <Ionicons name="create-outline" size={18} color={Colors.textMuted} />
               </TouchableOpacity>
             ))}
+            <Text style={styles.drillHint}>Tap a workout to edit its stats</Text>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -1132,8 +1185,12 @@ const makeStyles = (C) => StyleSheet.create({
     paddingBottom: 36,
   },
 
-  // ── Greeting
+  // ── Greeting (#10: name and equipped title on ONE row)
   greetingWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
     marginBottom: 6,
   },
   greeting: {
@@ -1141,12 +1198,18 @@ const makeStyles = (C) => StyleSheet.create({
     fontWeight: '900',
     color: C.primary,
     fontStyle: 'italic',
+    flexShrink: 1,
+  },
+  greetingTitlePill: {
+    backgroundColor: C.primary + '22',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   greetingTitle: {
-    color: C.textSecondary,
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 2,
+    color: C.primary,
+    fontSize: 12,
+    fontWeight: '800',
   },
 
   // ── Foldable section (Add Workout / Add Injury)
@@ -1413,7 +1476,9 @@ const makeStyles = (C) => StyleSheet.create({
   },
   drillName: { color: C.textPrimary, fontSize: 15, fontWeight: '800' },
   drillMeta: { color: C.textMuted, fontSize: 12, marginTop: 1 },
-  drillLoad: { color: C.primary, fontSize: 15, fontWeight: '900' },
+  drillLoad: { color: C.primary, fontSize: 15, fontWeight: '900', marginRight: 6 },
+  drillHint: { color: C.textMuted, fontSize: 11, textAlign: 'center', marginTop: 12, fontStyle: 'italic' },
+  drillIconBtn: { paddingHorizontal: 4 },
 
   milestoneToast: {
     position: 'absolute',

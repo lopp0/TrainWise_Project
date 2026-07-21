@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import ZoomableImage from '../components/ZoomableImage';
 import VideoPlayerModal from '../components/VideoPlayerModal';
+import { renderTextWithLinks, LINK_BLUE, LINK_BLUE_ON_ACCENT } from '../utils/linkify';
 import {
   useAudioRecorder,
   RecordingPresets,
@@ -347,8 +348,21 @@ const ChatScreen = ({ route, navigation }) => {
       });
       if (result.canceled || !result.assets?.length) return;
 
+      // #135 — reject oversize clips up front with a friendly message instead of
+      // letting the server return a raw 400 "request body too large".
+      const asset = result.assets[0];
+      const MAX_VIDEO_MB = 100;
+      if (asset.fileSize && asset.fileSize > MAX_VIDEO_MB * 1024 * 1024) {
+        const mb = Math.round(asset.fileSize / (1024 * 1024));
+        Alert.alert(
+          'Video too large',
+          `This clip is ${mb} MB. Please send a video under ${MAX_VIDEO_MB} MB — trim it or record a shorter form-check.`
+        );
+        return;
+      }
+
       setSending(true);
-      const up = await uploadChatVideo(result.assets[0].uri);
+      const up = await uploadChatVideo(asset.uri);
       const res = await sendMessage({ senderId: selfId, receiverId: peerId, videoPath: up.path });
       const saved = res.data;
       if (mountedRef.current && saved) {
@@ -356,7 +370,14 @@ const ChatScreen = ({ route, navigation }) => {
         scrollToEnd(true);
       }
     } catch (e) {
-      if (mountedRef.current) Alert.alert('Video not sent', errText(e));
+      if (mountedRef.current) {
+        // Turn the server's raw "request body too large" 400 into a clean message.
+        const raw = errText(e);
+        const friendly = /too large|body size|413/i.test(raw)
+          ? 'That video is too large to send (max 100 MB). Please trim it or record a shorter clip.'
+          : raw;
+        Alert.alert('Video not sent', friendly);
+      }
     } finally {
       if (mountedRef.current) setSending(false);
     }
@@ -563,7 +584,9 @@ const ChatScreen = ({ route, navigation }) => {
                 imgUrl && { marginTop: 6, paddingHorizontal: 2 },
               ]}
             >
-              {text}
+              {/* #12 — URLs render as tappable blue links here too, not just in
+                  the event group chat. */}
+              {renderTextWithLinks(text, mine ? styles.linkMine : styles.link)}
             </Text>
           )}
           <View style={[styles.metaRow, imgUrl && { paddingHorizontal: 4, paddingBottom: 2 }]}>
@@ -596,7 +619,7 @@ const ChatScreen = ({ route, navigation }) => {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       {/* Header */}
       <View style={styles.header}>
@@ -871,6 +894,9 @@ const makeStyles = (C) =>
     recText: { color: C.textSecondary, fontSize: 14 },
     msgText: { color: C.textPrimary, fontSize: 15, lineHeight: 20 },
     msgTextMine: { color: '#FFFFFF' },
+    // #12 blue tappable links (two shades so they read on both bubble colours)
+    link: { color: LINK_BLUE, textDecorationLine: 'underline' },
+    linkMine: { color: LINK_BLUE_ON_ACCENT, textDecorationLine: 'underline' },
     metaRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end', marginTop: 3 },
     msgTime: { color: C.textMuted, fontSize: 10 },
     msgTimeMine: { color: 'rgba(255,255,255,0.75)' },

@@ -252,7 +252,7 @@ const SignUpScreen = ({ navigation }) => {
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
       <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={s.scroll}

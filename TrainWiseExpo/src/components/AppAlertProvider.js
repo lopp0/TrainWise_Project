@@ -93,12 +93,16 @@ export const AppAlertProvider = ({ children }) => {
                     onPress={() => handlePress(b)}
                     style={[
                       styles.btn,
-                      stacked && styles.btnStacked,
+                      // Side-by-side buttons share the row as equal halves so a
+                      // long label (e.g. "Keep the formula") can never overflow
+                      // off the card edge. Stacked (3+) buttons keep full width.
+                      stacked ? styles.btnStacked : styles.btnInRow,
                       isCancel && styles.btnCancel,
                       isDestructive && styles.btnDestructive,
                     ]}
                   >
                     <Text
+                      numberOfLines={1}
                       style={[
                         styles.btnText,
                         isCancel && styles.btnTextCancel,
@@ -169,6 +173,8 @@ const makeStyles = (C) =>
       minWidth: 88,
     },
     btnStacked: { marginTop: 8 },
+    // Equal-width halves for the 1-2 button horizontal row (prevents overflow).
+    btnInRow: { flex: 1 },
     btnCancel: {
       backgroundColor: 'transparent',
       borderWidth: 1,

@@ -69,6 +69,32 @@ namespace TrainWise
                         IssuerSigningKey = JwtService.SigningKey,
                         ClockSkew = TimeSpan.FromMinutes(2)
                     };
+
+                    // 2026-07-19 — SESSION REVOCATION. A signature-valid token is
+                    // not enough: if the user revoked this device from Settings →
+                    // Devices & sessions, the "sid" it carries is dead and the
+                    // request must fail. This is what makes "log out this device"
+                    // real rather than cosmetic (a JWT is otherwise valid until it
+                    // expires, up to 30 days). Tokens minted before this change
+                    // have no "sid" and are still accepted.
+                    options.Events = new JwtBearerEvents
+                    {
+                        OnTokenValidated = ctx =>
+                        {
+                            var sid = ctx.Principal?.FindFirst("sid")?.Value;
+                            if (int.TryParse(sid, out var sessionId) && sessionId > 0)
+                            {
+                                var sessions = new SessionBL();
+                                if (!sessions.IsSessionActive(sessionId))
+                                {
+                                    ctx.Fail("This session has been revoked. Please sign in again.");
+                                    return Task.CompletedTask;
+                                }
+                                sessions.TouchThrottled(sessionId);
+                            }
+                            return Task.CompletedTask;
+                        }
+                    };
                 });
 
             builder.Services.AddAuthorization(options =>

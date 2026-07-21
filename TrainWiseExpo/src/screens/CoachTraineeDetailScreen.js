@@ -238,7 +238,7 @@ const CoachTraineeDetailScreen = ({ route, navigation }) => {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.container}>
         <ScreenHeader
@@ -693,7 +693,10 @@ const makeStyles = (C) =>
     woTime: { color: C.textSecondary, fontSize: 12 },
     woStats: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 8 },
     woStat: { color: C.textSecondary, fontSize: 13, fontWeight: '500' },
-    woSource: { color: C.textMuted, fontSize: 10, marginTop: 8 },
+    woSource: { color: C.textMuted, fontSize: 10 },
+    woFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
+    woReview: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    woReviewText: { color: C.primary, fontSize: 10, fontWeight: '700' },
     modalClose: {
       flexDirection: 'row',
       alignItems: 'center',

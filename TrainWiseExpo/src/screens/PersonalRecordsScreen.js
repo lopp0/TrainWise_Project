@@ -6,6 +6,8 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing } from '../theme/colors';
@@ -16,10 +18,25 @@ import { getRecords, getActivityLogsByUser, getAllActivityTypes } from '../servi
 import { parseServerDate } from '../utils/serverDate';
 import { BADGE_DEFS, findBadgeDef, METRIC_DEFS, METRIC_ORDER } from '../utils/badges';
 import { computePersonalBests, formatPace } from '../utils/personalBests';
+import { shareProgressReport } from '../utils/progressReport';
+import { shareAchievement } from '../utils/shareAchievement';
 
 const PersonalRecordsScreen = ({ navigation }) => {
-  const { userId } = useAuth();
+  const { userId, user } = useAuth();
   const styles = useThemedStyles(makeStyles);
+  const [sharingReport, setSharingReport] = useState(false); // #137
+
+  const onShareReport = async () => {
+    if (sharingReport) return;
+    setSharingReport(true);
+    try {
+      await shareProgressReport(userId, user?.fullName || 'Athlete');
+    } catch (e) {
+      Alert.alert('Could not share', e?.message || 'Please try again.');
+    } finally {
+      setSharingReport(false);
+    }
+  };
   const [records, setRecords] = useState([]);
   const [badges, setBadges] = useState([]);
   const [activityBests, setActivityBests] = useState([]); // #165
@@ -78,6 +95,23 @@ const PersonalRecordsScreen = ({ navigation }) => {
         <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
       ) : (
         <ScrollView contentContainerStyle={styles.scroll}>
+          {/* #137 — share a progress report (HTML → print to PDF). */}
+          <TouchableOpacity
+            style={styles.reportBtn}
+            onPress={onShareReport}
+            disabled={sharingReport}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Share progress report"
+          >
+            {sharingReport ? (
+              <ActivityIndicator color={Colors.primary} size="small" />
+            ) : (
+              <Ionicons name="share-outline" size={18} color={Colors.primary} />
+            )}
+            <Text style={styles.reportBtnText}>Share progress report</Text>
+          </TouchableOpacity>
+
           {/* Records */}
           <Text style={styles.sectionTitle}>RECORDS</Text>
           <View style={styles.recordsGrid}>
@@ -149,8 +183,21 @@ const PersonalRecordsScreen = ({ navigation }) => {
             {BADGE_DEFS.map((b) => {
               const earned = earnedMap[b.key];
               const earnedDate = earned ? parseServerDate(earned) : null;
+              // #172 — tap an EARNED badge to share it via the OS share sheet.
+              const Wrapper = earned ? TouchableOpacity : View;
               return (
-                <View key={b.key} style={[styles.badgeCard, !earned && styles.badgeCardLocked]}>
+                <Wrapper
+                  key={b.key}
+                  style={[styles.badgeCard, !earned && styles.badgeCardLocked]}
+                  {...(earned
+                    ? {
+                        activeOpacity: 0.85,
+                        onPress: () => shareAchievement({ title: b.label, detail: b.hint }),
+                        accessibilityRole: 'button',
+                        accessibilityLabel: `Share achievement ${b.label}`,
+                      }
+                    : {})}
+                >
                   <View
                     style={[styles.badgeIconWrap, earned ? styles.badgeIconEarned : styles.badgeIconLocked]}
                   >
@@ -166,7 +213,8 @@ const PersonalRecordsScreen = ({ navigation }) => {
                   <Text style={styles.badgeHint} numberOfLines={2}>
                     {earned && earnedDate ? earnedDate.toLocaleDateString() : b.hint}
                   </Text>
-                </View>
+                  {earned && <Ionicons name="share-social-outline" size={12} color={Colors.primary} style={styles.badgeShareIcon} />}
+                </Wrapper>
               );
             })}
           </View>
@@ -186,6 +234,13 @@ const makeStyles = (C) => StyleSheet.create({
     letterSpacing: 0.6,
     marginBottom: Spacing.md,
   },
+
+  reportBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: C.cardBackground, borderRadius: 12, paddingVertical: 12,
+    borderWidth: 1, borderColor: C.border, marginBottom: Spacing.lg,
+  },
+  reportBtnText: { color: C.textPrimary, fontSize: 14, fontWeight: '700' },
 
   recordsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   recordCard: {
@@ -244,6 +299,7 @@ const makeStyles = (C) => StyleSheet.create({
   badgeLabel: { color: C.textPrimary, fontSize: 11, fontWeight: '800', textAlign: 'center' },
   badgeLabelLocked: { color: C.textSecondary },
   badgeHint: { color: C.textMuted, fontSize: 9, textAlign: 'center', marginTop: 2 },
+  badgeShareIcon: { position: 'absolute', top: 6, right: 6 },
 });
 
 export default PersonalRecordsScreen;

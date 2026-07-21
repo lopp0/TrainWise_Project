@@ -23,6 +23,13 @@ namespace TrainWise.BL
             };
         }
 
+        // #165 — per-activity personal bests dashboard.
+        public List<ActivityBest> GetActivityBests(int userId)
+        {
+            if (userId <= 0) throw new ArgumentException("UserID must be positive");
+            return _dal.GetActivityBests(userId);
+        }
+
         public RecordsResult Check(int userId)
         {
             if (userId <= 0) throw new ArgumentException("UserID must be positive");

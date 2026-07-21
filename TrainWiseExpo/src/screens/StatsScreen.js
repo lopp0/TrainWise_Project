@@ -137,6 +137,10 @@ const StatsScreen = ({ navigation, route }) => {
   // View state
   const [viewMode, setViewMode] = useState('overview'); // 'overview' | 'detail'
   const [selectedDayIdx, setSelectedDayIdx] = useState(null);
+  // #4 — the SPECIFIC workout being edited (from the Home drill-down). Lets a
+  // day with several workouts edit the exact one, not just the day's last log.
+  const [editingLog, setEditingLog] = useState(null);
+  const [editLogId, setEditLogId] = useState(null);
 
   // Edit form
   const [editDuration, setEditDuration] = useState('');
@@ -179,32 +183,42 @@ const StatsScreen = ({ navigation, route }) => {
     if (route?.params?.selectedDayIndex !== undefined) {
       setPendingDayIdx(route.params.selectedDayIndex);
     }
+    if (route?.params?.editLogId !== undefined) {
+      setEditLogId(route.params.editLogId);
+    }
   }, [route?.params]);
 
   const weeklyData = buildWeeklyData(backendLogs, hcWorkouts);
   const maxLoad = Math.max(...weeklyData.map((d) => d.load), 20);
 
-  // Once loading is done + there's a pending day idx, open detail view
+  // Once loading is done + there's a pending day idx, open detail view. When a
+  // specific editLogId was passed (Home drill-down), edit THAT workout.
   useEffect(() => {
     if (!loading && pendingDayIdx !== null) {
-      openDetail(pendingDayIdx, weeklyData);
+      const specific =
+        editLogId != null
+          ? (backendLogs || []).find((l) => (l.activityID ?? l.ActivityID) === editLogId)
+          : null;
+      openDetail(pendingDayIdx, weeklyData, specific);
       setPendingDayIdx(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, pendingDayIdx]);
 
-  const openDetail = (dayIdx, data) => {
+  const openDetail = (dayIdx, data, specificLog) => {
     const dayData = (data || weeklyData)[dayIdx];
     if (!dayData) return;
 
     setSelectedDayIdx(dayIdx);
 
-    if (dayData.source === 'backend' && dayData.log) {
-      const log = dayData.log;
-      setEditDuration(String(log.duration ?? 0));
-      setEditExertion(String(log.exertionLevel ?? 0));
-      setEditDistance(String(log.distanceKM ?? 0));
-      setEditPulse(String(log.avgHeartRate ?? 0));
+    // Prefer the specific tapped workout; else fall back to the day's log.
+    const log = specificLog || (dayData.source === 'backend' ? dayData.log : null);
+    setEditingLog(log || null);
+    if (log) {
+      setEditDuration(String(log.duration ?? log.Duration ?? 0));
+      setEditExertion(String(log.exertionLevel ?? log.ExertionLevel ?? 0));
+      setEditDistance(String(log.distanceKM ?? log.DistanceKM ?? 0));
+      setEditPulse(String(log.avgHeartRate ?? log.AvgHeartRate ?? 0));
     } else {
       // Empty day OR Health Connect estimate — zeros until the user logs something.
       setEditDuration('0');
@@ -221,7 +235,9 @@ const StatsScreen = ({ navigation, route }) => {
 
     setSaving(true);
     try {
-      const baseLog = dayData.log || dayData.hcWorkout || {};
+      // #4 — edit the SPECIFIC workout when one was targeted (drill-down); else
+      // fall back to the day's log / a new session.
+      const baseLog = editingLog || dayData.log || dayData.hcWorkout || {};
       const durationMin = parseInt(editDuration) || 0;
 
       const now = new Date();
@@ -286,12 +302,14 @@ const StatsScreen = ({ navigation, route }) => {
         isConfirmed: true,
       };
 
-      if (dayData.source === 'backend' && dayData.log) {
+      const editId = editingLog
+        ? (editingLog.activityID ?? editingLog.ActivityID)
+        : (dayData.source === 'backend' && dayData.log
+            ? (dayData.log.activityID ?? dayData.log.ActivityID)
+            : null);
+      if (editId != null) {
         // Update the existing confirmed log in place (preserves its source/time).
-        await putActivityLog({
-          ...payload,
-          activityID: dayData.log.activityID ?? dayData.log.ActivityID,
-        });
+        await putActivityLog({ ...payload, activityID: editId });
       } else {
         // Create a new manually-entered log for this day.
         await postActivityLog(payload);

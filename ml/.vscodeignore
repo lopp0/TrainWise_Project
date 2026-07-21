@@ -1,0 +1,23 @@
+# Files/folders the "Deploy to Web App" command should NOT zip up and send to
+# Azure. This is what actually controls the VS Code Azure App Service
+# extension's packaging (the appService.zipIgnorePattern setting was not
+# taking effect for this workspace — .vscodeignore is the reliable mechanism).
+#
+# CRITICAL: venv/ must be excluded. It's a Windows-compiled virtual environment
+# (win_amd64 .pyd binaries, Python 3.13) — completely incompatible with Azure's
+# Linux + Python 3.12 container, and sending it (13,000+ files) both massively
+# slows the deploy and can confuse Oryx's own build/pip-install step, which is
+# what actually needs to run server-side to produce a working environment.
+venv/
+.venv/
+env/
+ENV/
+__pycache__/
+*.pyc
+.pytest_cache/
+notebook/
+Python Course ML/
+AZURE_DEPLOY.md
+README.md
+.git/
+.gitignore

@@ -55,8 +55,9 @@ const InjuryReportScreen = ({ navigation, route }) => {
   const [selectedLog, setSelectedLog] = useState(null);
   const [logPickerOpen, setLogPickerOpen] = useState(false);
 
-  // Injury scanner + AI advice (#4)
+  // Injury scanner + AI advice (#4, #155 vision)
   const [photo, setPhoto] = useState(null);
+  const [photoBase64, setPhotoBase64] = useState(null); // #155 — for vision analysis
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAdvice, setAiAdvice] = useState(null);
 
@@ -187,7 +188,9 @@ const InjuryReportScreen = ({ navigation, route }) => {
 
   const launchScan = async (source) => {
     try {
-      const opts = { mediaTypes: ['images'], allowsEditing: true, quality: 0.6 };
+      // #155 — request base64 so the AI advice can do an actual vision analysis
+      // of the photo (gpt-4o-mini is multimodal). quality kept low to bound size.
+      const opts = { mediaTypes: ['images'], allowsEditing: true, quality: 0.5, base64: true };
       let result;
       if (source === 'camera') {
         const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -206,6 +209,7 @@ const InjuryReportScreen = ({ navigation, route }) => {
       }
       if (!result.canceled && result.assets?.length) {
         setPhoto(result.assets[0].uri);
+        setPhotoBase64(result.assets[0].base64 || null);
       }
     } catch (e) {
       Alert.alert('Camera error', e.message || 'Could not open the camera.');
@@ -222,24 +226,36 @@ const InjuryReportScreen = ({ navigation, route }) => {
     setAiAdvice(null);
     try {
       const injuryName = selectedInjury.injuryName || 'an injury';
+      // #155 — when a photo was scanned, send it as an image so the model can
+      // actually look at the injury (multimodal) instead of just being told
+      // "a photo exists". Falls back to text-only when no base64 is available.
+      const userText =
+        `Injury: ${injuryName}. Severity: ${severity}/10. ` +
+        `Symptoms / notes: ${notes?.trim() || 'none provided'}.` +
+        (photoBase64
+          ? ' A photo of the injury is attached — describe what you can see (swelling, bruising, redness, deformity) and factor it into the advice.'
+          : photo
+          ? ' The user also scanned a photo of the injury.'
+          : '') +
+        ' How should I treat it and when can I train again?';
+      const userContent = photoBase64
+        ? [
+            { type: 'text', text: userText },
+            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${photoBase64}` } },
+          ]
+        : userText;
       const messages = [
         {
           role: 'system',
           content:
             'You are a sports-medicine assistant inside the TrainWise training app. ' +
             'Give brief, practical first-aid and recovery guidance for a recreational athlete. ' +
+            'When an image is provided, analyse the visible signs but never claim a definitive diagnosis. ' +
             'Use short bullet points, suggest when it is safe to train again, and ALWAYS end with a ' +
             'one-line reminder to see a medical professional for severe, worsening, or persistent injuries. ' +
             'Keep it under 180 words.',
         },
-        {
-          role: 'user',
-          content:
-            `Injury: ${injuryName}. Severity: ${severity}/10. ` +
-            `Symptoms / notes: ${notes?.trim() || 'none provided'}.` +
-            (photo ? ' The user also scanned a photo of the injury.' : '') +
-            ' How should I treat it and when can I train again?',
-        },
+        { role: 'user', content: userContent },
       ];
       const reply = await getGPTResponse(messages);
       setAiAdvice(reply || 'No response. Please try again.');
@@ -319,7 +335,7 @@ const InjuryReportScreen = ({ navigation, route }) => {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
       >
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">

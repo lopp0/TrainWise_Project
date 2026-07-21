@@ -8,11 +8,18 @@ const ScreenHeader = ({title, subtitle, onBack}) => {
   return (
     <View style={styles.container}>
       {onBack && (
-        <TouchableOpacity style={styles.backButton} onPress={onBack}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={onBack}
+          // #157 — accessibility: a screen reader announces "Back, button" and
+          // gets a comfortable hit target instead of a bare "<" glyph.
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Text style={styles.backText}>{'<'}</Text>
         </TouchableOpacity>
       )}
-      <Text style={styles.title}>{title}</Text>
+      <Text style={styles.title} accessibilityRole="header">{title}</Text>
       {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
     </View>
   );

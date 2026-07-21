@@ -1,20 +1,45 @@
 """
-Thin pyodbc helper around the local SQL Express database.
+Database helper for the TrainWise ML service.
 
-Exposes:
+DUAL MODE (2026-07-20):
+  * LOCAL  (default): pyodbc + Windows Integrated Security against SQL Express.
+                      Unchanged from before — no password in source.
+  * AZURE  (when AZURE_SQL_USER + AZURE_SQL_PASSWORD env vars are set):
+                      pymssql + SQL authentication against Azure SQL.
+
+Why pymssql for Azure and not pyodbc: Azure App Service (Linux) does NOT ship the
+Microsoft ODBC driver, and installing it in the sandbox is fragile. pymssql is a
+pure `pip install` (its wheels bundle FreeTDS), so it "just works" on the Linux
+container. Locally we keep pyodbc because Windows Integrated Security is the
+zero-password convenience the dev setup relies on.
+
+Exposes (unchanged):
     query_df(sql, params)   -> pandas.DataFrame
     execute(sql, params)    -> int (rows affected)
-
-Both open a short-lived connection. Volume here is tiny (one trainee at a
-time), so connection pooling is not worth the complexity.
+    ping()                  -> bool
 """
-import struct
-import pyodbc
+import os
 import pandas as pd
 
 import config
 
+# ── Mode selection ──────────────────────────────────────────────────────────
+# Azure mode is entered ONLY when both SQL-login credentials are present, so a
+# machine without them behaves exactly as it always did (local pyodbc path).
+_AZURE_USER = os.environ.get("AZURE_SQL_USER")
+_AZURE_PASSWORD = os.environ.get("AZURE_SQL_PASSWORD")
+USE_AZURE = bool(_AZURE_USER and _AZURE_PASSWORD)
 
+# Import the driver lazily so LOCAL runs never need pymssql installed, and the
+# AZURE container never needs the ODBC driver. (pymssql/gunicorn are marked
+# linux-only in requirements.txt, so they aren't even installed on Windows.)
+if USE_AZURE:
+    import pymssql  # noqa: F401  (Linux/Azure only)
+else:
+    import pyodbc
+
+
+# ── Local (pyodbc / Windows auth) — UNCHANGED ───────────────────────────────
 def _find_driver():
     """Pick the newest installed SQL Server ODBC driver (18, then 17, then the
     legacy 'SQL Server'). Driver 18 defaults to Encrypt=yes, so we always pass
@@ -34,7 +59,7 @@ def _find_driver():
     )
 
 
-def _connection_string():
+def _local_connection_string():
     return (
         f"DRIVER={{{_find_driver()}}};"
         f"SERVER={config.SQL_SERVER};"
@@ -45,31 +70,74 @@ def _connection_string():
     )
 
 
+# ── Azure (pymssql / SQL auth) ──────────────────────────────────────────────
+def _azure_user():
+    """Azure SQL sometimes wants the 'user@servershortname' form. If the caller
+    already used '@' we respect it; otherwise we pass the plain user (modern
+    pymssql/TDS 7.x accepts it). If a login ever fails on Azure, set
+    AZURE_SQL_USER to 'TrainWiseAdmin@trainwiseadmin' explicitly."""
+    return _AZURE_USER
+
+
 def get_connection():
-    return pyodbc.connect(_connection_string(), timeout=5)
+    if USE_AZURE:
+        # Azure SQL over pymssql (SQL authentication). login_timeout is generous
+        # because a serverless / auto-paused DB can take ~30s to wake on the
+        # first connection after idle.
+        return pymssql.connect(
+            server=config.SQL_SERVER,       # e.g. trainwiseadmin.database.windows.net
+            user=_azure_user(),
+            password=_AZURE_PASSWORD,
+            database=config.SQL_DATABASE,   # e.g. TrainWiseDB
+            port=1433,
+            login_timeout=30,
+            timeout=60,
+        )
+    return pyodbc.connect(_local_connection_string(), timeout=5)
 
 
+def _prep(sql):
+    """pyodbc uses '?' placeholders; pymssql uses '%s'. Our SQL is entirely
+    internal and contains no literal '?' inside string data, so a straight swap
+    is safe. No-op on the local path."""
+    return sql.replace("?", "%s") if USE_AZURE else sql
+
+
+# ── Public API (driver-agnostic) ────────────────────────────────────────────
 def query_df(sql, params=None):
     """Run a SELECT and return a DataFrame (empty DataFrame on no rows)."""
-    with get_connection() as conn:
-        return pd.read_sql(sql, conn, params=params or [])
+    conn = get_connection()
+    try:
+        return pd.read_sql(_prep(sql), conn, params=params or [])
+    finally:
+        conn.close()
 
 
 def execute(sql, params=None):
     """Run an INSERT/UPDATE/DELETE; return rows affected."""
-    with get_connection() as conn:
+    conn = get_connection()
+    try:
         cur = conn.cursor()
-        cur.execute(sql, params or [])
+        cur.execute(_prep(sql), params or [])
         affected = cur.rowcount
         conn.commit()
         return affected
+    finally:
+        conn.close()
 
 
 def ping():
     """True if the database is reachable (used by /health)."""
     try:
-        with get_connection() as conn:
+        conn = get_connection()
+        try:
             conn.cursor().execute("SELECT 1")
+        finally:
+            conn.close()
         return True
-    except Exception:
+    except Exception as e:
+        # TEMP DIAGNOSTIC (2026-07-20): print the real DB connection error to
+        # the Azure Log stream instead of silently returning False. Remove this
+        # print once the Azure DB connection is confirmed working.
+        print(f"[db.ping] connection failed: {type(e).__name__}: {e}", flush=True)
         return False

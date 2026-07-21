@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../api/AuthContext';
@@ -13,9 +13,15 @@ const MODE_KEY = '@trainwise_home_mode';
  * The `HomeMain` route.
  *  - trainee-only  → HomeScreen
  *  - coach-only    → CoachDashboardScreen
- *  - both          → a swipeable pager (My Trainees ⇄ My Training) with a
- *                    synced segmented toggle on top (FR-31). The chosen page is
- *                    persisted so the user lands where they left off.
+ *  - both          → a TAP-switched segmented toggle (My Trainees ⇄ My Training).
+ *                    The chosen page is persisted so the user lands where they
+ *                    left off.
+ *
+ * #9 (2026-07-19): this used to be a horizontal `pagingEnabled` swipe pager, but
+ * that OUTER horizontal swipe stole every INNER horizontal glide on the pages
+ * inside it (the workout-type selector, the injury-type selector, chip rows).
+ * Switching to a tap-only toggle + conditional render removes the gesture
+ * collision entirely — same fix already applied to AddWorkout's tabs (item 13).
  */
 const HomeRouter = (props) => {
   const { user } = useAuth();
@@ -25,9 +31,6 @@ const HomeRouter = (props) => {
   const isCoachOnly = isCoach && !isTrainee;
 
   const [mode, setMode] = useState(null); // 'coach' | 'personal'
-  const [size, setSize] = useState({ w: 0, h: 0 });
-  const scrollRef = useRef(null);
-  const didInit = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -52,25 +55,9 @@ const HomeRouter = (props) => {
     return <SafeAreaView style={styles.safe} edges={['top']} />;
   }
 
-  // Page 0 = coach (My Trainees), Page 1 = personal (My Training).
-  const pageOf = (m) => (m === 'personal' ? 1 : 0);
-
   const switchMode = (next) => {
     setMode(next);
     AsyncStorage.setItem(MODE_KEY, next);
-    if (size.w > 0) {
-      scrollRef.current?.scrollTo({ x: pageOf(next) * size.w, animated: true });
-    }
-  };
-
-  const onMomentumEnd = (e) => {
-    if (size.w <= 0) return;
-    const page = Math.round(e.nativeEvent.contentOffset.x / size.w);
-    const next = page === 1 ? 'personal' : 'coach';
-    if (next !== mode) {
-      setMode(next);
-      AsyncStorage.setItem(MODE_KEY, next);
-    }
   };
 
   return (
@@ -96,39 +83,12 @@ const HomeRouter = (props) => {
         </TouchableOpacity>
       </View>
 
-      <View
-        style={{ flex: 1 }}
-        onLayout={(e) => {
-          const { width: w, height: h } = e.nativeEvent.layout;
-          if (w !== size.w || h !== size.h) setSize({ w, h });
-        }}
-      >
-        {size.h > 0 && (
-          <ScrollView
-            ref={scrollRef}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={onMomentumEnd}
-            onLayout={() => {
-              // Land on the saved page once, after layout.
-              if (!didInit.current && size.w > 0) {
-                didInit.current = true;
-                scrollRef.current?.scrollTo({
-                  x: pageOf(mode) * size.w,
-                  animated: false,
-                });
-              }
-            }}
-            scrollEventThrottle={16}
-          >
-            <View style={{ width: size.w, height: size.h }}>
-              <CoachDashboardScreen {...props} />
-            </View>
-            <View style={{ width: size.w, height: size.h }}>
-              <HomeScreen {...props} />
-            </View>
-          </ScrollView>
+      {/* Conditional render (not a swipe pager) so inner horizontal glides work. */}
+      <View style={{ flex: 1 }}>
+        {mode === 'personal' ? (
+          <HomeScreen {...props} />
+        ) : (
+          <CoachDashboardScreen {...props} />
         )}
       </View>
     </SafeAreaView>

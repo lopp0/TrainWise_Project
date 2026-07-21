@@ -43,9 +43,15 @@ namespace TrainWise.BL
             var gyms = new List<Gym>();
             try
             {
+                // Format every number with InvariantCulture: on a machine whose
+                // locale uses a COMMA decimal separator (fr-FR / he-IL), "32.3215"
+                // would render "32,3215" and Google returns INVALID_REQUEST because
+                // location=32,3215,34,8532 has the wrong number of comma fields.
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
                 string url =
                     "https://maps.googleapis.com/maps/api/place/nearbysearch/json" +
-                    $"?location={lat},{lng}&radius={radiusM}&type=gym&key={Key}";
+                    $"?location={lat.ToString(inv)},{lng.ToString(inv)}" +
+                    $"&radius={((int)radiusM).ToString(inv)}&type=gym&key={Key}";
                 string json = Http.GetStringAsync(url).GetAwaiter().GetResult();
                 using var doc = JsonDocument.Parse(json);
                 LastStatus = doc.RootElement.TryGetProperty("status", out var st) ? (st.GetString() ?? "?") : "?";

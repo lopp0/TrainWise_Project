@@ -35,11 +35,14 @@ namespace TrainWise.BL
             if (string.IsNullOrWhiteSpace(u.Email))
                 throw new ArgumentException("Email is required");
 
+            if (!InputValidator.IsValidEmail(u.Email))
+                throw new ArgumentException("Please enter a valid email address");
+
             if (string.IsNullOrWhiteSpace(u.Password))
                 throw new ArgumentException("Password is required");
 
-            if (u.Password.Length < 8)
-                throw new ArgumentException("Password must have at least 8 characters");
+            if (!InputValidator.IsStrongPassword(u.Password))
+                throw new ArgumentException(InputValidator.PasswordRuleMessage);
 
             if (u.ExperienceLevel < 1 || u.ExperienceLevel > 3)
                 throw new ArgumentException("ExperienceLevel must be 1 (Beginner), 2 (Regular), or 3 (Advanced)");
@@ -179,8 +182,8 @@ namespace TrainWise.BL
         {
             if (userId <= 0)
                 throw new ArgumentException("UserID must be positive");
-            if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 4)
-                throw new ArgumentException("New password must have at least 4 characters");
+            if (!InputValidator.IsStrongPassword(newPassword))
+                throw new ArgumentException(InputValidator.PasswordRuleMessage);
             return _dal.ChangePassword(userId, currentPassword ?? "", newPassword);
         }
 

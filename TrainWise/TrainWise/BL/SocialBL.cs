@@ -8,6 +8,7 @@ namespace TrainWise.BL
     public class SocialBL
     {
         private readonly SocialDAL _dal = new SocialDAL();
+        private readonly UserDAL _userDal = new UserDAL();  // #141 — for closed-app FCM push
 
         // ── ownership lookups (for authorizing respond-by-id endpoints) ──────
         public (int requesterId, int addresseeId) GetFriendshipParties(int friendshipId) =>
@@ -59,13 +60,24 @@ namespace TrainWise.BL
         {
             if (requesterId <= 0 || addresseeId <= 0) throw new ArgumentException("Both user ids must be positive");
             if (requesterId == addresseeId) throw new ArgumentException("You cannot add yourself");
-            return _dal.SendFriendRequest(requesterId, addresseeId);
+            var f = _dal.SendFriendRequest(requesterId, addresseeId);
+            // #141 — push to the addressee so they're notified even with the app closed.
+            if (f != null && string.Equals(f.Status, "pending", StringComparison.OrdinalIgnoreCase))
+                PushSender.Send(_userDal.GetPushToken(addresseeId), "New friend request",
+                    "Someone wants to connect with you on TrainWise.");
+            return f;
         }
 
         public Friendship RespondFriendRequest(int friendshipId, bool accept)
         {
             if (friendshipId <= 0) throw new ArgumentException("FriendshipID must be positive");
-            return _dal.RespondFriendRequest(friendshipId, accept);
+            var (requesterId, _) = _dal.GetFriendshipParties(friendshipId);
+            var f = _dal.RespondFriendRequest(friendshipId, accept);
+            // #141 — notify the original requester when their request is accepted.
+            if (accept && requesterId > 0)
+                PushSender.Send(_userDal.GetPushToken(requesterId), "Friend request accepted",
+                    "You have a new friend on TrainWise 🎉");
+            return f;
         }
 
         public List<FriendContact> GetFriends(int userId)

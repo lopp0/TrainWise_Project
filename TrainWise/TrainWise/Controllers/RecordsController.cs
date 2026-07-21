@@ -18,6 +18,15 @@ namespace TrainWise.Controllers
             catch (Exception ex) { return StatusCode(500, ex.Message); }
         }
 
+        // #165 — per-activity personal bests (fastest pace, longest distance, etc).
+        [HttpGet("{userId:int}/activity-bests")]
+        public IActionResult ActivityBests(int userId)
+        {
+            try { return Ok(_bl.GetActivityBests(userId)); }
+            catch (ArgumentException ex) { return BadRequest(ex.Message); }
+            catch (Exception ex) { return StatusCode(500, ex.Message); }
+        }
+
         // Re-evaluate records/badges (call after a workout lands). Returns the
         // full set plus the badge keys newly earned in this call.
         [HttpPost("check/{userId:int}")]

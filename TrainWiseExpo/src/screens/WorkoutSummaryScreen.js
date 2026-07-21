@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Alert, Share,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import {Colors, Fonts, Spacing} from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
@@ -13,17 +12,12 @@ import PrimaryButton from '../components/PrimaryButton';
 import HeartRateZones from '../components/HeartRateZones';
 import { ageFromBirthYear, maxHrForAge } from '../utils/hrZones';
 import { useAuth } from '../api/AuthContext';
-import {
-  getWorkoutNotes, setWorkoutNotes, uploadChatImage,
-  getKudos, toggleKudos, resolveProfileImageUrl, getActivityLogsByUser,
-  shareWorkout,
-} from '../services/api';
+import { getActivityLogsByUser, shareWorkout } from '../services/api';
 
 const WorkoutSummaryScreen = ({navigation, route}) => {
   const styles = useThemedStyles(makeStyles);
   const { userId, user } = useAuth();
-  // #124/#171 need the workout's log id; callers pass it as route.params.logId
-  // (falls back to summary.activityId). When absent, those cards stay hidden.
+  // Still needed for the share deep-link (#181) — you can only share your own.
   const logId = route?.params?.logId ?? route?.params?.summary?.activityId ?? null;
   const ownerId = route?.params?.ownerId ?? null;
   const isOwnWorkout = ownerId == null || ownerId === userId;
@@ -49,10 +43,6 @@ const WorkoutSummaryScreen = ({navigation, route}) => {
     }
   };
 
-  const [notes, setNotes] = useState('');
-  const [photoPath, setPhotoPath] = useState(null);
-  const [savingNotes, setSavingNotes] = useState(false);
-  const [kudos, setKudos] = useState({ count: 0, kudoed: false });
   const [avgHr, setAvgHr] = useState(null); // #122
 
   // #122 — average heart rate for the zone indicator. Prefer HR already on the
@@ -78,53 +68,6 @@ const WorkoutSummaryScreen = ({navigation, route}) => {
   }, [logId, userId, route?.params?.summary]);
 
   const maxHr = maxHrForAge(ageFromBirthYear(user?.birthYear ?? user?.BirthYear));
-
-  const loadExtras = useCallback(async () => {
-    if (!logId) return;
-    try {
-      const res = await getWorkoutNotes(logId);
-      setNotes(res.data?.notes ?? '');
-      setPhotoPath(res.data?.photoPath ?? null);
-    } catch {}
-    try {
-      const k = await getKudos(logId, userId);
-      setKudos({ count: k.data?.count ?? 0, kudoed: !!k.data?.kudoed });
-    } catch {}
-  }, [logId, userId]);
-
-  useEffect(() => { loadExtras(); }, [loadExtras]);
-
-  const pickPhoto = async () => {
-    try {
-      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
-      if (res.canceled || !res.assets?.length) return;
-      const up = await uploadChatImage(res.assets[0].uri);
-      setPhotoPath(up.path);
-    } catch (e) {
-      Alert.alert('Upload failed', e.message || 'Could not upload the photo.');
-    }
-  };
-
-  const saveNotes = async () => {
-    if (!logId) return;
-    setSavingNotes(true);
-    try {
-      await setWorkoutNotes(logId, { notes, photoPath });
-      Alert.alert('Saved', 'Your note has been saved.');
-    } catch (e) {
-      Alert.alert('Error', e.response?.data || 'Could not save the note.');
-    } finally {
-      setSavingNotes(false);
-    }
-  };
-
-  const onToggleKudos = async () => {
-    if (!logId) return;
-    try {
-      const res = await toggleKudos(logId, userId);
-      setKudos({ count: res.data?.count ?? kudos.count, kudoed: !!res.data?.kudoed });
-    } catch {}
-  };
 
   const summary = route?.params?.summary || {
     activityName: 'Running',
@@ -249,73 +192,9 @@ const WorkoutSummaryScreen = ({navigation, route}) => {
           </TouchableOpacity>
         )}
 
-        {/* #171 — kudos / cheers */}
-        {logId && (
-          <Card>
-            <Text style={styles.cardTitle}>Kudos</Text>
-            <View style={styles.kudosRow}>
-              <Text style={styles.kudosCount}>
-                {kudos.count} {kudos.count === 1 ? 'cheer' : 'cheers'}
-              </Text>
-              {!isOwnWorkout && (
-                <TouchableOpacity
-                  style={[styles.kudosBtn, kudos.kudoed && styles.kudosBtnActive]}
-                  onPress={onToggleKudos}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons
-                    name={kudos.kudoed ? 'hand-right' : 'hand-right-outline'}
-                    size={18}
-                    color={kudos.kudoed ? '#fff' : Colors.primary}
-                  />
-                  <Text style={[styles.kudosBtnText, kudos.kudoed && { color: '#fff' }]}>
-                    {kudos.kudoed ? 'Cheered' : 'Give kudos'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </Card>
-        )}
+        {/* Kudos (#171) and per-workout Notes & Photo (#124) were REMOVED
+            2026-07-19 by request. */}
 
-        {/* #124 — per-workout note + photo */}
-        {logId && isOwnWorkout && (
-          <Card>
-            <Text style={styles.cardTitle}>Notes & Photo</Text>
-            <TextInput
-              style={styles.notesInput}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="How did it feel? Add a note…"
-              placeholderTextColor={Colors.textMuted}
-              multiline
-            />
-            {photoPath ? (
-              <Image
-                source={{ uri: resolveProfileImageUrl(photoPath) }}
-                style={styles.notesPhoto}
-                resizeMode="cover"
-              />
-            ) : null}
-            <View style={styles.notesActions}>
-              <TouchableOpacity style={styles.photoBtn} onPress={pickPhoto} activeOpacity={0.85}>
-                <Ionicons name="image-outline" size={18} color={Colors.primary} />
-                <Text style={styles.photoBtnText}>{photoPath ? 'Change photo' : 'Add photo'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveNotesBtn, savingNotes && { opacity: 0.6 }]}
-                onPress={saveNotes}
-                disabled={savingNotes}
-                activeOpacity={0.85}
-              >
-                {savingNotes ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.saveNotesText}>Save</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </Card>
-        )}
       </ScrollView>
 
       <View style={styles.bottomActions}>
@@ -323,11 +202,7 @@ const WorkoutSummaryScreen = ({navigation, route}) => {
           title="Back to Dashboard"
           onPress={() => navigation.navigate('Warnings')}
         />
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => navigation.navigate('AddWorkout')}>
-          <Text style={styles.secondaryButtonText}>Log Another Workout</Text>
-        </TouchableOpacity>
+        {/* "Log Another Workout" removed 2026-07-19 by request. */}
       </View>
     </View>
   );
@@ -431,40 +306,7 @@ const makeStyles = (Colors) => StyleSheet.create({
     borderColor: Colors.primary,
   },
   shareBtnText: { color: Colors.primary, fontSize: Fonts.bodySize, fontWeight: '800' },
-  // #171 kudos
-  kudosRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  kudosCount: { color: Colors.textPrimary, fontSize: Fonts.bodySize, fontWeight: Fonts.bold },
-  kudosBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 8,
-  },
-  kudosBtnActive: { backgroundColor: Colors.primary },
-  kudosBtnText: { color: Colors.primary, fontWeight: Fonts.bold, fontSize: Fonts.captionSize + 1 },
-  // #124 notes + photo
-  notesInput: {
-    backgroundColor: Colors.inputBackground,
-    borderRadius: 10,
-    padding: Spacing.md,
-    color: Colors.textPrimary,
-    borderWidth: 1,
-    borderColor: Colors.inputBorder,
-    fontSize: Fonts.bodySize,
-    minHeight: 70,
-    textAlignVertical: 'top',
-  },
-  notesPhoto: { width: '100%', height: 180, borderRadius: 10, marginTop: Spacing.sm },
-  notesActions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md },
-  photoBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'center',
-    borderWidth: 1, borderColor: Colors.inputBorder, borderRadius: 10, paddingVertical: Spacing.md,
-  },
-  photoBtnText: { color: Colors.primary, fontWeight: Fonts.semiBold, fontSize: Fonts.bodySize },
-  saveNotesBtn: {
-    flex: 1, backgroundColor: Colors.primary, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.md,
-  },
-  saveNotesText: { color: '#fff', fontWeight: Fonts.bold, fontSize: Fonts.bodySize },
+  // Kudos (#171) + Notes/Photo (#124) styles removed 2026-07-19 with the feature.
   bottomActions: {
     paddingVertical: Spacing.md,
     borderTopWidth: 1,

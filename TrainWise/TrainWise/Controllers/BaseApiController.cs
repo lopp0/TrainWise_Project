@@ -24,6 +24,14 @@ namespace TrainWise.Controllers
         protected bool CallerIsCoach => User?.FindFirst("isCoach")?.Value == "1";
 
         /// <summary>
+        /// The dbo.UserSessions row backing this request's token ("sid" claim), or
+        /// 0 for a legacy/tokenless caller. Used to mark "this device" in the
+        /// Devices &amp; sessions list and to avoid revoking yourself.
+        /// </summary>
+        protected int CallerSessionId =>
+            int.TryParse(User?.FindFirst("sid")?.Value, out var s) ? s : 0;
+
+        /// <summary>
         /// Ownership gate that is SAFE to add before enforcement is switched on:
         ///  - No token present (CallerId == null): allowed (legacy tokenless client).
         ///  - Token present and matches the resource owner: allowed.

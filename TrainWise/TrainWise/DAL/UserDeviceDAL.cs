@@ -41,6 +41,20 @@ namespace TrainWise.DAL
             }
         }
 
+        // #163 — revoke (delete) a device/session. Scoped to the owner so a
+        // caller can't remove another user's device row.
+        public void Delete(int userId, int deviceId)
+        {
+            using (SqlConnection con = Connect())
+            using (SqlCommand cmd = new SqlCommand(
+                "DELETE FROM dbo.UserDevices WHERE DeviceID = @d AND UserID = @u", con))
+            {
+                cmd.Parameters.AddWithValue("@d", deviceId);
+                cmd.Parameters.AddWithValue("@u", userId);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
         public List<UserDevice> GetByUser(int userId)
         {
             var list = new List<UserDevice>();

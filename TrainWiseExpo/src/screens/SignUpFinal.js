@@ -24,6 +24,9 @@ import { signInWithGoogle, signOutGoogle, statusCodes } from '../api/googleAuth'
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { useTheme } from '../theme/ThemeContext';
+import PasswordInput from '../components/PasswordInput';
+import PasswordRequirements from '../components/PasswordRequirements';
+import { isValidEmail, isValidPassword } from '../utils/validation';
 
 // ─── Google reCAPTCHA (v2 checkbox) ───────────────────────────────
 // Rendered inside a WebView since reCAPTCHA needs a real browser context.
@@ -103,6 +106,7 @@ const SignUpFinal = ({ navigation, route }) => {
   } = route?.params ?? {};
 
   const [email, setEmail] = useState('');
+  const [emailTouched, setEmailTouched] = useState(false); // only flag the error after they leave the field
   const [password, setPassword] = useState('');
   const [agreedTOS, setAgreedTOS] = useState(false);
   const [agreedPrivacy, setAgreedPrivacy] = useState(false);
@@ -129,10 +133,11 @@ const SignUpFinal = ({ navigation, route }) => {
     }
   }, [submitting]);
 
-  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const emailValid = isValidEmail(email);
+  const passwordValid = isValidPassword(password);
   const canSubmit =
     emailValid &&
-    password.trim().length >= 4 &&
+    passwordValid &&
     agreedTOS &&
     agreedPrivacy &&
     captchaState === 'verified';
@@ -234,7 +239,7 @@ const SignUpFinal = ({ navigation, route }) => {
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
       <StatusBar style={theme === 'light' ? 'dark' : 'light'} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           contentContainerStyle={s.scroll}
           keyboardShouldPersistTaps="handled"
@@ -259,24 +264,26 @@ const SignUpFinal = ({ navigation, route }) => {
             placeholder="Your email here..."
             placeholderTextColor={Colors.textMuted}
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(v) => { setEmail(v); if (emailTouched) setEmailTouched(false); }}
+            onBlur={() => setEmailTouched(true)}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
           />
+          {emailTouched && email.length > 0 && !emailValid && (
+            <Text style={s.errorHint}>Enter a valid email address (e.g. name@example.com).</Text>
+          )}
 
           {/* Password */}
           <Text style={[s.fieldLabel, { marginTop: 22 }]}>YOUR PASSWORD:</Text>
-          <TextInput
+          <PasswordInput
             style={s.input}
             placeholder="Your password here..."
             placeholderTextColor={Colors.textMuted}
             value={password}
             onChangeText={setPassword}
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
           />
+          <PasswordRequirements password={password} />
 
           {/* Google */}
           <Text style={s.googlePrompt}>Or sign up with google:</Text>
@@ -480,6 +487,13 @@ const makeStyles = (Colors) => StyleSheet.create({
     paddingHorizontal: 16,
     fontSize: 14,
     color: Colors.textPrimary,
+  },
+
+  errorHint: {
+    alignSelf: 'flex-start',
+    color: '#ff5252',
+    fontSize: 12,
+    marginTop: 6,
   },
 
   // Google

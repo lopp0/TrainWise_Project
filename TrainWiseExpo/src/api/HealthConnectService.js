@@ -463,6 +463,36 @@ if (_hc === null) {
     }
   };
 
+  // #129 — sleep hours per day across a window (for the weekly recovery chart).
+  // Returns a map { 'YYYY-MM-DD': hours } keyed by the LOCAL calendar day the
+  // sleep session ENDED on (the "night of"). Empty object when unavailable.
+  const fetchSleepRange = async (startDate, endDate) => {
+    try {
+      const ready = await initializeHealthConnect();
+      if (!ready) return {};
+      const result = await readRecords('SleepSession', {
+        timeRangeFilter: {
+          operator: 'between',
+          startTime: new Date(startDate).toISOString(),
+          endTime: new Date(endDate).toISOString(),
+        },
+      });
+      const sessions = Array.isArray(result) ? result : result?.records || [];
+      const byDay = {};
+      sessions.forEach((s) => {
+        const end = new Date(s.endTime);
+        const st = new Date(s.startTime);
+        const hrs = Math.max(0, (end - st) / 3600000);
+        const key = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+        byDay[key] = (byDay[key] || 0) + hrs;
+      });
+      return byDay;
+    } catch (error) {
+      console.log('[HC] fetchSleepRange failed:', error?.message || error);
+      return {};
+    }
+  };
+
   // #130 — latest resting HR + a 14-day baseline (bpm). Elevated vs baseline
   // signals fatigue. Null when unavailable.
   const fetchRestingHeartRate = async () => {
@@ -597,6 +627,7 @@ if (_hc === null) {
     getStructuredWorkouts,
     requestReadinessPermissions,
     fetchSleepLastNight,
+    fetchSleepRange,
     fetchRestingHeartRate,
     fetchHrv,
     default: {

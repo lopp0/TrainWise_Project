@@ -173,6 +173,10 @@ const shortDate = (iso) => {
 
 const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
   const { trainee } = route.params || {};
+  // #174 — the SAME screen powers a trainee viewing their OWN analytics. When
+  // `self` is passed, `trainee` is the logged-in user and the copy is re-worded
+  // to the first person ("My analytics", "If you keep training like this").
+  const isSelf = !!route.params?.self;
   const traineeId = trainee?.userID ?? trainee?.UserID;
   const traineeName = trainee?.fullName ?? trainee?.FullName ?? `User #${traineeId}`;
   const firstName = traineeName.split(' ')[0];
@@ -310,8 +314,8 @@ const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
   return (
     <View style={styles.container}>
       <ScreenHeader
-        title="Analytics & forecast"
-        subtitle={traineeName}
+        title={isSelf ? 'My analytics' : 'Analytics & forecast'}
+        subtitle={isSelf ? 'Fitness, fatigue, load ratio & forecast' : traineeName}
         onBack={() => navigation.goBack()}
       />
 
@@ -357,7 +361,7 @@ const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
               )}
 
               <Text style={styles.forecastLead}>
-                If {firstName} keeps training like this:
+                {isSelf ? 'If you keep training like this:' : `If ${firstName} keeps training like this:`}
               </Text>
               <Text style={styles.forecastHeadline}>{forecast?.headline}</Text>
 

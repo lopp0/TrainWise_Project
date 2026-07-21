@@ -56,6 +56,26 @@ namespace TrainWise.Controllers
             }
         }
 
+        // #163 — DELETE /api/users/{userId}/devices/{deviceId} — revoke a session.
+        [HttpDelete("{deviceId}")]
+        public IActionResult Delete(int userId, int deviceId)
+        {
+            if (!CallerMayAct(userId)) return Forbid();
+            try
+            {
+                _bl.Delete(userId, deviceId);
+                return Ok(new { ok = true });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+
         [HttpPut("{deviceId}")]
         public IActionResult Update(int userId, int deviceId, [FromBody] UpdateDeviceRequest request)
         {

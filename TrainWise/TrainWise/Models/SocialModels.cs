@@ -9,6 +9,8 @@ namespace TrainWise.BL.Models
         public string Email { get; set; }
         public string ProfileImagePath { get; set; }
         public int ExperienceLevel { get; set; }
+        public bool IsTrainee { get; set; }
+        public bool IsCoach { get; set; }
         public DateTime? LastSeen { get; set; }
         public bool IsOnline { get; set; }
         public int FriendshipID { get; set; }

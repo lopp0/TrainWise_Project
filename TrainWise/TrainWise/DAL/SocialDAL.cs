@@ -153,6 +153,8 @@ namespace TrainWise.DAL
                     Email = Str(r, "Email"),
                     ProfileImagePath = Str(r, "ProfileImagePath"),
                     ExperienceLevel = Int(r, "ExperienceLevel"),
+                    IsTrainee = Has(r, "IsTrainee") ? Bool(r, "IsTrainee") : true,
+                    IsCoach = Has(r, "IsCoach") && Bool(r, "IsCoach"),
                     LastSeen = Dt(r, "LastSeen"),
                     IsOnline = Bool(r, "IsOnline"),
                     FriendshipID = Int(r, "FriendshipID")

@@ -16,6 +16,7 @@ import { getLeaderboard, setLeaderboardOptIn } from '../services/api';
 import UserProfileCard from '../components/UserProfileCard';
 import ConnectTabs from '../components/ConnectTabs';
 import { experienceLabel } from '../utils/experience';
+import { divisionForRank } from '../utils/divisions';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 
@@ -92,6 +93,8 @@ const LeaderboardScreen = ({ navigation }) => {
       equippedFrame: item.equippedFrame ?? item.EquippedFrame,
     };
     const mine = (item.userID ?? item.UserID) === userId;
+    // #149 — division from this row's rank within the ranked field.
+    const div = divisionForRank(rank, entries.length);
     return (
       <View style={[styles.row, mine && styles.rowMine]}>
         <Text style={[styles.rank, rank <= 3 && styles.rankTop]}>{rankBadge(rank)}</Text>
@@ -102,10 +105,18 @@ const LeaderboardScreen = ({ navigation }) => {
             subtitle={experienceLabel(item.experienceLevel ?? item.ExperienceLevel)}
           />
         </View>
-        <Text style={styles.metricValue}>{formatMetric(metric, item.metricValue ?? item.MetricValue)}</Text>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={styles.metricValue}>{formatMetric(metric, item.metricValue ?? item.MetricValue)}</Text>
+          <Text style={[styles.divChip, { color: div.color }]}>{div.emoji} {div.name}</Text>
+        </View>
       </View>
     );
   };
+
+  // #149 — the viewer's own division banner (only meaningful on the load metric,
+  // but computed for whatever metric is showing).
+  const myEntry = entries.find((e) => (e.userID ?? e.UserID) === userId);
+  const myDivision = myEntry ? divisionForRank(myEntry.rank ?? myEntry.Rank, entries.length) : null;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -151,6 +162,19 @@ const LeaderboardScreen = ({ navigation }) => {
           thumbColor="#fff"
         />
       </View>
+
+      {/* #149 — your current division for this week */}
+      {myDivision && (
+        <View style={[styles.divBanner, { borderColor: myDivision.color }]}>
+          <Text style={styles.divBannerEmoji}>{myDivision.emoji}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.divBannerTitle}>
+              You're in <Text style={{ color: myDivision.color }}>{myDivision.name}</Text> division
+            </Text>
+            <Text style={styles.divBannerSub}>Ranks reset weekly · climb to promote</Text>
+          </View>
+        </View>
+      )}
 
       {loading ? (
         <ActivityIndicator color={Colors.primary} size="large" style={{ marginTop: 40 }} />
@@ -204,6 +228,15 @@ const makeStyles = (C) => StyleSheet.create({
   rank: { color: C.textSecondary, fontSize: 16, fontWeight: '900', width: 34, textAlign: 'center' },
   rankTop: { fontSize: 20 },
   metricValue: { color: C.textPrimary, fontSize: 15, fontWeight: '900' },
+  divChip: { fontSize: 10, fontWeight: '800', marginTop: 2 },
+  divBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginHorizontal: 16, marginBottom: 8, padding: 12,
+    borderRadius: 12, borderWidth: 1.5, backgroundColor: C.cardBackground,
+  },
+  divBannerEmoji: { fontSize: 26 },
+  divBannerTitle: { color: C.textPrimary, fontSize: 15, fontWeight: '800' },
+  divBannerSub: { color: C.textMuted, fontSize: 11, marginTop: 2 },
 });
 
 export default LeaderboardScreen;
