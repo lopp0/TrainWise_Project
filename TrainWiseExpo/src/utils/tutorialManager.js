@@ -18,3 +18,10 @@ export const isTutorialDone = async (screenKey) => {
 export const markTutorialDone = async (screenKey) => {
   await AsyncStorage.setItem(KEYS[screenKey], 'true');
 };
+
+// TEMPORARY (testing only) — wipes every tutorial key so all screen
+// tutorials replay on the next visit. Remove together with the
+// "Reset Screen Tutorials" button in SettingsScreen before release.
+export const resetAllTutorials = async () => {
+  await Promise.all(Object.values(KEYS).map(k => AsyncStorage.removeItem(k)));
+};

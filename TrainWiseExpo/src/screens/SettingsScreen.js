@@ -41,6 +41,8 @@ import {
 } from '../utils/biometric';
 import { changePassword as changePasswordApi } from '../services/api';
 import { sendWeeklyRecapNow } from '../api/NotificationService';
+// TEMPORARY (testing only) — remove with the reset button below.
+import { resetAllTutorials } from '../utils/tutorialManager';
 
 const SettingsScreen = ({navigation}) => {
   const { userId, updateUser: updateAuthUser, logout } = useAuth();
@@ -730,6 +732,23 @@ const SettingsScreen = ({navigation}) => {
             <Text style={styles.dangerButtonText}>Delete my account</Text>
           </TouchableOpacity>
         </Card>
+
+        {/* TEMPORARY (testing only) — remove before release, together with
+            resetAllTutorials in utils/tutorialManager.js. */}
+        <TouchableOpacity
+          style={styles.resetTutorialBtn}
+          onPress={async () => {
+            await resetAllTutorials();
+            Alert.alert(
+              'Tutorials Reset',
+              'All screen tutorials will show again on next visit.'
+            );
+          }}
+        >
+          <Text style={styles.resetTutorialText}>
+            🔄 Reset Screen Tutorials (Testing Only)
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
 
       {/* Step 2 of delete: type-your-email modal. The final red button is
@@ -1076,6 +1095,21 @@ const makeStyles = (Colors) => StyleSheet.create({
     color: '#fff',
     fontSize: Fonts.bodySize,
     fontWeight: Fonts.bold,
+  },
+  // TEMPORARY (testing only) — remove with the reset button in the JSX.
+  resetTutorialBtn: {
+    marginTop: 32,
+    marginBottom: 16,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    marginHorizontal: 16,
+  },
+  resetTutorialText: {
+    color: Colors.textSecondary,
+    fontSize: 13,
   },
   // Delete-confirm modal
   modalBackdrop: {
