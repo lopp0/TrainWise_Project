@@ -9,6 +9,9 @@ import { getPainLogs, addPainLog } from '../services/api';
  * sparkline of recent entries plus a 1-10 selector + "Log today" button.
  * Self-contained: fetches its own pain history. Collapsible to keep the
  * Active Injuries list tidy.
+ *
+ * `readOnly` (coach view): hide the logging controls and open by default, so a
+ * linked coach can see the trainee's pain trend without being able to log for them.
  */
 const painColor = (lvl) => {
   if (lvl <= 3) return '#00e676';
@@ -17,10 +20,10 @@ const painColor = (lvl) => {
   return '#f44336';
 };
 
-const PainTracker = ({ injuryId }) => {
+const PainTracker = ({ injuryId, readOnly = false }) => {
   const styles = useThemedStyles(makeStyles);
   const Colors = styles._colors;
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(readOnly);
   const [logs, setLogs] = useState([]);
   const [level, setLevel] = useState(5);
   const [saving, setSaving] = useState(false);
@@ -83,26 +86,28 @@ const PainTracker = ({ injuryId }) => {
             <Text style={styles.empty}>No pain logged yet. Log daily to see the trend.</Text>
           )}
 
-          <View style={styles.controls}>
-            <TouchableOpacity style={styles.stepBtn} onPress={() => setLevel((l) => Math.max(1, l - 1))}>
-              <Text style={styles.stepText}>−</Text>
-            </TouchableOpacity>
-            <View style={[styles.levelPill, { borderColor: painColor(level) }]}>
-              <Text style={[styles.levelNum, { color: painColor(level) }]}>{level}</Text>
-              <Text style={styles.levelOf}>/10</Text>
+          {!readOnly && (
+            <View style={styles.controls}>
+              <TouchableOpacity style={styles.stepBtn} onPress={() => setLevel((l) => Math.max(1, l - 1))}>
+                <Text style={styles.stepText}>−</Text>
+              </TouchableOpacity>
+              <View style={[styles.levelPill, { borderColor: painColor(level) }]}>
+                <Text style={[styles.levelNum, { color: painColor(level) }]}>{level}</Text>
+                <Text style={styles.levelOf}>/10</Text>
+              </View>
+              <TouchableOpacity style={styles.stepBtn} onPress={() => setLevel((l) => Math.min(10, l + 1))}>
+                <Text style={styles.stepText}>+</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.logBtn, saving && { opacity: 0.6 }]}
+                onPress={logToday}
+                disabled={saving}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.logBtnText}>Log today</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.stepBtn} onPress={() => setLevel((l) => Math.min(10, l + 1))}>
-              <Text style={styles.stepText}>+</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.logBtn, saving && { opacity: 0.6 }]}
-              onPress={logToday}
-              disabled={saving}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.logBtnText}>Log today</Text>
-            </TouchableOpacity>
-          </View>
+          )}
         </>
       )}
     </View>

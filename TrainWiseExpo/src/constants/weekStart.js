@@ -45,8 +45,8 @@ export const subscribeWeekStart = (fn) => {
  */
 export const getWeekStartDate = (offset = 0, weekStartDay = _cachedWeekStart) => {
   const today = new Date();
+    const diff = (today.getDay() - weekStartDay + 7) % 7;
   const d = new Date(today);
-  const diff = (today.getDay() - weekStartDay + 7) % 7;
   d.setDate(today.getDate() - diff + offset * 7);
   d.setHours(0, 0, 0, 0);
   return d;

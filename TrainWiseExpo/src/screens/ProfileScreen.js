@@ -22,7 +22,6 @@ import {
   getEquippedAvatarFrame,
   findShopItem,
 } from '../utils/shopManager';
-import WeightTracker from '../components/WeightTracker';
 
 const ProfileScreen = () => {
   const { user, logout, updateUser } = useAuth();
@@ -163,20 +162,37 @@ const ProfileScreen = () => {
           )}
         </TouchableOpacity>
 
-        <Text style={styles.name}>
-          {badgeItem ? `${badgeItem.emoji} ` : ''}
-          {user?.fullName || 'Athlete'}
-        </Text>
+        {/* #10 — badge and name are SEPARATE elements. They used to be one
+            interpolated string, where an equipped badge could leave the name
+            invisible. The name now renders on its own and just shrinks. */}
+        <View style={styles.nameRow}>
+          {badgeItem ? <Text style={styles.nameBadge}>{badgeItem.emoji}</Text> : null}
+          <Text style={styles.name} numberOfLines={1}>
+            {user?.fullName || 'Athlete'}
+          </Text>
+        </View>
         <Text style={styles.email}>{user?.email || ''}</Text>
 
-        <TouchableOpacity
-          style={styles.shopBtn}
-          onPress={() => navigation.navigate('HomeTab', { screen: 'Shop' })}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="bag-handle-outline" size={18} color={Colors.primary} />
-          <Text style={styles.shopBtnText}>Visit Shop</Text>
-        </TouchableOpacity>
+        {/* #174 — a trainee's own analytics (Fitness/Fatigue/Form, ACWR and the
+            monthly forecast — the full view a coach sees of them). Reuses the
+            coach analytics screen with self:true. Hidden for coach-only users,
+            who track no personal load. ("Visit Shop" was removed 2026-07-20 —
+            the Shop is still reachable from the coins chip in the Home header.) */}
+        {!isCoachOnly && (
+          <TouchableOpacity
+            style={styles.shopBtn}
+            onPress={() =>
+              navigation.navigate('HomeTab', {
+                screen: 'MyAnalytics',
+                params: { self: true, trainee: { userID: user?.userId, fullName: user?.fullName } },
+              })
+            }
+            activeOpacity={0.85}
+          >
+            <Ionicons name="analytics-outline" size={18} color={Colors.primary} />
+            <Text style={styles.shopBtnText}>My analytics</Text>
+          </TouchableOpacity>
+        )}
 
         <View style={styles.card}>
           {rows.map((row, i) => (
@@ -188,9 +204,6 @@ const ProfileScreen = () => {
             </View>
           ))}
         </View>
-
-        {/* #131 — weight & body-composition tracking (trainees only) */}
-        {!isCoachOnly && <WeightTracker userId={user?.userId} />}
 
         <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
           <Ionicons name="log-out-outline" size={20} color={Colors.primary} />
@@ -267,12 +280,22 @@ const makeStyles = (C) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    alignSelf: 'stretch',
+    paddingHorizontal: Spacing.lg,
+    marginBottom: 4,
+  },
+  nameBadge: { fontSize: 22 },
   name: {
     fontSize: 22,
     fontWeight: Fonts.bold,
     color: C.primary,
     fontStyle: 'italic',
-    marginBottom: 4,
+    flexShrink: 1,
   },
   email: {
     fontSize: 13,

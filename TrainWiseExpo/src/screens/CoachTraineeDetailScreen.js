@@ -29,6 +29,7 @@ import { useMessages } from '../api/MessagesContext';
 import ScreenHeader from '../components/ScreenHeader';
 import DraggableChatBubble from '../components/DraggableChatBubble';
 import LoadAnalyticsSection from '../components/LoadAnalyticsSection';
+import PainTracker from '../components/PainTracker';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { loadLevelColor, loadLevelLabel } from './CoachDashboardScreen';
@@ -237,7 +238,7 @@ const CoachTraineeDetailScreen = ({ route, navigation }) => {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.container}>
         <ScreenHeader
@@ -308,9 +309,32 @@ const CoachTraineeDetailScreen = ({ route, navigation }) => {
                 <Ionicons name="chevron-forward" size={20} color={Colors.textPrimary} />
               </TouchableOpacity>
 
-              {/* A-4: Coach builds the trainee's training plan (calendar). */}
+              {/* #133 (merged #1): one "Training program" entry — build/edit a
+                  multi-week weekly plan and assign it (it fans onto the trainee's
+                  calendar). A quick "day plan" shortcut opens the raw calendar. */}
               <TouchableOpacity
                 style={styles.analyticsBtn}
+                onPress={() =>
+                  navigation.navigate('CoachPrograms', {
+                    coachUserId: myUserId,
+                    pickForTrainee: trainee,
+                  })
+                }
+                activeOpacity={0.85}
+              >
+                <Ionicons name="barbell" size={20} color={Colors.textPrimary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.analyticsTitle}>Training program</Text>
+                  <Text style={styles.analyticsSub}>
+                    Build &amp; assign a multi-week plan
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={Colors.textPrimary} />
+              </TouchableOpacity>
+
+              {/* Keep direct calendar access for ad-hoc single-day scheduling. */}
+              <TouchableOpacity
+                style={styles.calendarLink}
                 onPress={() =>
                   navigation.navigate('TrainingCalendar', {
                     targetUserId: traineeId,
@@ -318,16 +342,10 @@ const CoachTraineeDetailScreen = ({ route, navigation }) => {
                     traineeName,
                   })
                 }
-                activeOpacity={0.85}
+                activeOpacity={0.8}
               >
-                <Ionicons name="calendar" size={20} color={Colors.textPrimary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.analyticsTitle}>Training plan</Text>
-                  <Text style={styles.analyticsSub}>
-                    Schedule this trainee's week
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={Colors.textPrimary} />
+                <Ionicons name="calendar-outline" size={16} color={Colors.primary} />
+                <Text style={styles.calendarLinkText}>Or schedule single days on the calendar</Text>
               </TouchableOpacity>
 
               {/* Active injuries reported by the trainee — surfaces injury
@@ -358,6 +376,8 @@ const CoachTraineeDetailScreen = ({ route, navigation }) => {
                           </Text>
                         )}
                         {!!notes && <Text style={styles.injuryNotes}>{notes}</Text>}
+                        {/* #127 — the trainee's daily pain trend, read-only for the coach */}
+                        <PainTracker injuryId={inj.injuryID ?? inj.InjuryID} readOnly />
                       </View>
                     );
                   })}
@@ -627,6 +647,11 @@ const makeStyles = (C) =>
     },
     analyticsTitle: { color: C.textPrimary, fontSize: 15, fontWeight: '800' },
     analyticsSub: { color: C.textPrimary, opacity: 0.85, fontSize: 12, marginTop: 2 },
+    calendarLink: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+      paddingVertical: 8, marginTop: -6, marginBottom: 14,
+    },
+    calendarLinkText: { color: C.primary, fontSize: 13, fontWeight: '600' },
 
     chartRow: {
       flexDirection: 'row',
@@ -690,7 +715,10 @@ const makeStyles = (C) =>
     woTime: { color: C.textSecondary, fontSize: 12 },
     woStats: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 8 },
     woStat: { color: C.textSecondary, fontSize: 13, fontWeight: '500' },
-    woSource: { color: C.textMuted, fontSize: 10, marginTop: 8 },
+    woSource: { color: C.textMuted, fontSize: 10 },
+    woFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
+    woReview: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    woReviewText: { color: C.primary, fontSize: 10, fontWeight: '700' },
     modalClose: {
       flexDirection: 'row',
       alignItems: 'center',

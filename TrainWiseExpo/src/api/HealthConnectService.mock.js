@@ -57,7 +57,14 @@ const getStructuredWorkouts = async (_startDate, _endDate) => {
   return [];
 };
 
-module.exports = {
+// #129/#130 — readiness stubs (no data in Expo Go / web).
+const requestReadinessPermissions = async () => ({ granted: [] });
+const fetchSleepLastNight = async () => null;
+const fetchSleepRange = async () => ({});
+const fetchRestingHeartRate = async () => null;
+const fetchHrv = async () => null;
+
+const api = {
   initializeHealthConnect,
   requestPermissions,
   checkPermissions,
@@ -70,18 +77,11 @@ module.exports = {
   fetchRouteForWorkout,
   resolveExerciseRoute,
   getStructuredWorkouts,
-  default: {
-    initializeHealthConnect,
-    requestPermissions,
-    checkPermissions,
-    hasAllPermissions,
-    fetchWorkoutSessions,
-    fetchStepsForSession,
-    fetchHeartRateForSession,
-    fetchCaloriesForSession,
-    fetchDistanceForSession,
-    fetchRouteForWorkout,
-    resolveExerciseRoute,
-    getStructuredWorkouts,
-  },
+  requestReadinessPermissions,
+  fetchSleepLastNight,
+  fetchSleepRange,
+  fetchRestingHeartRate,
+  fetchHrv,
 };
+
+module.exports = { ...api, default: api };

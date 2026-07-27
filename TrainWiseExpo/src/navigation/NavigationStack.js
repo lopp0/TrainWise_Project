@@ -10,12 +10,14 @@ import { MessagesProvider } from '../api/MessagesContext';
 import { SocialProvider, useSocial } from '../api/SocialContext';
 import EventNotifications from '../api/EventNotifications';
 import { Colors } from '../theme/colors';
+import { t } from '../i18n/i18n';
 
 import GoogleFitScreen from '../api/GoogleFitScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import LoginScreen from '../screens/LoginScreen';
 import SignUpScreen from '../screens/SignUpScreen';
 import SignUpFinal from '../screens/SignUpFinal';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import HomeRouter from '../screens/HomeRouter';
 import CoachTraineeDetailScreen from '../screens/CoachTraineeDetailScreen';
 import CoachTraineeAnalyticsScreen from '../screens/CoachTraineeAnalyticsScreen';
@@ -41,6 +43,26 @@ import LeaderboardScreen from '../screens/LeaderboardScreen';
 import TrainingCalendarScreen from '../screens/TrainingCalendarScreen';
 import TimerScreen from '../screens/TimerScreen';
 import AchievementsScreen from '../screens/AchievementsScreen';
+import NutritionScreen from '../screens/NutritionScreen';
+import SharedWorkoutScreen from '../screens/SharedWorkoutScreen';
+import ExerciseLibraryScreen from '../screens/ExerciseLibraryScreen';
+import ChallengesScreen from '../screens/ChallengesScreen';
+import EventsScreen from '../screens/EventsScreen';
+import EventChatScreen from '../screens/EventChatScreen';
+import ProgramBuilderScreen from '../screens/ProgramBuilderScreen';
+import CoachProgramsScreen from '../screens/CoachProgramsScreen';
+import MyProgramsScreen from '../screens/MyProgramsScreen';
+import ProgramDetailScreen from '../screens/ProgramDetailScreen';
+import LiveRunScreen from '../screens/LiveRunScreen';
+import CoachMarketplaceScreen from '../screens/CoachMarketplaceScreen';
+import ErrorBoundary from '../components/ErrorBoundary';
+
+// Wrap Settings in a boundary OUTSIDE the component so an error in its own hooks
+// or body (not just its JSX) is caught and shown instead of crashing the app.
+const SettingsWithBoundary = (props) => (
+  <ErrorBoundary label="Settings screen"><SettingsScreen {...props} /></ErrorBoundary>
+);
+import AIPlanScreen from '../screens/AIPlanScreen';
 
 
 
@@ -54,6 +76,7 @@ const AuthStack = () => {
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="SignUp" component={SignUpScreen} />
       <Stack.Screen name="SignUpFinal" component={SignUpFinal} />
+      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
     </Stack.Navigator>
   );
 };
@@ -63,6 +86,8 @@ const HealthStack = () => {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="HealthConnectMain" component={GoogleFitScreen} />
       <Stack.Screen name="WorkoutRoute" component={WorkoutRouteScreen} />
+      {/* #121 — live GPS run tracking (records your own route, saves an ActivityLog). */}
+      <Stack.Screen name="LiveRun" component={LiveRunScreen} />
     </Stack.Navigator>
   );
 };
@@ -73,6 +98,9 @@ const HomeStack = () => {
       <Stack.Screen name="HomeMain" component={HomeRouter} />
       <Stack.Screen name="CoachTraineeDetail" component={CoachTraineeDetailScreen} />
       <Stack.Screen name="CoachTraineeAnalytics" component={CoachTraineeAnalyticsScreen} />
+      {/* #174 — trainee's OWN analytics (PMC + ACWR + forecast). Reuses the
+          coach analytics screen with route param self:true for first-person copy. */}
+      <Stack.Screen name="MyAnalytics" component={CoachTraineeAnalyticsScreen} />
       <Stack.Screen name="Stats" component={StatsScreen} />
       <Stack.Screen name="Warnings" component={WarningsDashboardScreen} />
       <Stack.Screen name="AddWorkout" component={AddWorkoutScreen} />
@@ -80,7 +108,7 @@ const HomeStack = () => {
       <Stack.Screen name="ActiveInjuries" component={ActiveInjuriesScreen} />
       <Stack.Screen name="WorkoutSummary" component={WorkoutSummaryScreen} />
       <Stack.Screen name="WorkoutRoute" component={WorkoutRouteScreen} />
-      <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="Settings" component={SettingsWithBoundary} />
       <Stack.Screen name="ConnectQR" component={ConnectQRScreen} />
       <Stack.Screen name="Shop" component={ShopScreen} />
       <Stack.Screen name="AIChat" component={AIChatScreen} />
@@ -91,8 +119,21 @@ const HomeStack = () => {
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="PersonalRecords" component={PersonalRecordsScreen} />
       <Stack.Screen name="TrainingCalendar" component={TrainingCalendarScreen} />
+      <Stack.Screen name="AIPlan" component={AIPlanScreen} />
       <Stack.Screen name="Timer" component={TimerScreen} />
       <Stack.Screen name="Achievements" component={AchievementsScreen} />
+      <Stack.Screen name="ExerciseLibrary" component={ExerciseLibraryScreen} />
+      <Stack.Screen name="Nutrition" component={NutritionScreen} />
+      <Stack.Screen name="SharedWorkout" component={SharedWorkoutScreen} />
+      {/* #133 — assigned training programs. Coach builds/assigns; trainee views.
+          ProgramChat reuses EventChatScreen with kind:'program' (per-program thread). */}
+      <Stack.Screen name="ProgramBuilder" component={ProgramBuilderScreen} />
+      <Stack.Screen name="CoachPrograms" component={CoachProgramsScreen} />
+      <Stack.Screen name="MyPrograms" component={MyProgramsScreen} />
+      <Stack.Screen name="ProgramDetail" component={ProgramDetailScreen} />
+      <Stack.Screen name="ProgramChat" component={EventChatScreen} />
+      {/* #121 — live GPS run, also reachable from AddWorkout's live tab. */}
+      <Stack.Screen name="LiveRun" component={LiveRunScreen} />
     </Stack.Navigator>
   );
 };
@@ -108,6 +149,12 @@ const ConnectStack = () => {
       <Stack.Screen name="Chat" component={ChatScreen} />
       <Stack.Screen name="WorkoutBoard" component={WorkoutBoardScreen} />
       <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
+      {/* Community batch 2026-07-17: #142 challenges, #145 events,
+          #169 coach marketplace. (#144 feed dropped — too similar to the board.) */}
+      <Stack.Screen name="Challenges" component={ChallengesScreen} />
+      <Stack.Screen name="Events" component={EventsScreen} />
+      <Stack.Screen name="EventChat" component={EventChatScreen} />
+      <Stack.Screen name="CoachMarketplace" component={CoachMarketplaceScreen} />
     </Stack.Navigator>
   );
 };
@@ -157,14 +204,14 @@ const AppTabs = () => {
           height: 60 + insets.bottom,
         },
       })}>
-      <Tab.Screen name="HomeTab" component={HomeStack} options={{ title: 'Home' }} />
+      <Tab.Screen name="HomeTab" component={HomeStack} options={{ title: t('tab.home') }} />
       {/* B-1: second tab is the training-load (Warnings) screen, labeled "Load".
           Hidden for coach-only users (they don't track their own load). */}
       {!isCoachOnly && (
         <Tab.Screen
           name="LoadTab"
           component={WarningsDashboardScreen}
-          options={{ title: 'Load' }}
+          options={{ title: t('tab.load') }}
         />
       )}
       {!isCoachOnly && (
@@ -172,7 +219,7 @@ const AppTabs = () => {
           name="HealthTab"
           component={HealthStack}
           options={{
-            title: 'Health',
+            title: t('tab.health'),
             tabBarBadge: unconfirmedCount > 0 ? unconfirmedCount : undefined,
             tabBarBadgeStyle: {
               backgroundColor: Colors.primary,
@@ -191,7 +238,7 @@ const AppTabs = () => {
         name="ConnectTab"
         component={ConnectStack}
         options={{
-          title: 'Connect',
+          title: t('tab.connect'),
           tabBarBadge: pendingTotal > 0 ? pendingTotal : undefined,
           tabBarBadgeStyle: {
             backgroundColor: Colors.danger,

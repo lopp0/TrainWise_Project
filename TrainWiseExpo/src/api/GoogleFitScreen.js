@@ -290,11 +290,12 @@ const GoogleFitScreen = () => {
     const calories = item.caloriesBurned || 0;
     const distance = item.distanceKM || 0;
     const activityName = getActivityTypeName(item.activityTypeID);
-    // Show the route map entry only for outdoor-cardio workouts that came
-    // from Health Connect (manual logs have no GPS counterpart in HC).
+    // Show the route map entry for outdoor-cardio workouts that came from
+    // Health Connect OR from the in-app live GPS tracker (#121, sourceDevice
+    // 'GPS' — its polyline is saved on-device keyed by the log id).
     const canShowRoute =
       ROUTE_ELIGIBLE_TYPES.has(item.activityTypeID) &&
-      item.sourceDevice === 'Health Connect';
+      (item.sourceDevice === 'Health Connect' || item.sourceDevice === 'GPS');
 
     return (
       <TouchableOpacity
@@ -545,6 +546,18 @@ const GoogleFitScreen = () => {
         data={workouts}
         keyExtractor={(item) => item.activityID?.toString() || Math.random().toString()}
         renderItem={renderWorkoutItem}
+        ListHeaderComponent={
+          // #121 — start a live GPS-tracked run (records your own route).
+          <TouchableOpacity
+            style={styles.trackRunBtn}
+            onPress={() => navigation.navigate('LiveRun')}
+            activeOpacity={0.9}
+          >
+            <Ionicons name="navigate" size={20} color="#0A1628" />
+            <Text style={styles.trackRunText}>Track a run with GPS</Text>
+            <Ionicons name="chevron-forward" size={18} color="#0A1628" />
+          </TouchableOpacity>
+        }
         ListEmptyComponent={renderEmptyState}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -726,6 +739,24 @@ const makeStyles = (Colors) => StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     flexGrow: 1,
+  },
+
+  // #121 — live GPS run entry button (Health-tab list header).
+  trackRunBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    marginBottom: 14,
+  },
+  trackRunText: {
+    flex: 1,
+    color: '#0A1628',
+    fontSize: 15,
+    fontWeight: '800',
   },
 
   workoutCard: {

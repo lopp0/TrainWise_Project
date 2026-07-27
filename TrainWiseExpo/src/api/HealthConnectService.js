@@ -81,6 +81,16 @@ if (_hc === null) {
     { accessType: 'read', recordType: 'Steps' },
   ];
 
+  // #129/#130 — readiness signals. Kept SEPARATE from REQUIRED_PERMISSIONS on
+  // purpose: adding these there would make hasAllPermissions() (which gates
+  // workout sync) return false for existing users who only granted the 6
+  // workout permissions. These are requested on demand from the readiness card.
+  const READINESS_PERMISSIONS = [
+    { accessType: 'read', recordType: 'SleepSession' },            // #129
+    { accessType: 'read', recordType: 'RestingHeartRate' },        // #130
+    { accessType: 'read', recordType: 'HeartRateVariabilityRmssd' },// #130
+  ];
+
   const SDK_AVAILABLE =
     (SdkAvailabilityStatus && SdkAvailabilityStatus.SDK_AVAILABLE) ?? 3;
 
@@ -409,6 +419,126 @@ if (_hc === null) {
     }
   };
 
+  // #129/#130 — request the readiness permissions (sleep + resting HR + HRV).
+  const requestReadinessPermissions = async () => {
+    try {
+      await initializeHealthConnect();
+      const granted = await requestPermission(READINESS_PERMISSIONS);
+      return { granted: granted || [] };
+    } catch (error) {
+      console.log('[HC] requestReadinessPermissions failed:', error?.message || error);
+      return { granted: [] };
+    }
+  };
+
+  // #129 — total sleep for the most recent night (hours). Sums SleepSession
+  // durations ending in the last 24h. Returns null when HC/data is unavailable.
+  const fetchSleepLastNight = async () => {
+    try {
+      const ready = await initializeHealthConnect();
+      if (!ready) return null;
+      const end = new Date();
+      const start = new Date(end.getTime() - 36 * 3600 * 1000);
+      const result = await readRecords('SleepSession', {
+        timeRangeFilter: { operator: 'between', startTime: start.toISOString(), endTime: end.toISOString() },
+      });
+      const sessions = Array.isArray(result) ? result : result?.records || [];
+      if (!sessions.length) return null;
+      const dayAgo = end.getTime() - 24 * 3600 * 1000;
+      let ms = 0;
+      let lastEnd = null;
+      sessions.forEach((s) => {
+        const st = new Date(s.startTime).getTime();
+        const et = new Date(s.endTime).getTime();
+        if (et >= dayAgo) {
+          ms += Math.max(0, et - st);
+          if (!lastEnd || et > new Date(lastEnd).getTime()) lastEnd = s.endTime;
+        }
+      });
+      if (ms <= 0) return null;
+      return { hours: ms / 3600000, lastEnd };
+    } catch (error) {
+      console.log('[HC] fetchSleepLastNight failed:', error?.message || error);
+      return null;
+    }
+  };
+
+  // #129 — sleep hours per day across a window (for the weekly recovery chart).
+  // Returns a map { 'YYYY-MM-DD': hours } keyed by the LOCAL calendar day the
+  // sleep session ENDED on (the "night of"). Empty object when unavailable.
+  const fetchSleepRange = async (startDate, endDate) => {
+    try {
+      const ready = await initializeHealthConnect();
+      if (!ready) return {};
+      const result = await readRecords('SleepSession', {
+        timeRangeFilter: {
+          operator: 'between',
+          startTime: new Date(startDate).toISOString(),
+          endTime: new Date(endDate).toISOString(),
+        },
+      });
+      const sessions = Array.isArray(result) ? result : result?.records || [];
+      const byDay = {};
+      sessions.forEach((s) => {
+        const end = new Date(s.endTime);
+        const st = new Date(s.startTime);
+        const hrs = Math.max(0, (end - st) / 3600000);
+        const key = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+        byDay[key] = (byDay[key] || 0) + hrs;
+      });
+      return byDay;
+    } catch (error) {
+      console.log('[HC] fetchSleepRange failed:', error?.message || error);
+      return {};
+    }
+  };
+
+  // #130 — latest resting HR + a 14-day baseline (bpm). Elevated vs baseline
+  // signals fatigue. Null when unavailable.
+  const fetchRestingHeartRate = async () => {
+    try {
+      const ready = await initializeHealthConnect();
+      if (!ready) return null;
+      const end = new Date();
+      const start = new Date(end.getTime() - 14 * 86400000);
+      const result = await readRecords('RestingHeartRate', {
+        timeRangeFilter: { operator: 'between', startTime: start.toISOString(), endTime: end.toISOString() },
+      });
+      const recs = Array.isArray(result) ? result : result?.records || [];
+      const vals = recs.map((r) => r.beatsPerMinute).filter((v) => v > 0);
+      if (!vals.length) return null;
+      const latest = vals[vals.length - 1];
+      const baseline = vals.reduce((a, b) => a + b, 0) / vals.length;
+      return { latest, baseline };
+    } catch (error) {
+      console.log('[HC] fetchRestingHeartRate failed:', error?.message || error);
+      return null;
+    }
+  };
+
+  // #130 — latest HRV (RMSSD, ms) + 14-day baseline. Low vs baseline signals
+  // fatigue. Null when unavailable.
+  const fetchHrv = async () => {
+    try {
+      const ready = await initializeHealthConnect();
+      if (!ready) return null;
+      const end = new Date();
+      const start = new Date(end.getTime() - 14 * 86400000);
+      const result = await readRecords('HeartRateVariabilityRmssd', {
+        timeRangeFilter: { operator: 'between', startTime: start.toISOString(), endTime: end.toISOString() },
+      });
+      const recs = Array.isArray(result) ? result : result?.records || [];
+      const vals = recs.map((r) => r.heartRateVariabilityMillis).filter((v) => v > 0);
+      if (!vals.length) return null;
+      const latest = vals[vals.length - 1];
+      const baseline = vals.reduce((a, b) => a + b, 0) / vals.length;
+      return { latest, baseline };
+    } catch (error) {
+      console.log('[HC] fetchHrv failed:', error?.message || error);
+      return null;
+    }
+  };
+
   const mapExerciseType = (exerciseType) =>
     EXERCISE_TYPE_MAPPING[exerciseType] || DEFAULT_ACTIVITY_TYPE_ID;
 
@@ -495,6 +625,11 @@ if (_hc === null) {
     fetchRouteForWorkout,
     resolveExerciseRoute,
     getStructuredWorkouts,
+    requestReadinessPermissions,
+    fetchSleepLastNight,
+    fetchSleepRange,
+    fetchRestingHeartRate,
+    fetchHrv,
     default: {
       initializeHealthConnect,
       requestPermissions,
@@ -508,6 +643,10 @@ if (_hc === null) {
       fetchRouteForWorkout,
       resolveExerciseRoute,
       getStructuredWorkouts,
+      requestReadinessPermissions,
+      fetchSleepLastNight,
+      fetchRestingHeartRate,
+      fetchHrv,
     },
   };
 }

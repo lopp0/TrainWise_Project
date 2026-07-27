@@ -39,6 +39,7 @@ import { grantCoins } from '../utils/checkInManager';
 import { findBadgeDef } from '../utils/badges';
 import ScreenTutorial from '../components/ScreenTutorial';
 import { isTutorialDone, markTutorialDone } from '../utils/tutorialManager';
+import { GPS_TRACKABLE_IDS } from './LiveRunScreen';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -728,6 +729,16 @@ const AddWorkoutScreen = ({ navigation, route }) => {
                       <Ionicons name="play" size={20} color="#fff" />
                       <Text style={styles.startBtnText}>START</Text>
                     </TouchableOpacity>
+                    {GPS_TRACKABLE_IDS.includes(selectedActivity?.activityTypeID) && (
+                      <TouchableOpacity
+                        style={styles.gpsLiveBtn}
+                        onPress={() => navigation.navigate('LiveRun', { activityTypeId: selectedActivity.activityTypeID })}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons name="navigate" size={18} color={Colors.primary} />
+                        <Text style={styles.gpsLiveText}>Track route with GPS</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 )}
               </Card>
@@ -1043,6 +1054,11 @@ const makeStyles = (Colors) => StyleSheet.create({
     borderRadius: 30,
   },
   startBtnText: { color: '#fff', fontSize: 18, fontWeight: '900', letterSpacing: 1 },
+  gpsLiveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    marginTop: 14, paddingVertical: 10,
+  },
+  gpsLiveText: { color: Colors.primary, fontSize: 14, fontWeight: '700' },
   stopBtn: {
     flexDirection: 'row',
     alignItems: 'center',

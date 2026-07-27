@@ -1,4 +1,7 @@
 import axios from 'axios';
+import { Platform } from 'react-native';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { getAuthToken } from './authToken';
 // Single source of truth for the backend URL — flip BACKEND_MODE in
 // src/config/backend.js to switch the whole app between Local‑LAN and Azure.
@@ -32,6 +35,28 @@ apiClient.interceptors.request.use((config) => {
 // ============================================================================
 
 /**
+ * Human-readable description of the phone, sent with every login so the
+ * "Devices & sessions" screen can name each session ("Samsung SM-S926B").
+ * Everything here is best-effort: on a device where expo-device returns nulls
+ * we still send the platform so the row isn't anonymous.
+ */
+export const describeThisDevice = () => {
+  try {
+    const name =
+      [Device.manufacturer, Device.modelName].filter(Boolean).join(' ') ||
+      Device.deviceName ||
+      `${Platform.OS} device`;
+    return {
+      deviceName: name,
+      platform: Platform.OS,
+      appVersion: String(Constants?.expoConfig?.version || ''),
+    };
+  } catch {
+    return { deviceName: null, platform: Platform.OS, appVersion: null };
+  }
+};
+
+/**
  * Login user with email and password.
  * Returns full User object on success.
  * @param {string} email - User email
@@ -40,9 +65,13 @@ apiClient.interceptors.request.use((config) => {
  */
 export const login = async (email, password) => {
   try {
+    // Device metadata is sent so the backend can register a revocable SESSION
+    // for this login and show it in Settings → Devices & sessions. Optional
+    // server-side, so an older backend simply ignores these fields.
     const response = await apiClient.post('/auth/login', {
       email,
       password,
+      ...describeThisDevice(),
     });
     return response.data;
   } catch (error) {

@@ -47,12 +47,34 @@ const getDateRangeForDays = (days = 7) => {
  * @returns {boolean} true if workouts match
  */
 const areWorkoutsDuplicate = (hcWorkout, existingLog) => {
-  // Backend returns DateTime with Kind=Unspecified (no Z suffix), so
-  // `new Date(...)` parses it as local time while HC sends UTC (Z) — a 2–3h
-  // drift makes ms-comparison miss every match. Compare the wall-clock
-  // portion at minute granularity instead.
-  const normalize = (t) => String(t || '').replace(/Z$/, '').slice(0, 16);
-  return normalize(hcWorkout.startTime) === normalize(existingLog.startTime);
+  // Both sides are effectively UTC wall-clock: HC sends UTC (Z); the backend
+  // stores what the client POSTed as toISOString() (UTC) and returns it WITHOUT
+  // the Z (Kind=Unspecified). So strip any trailing Z and force UTC parsing —
+  // now both are on the same clock.
+  const toUtcMs = (t) => {
+    const s = String(t || '').replace(/Z$/, '');
+    if (!s) return NaN;
+    return new Date(`${s}Z`).getTime();
+  };
+  const durMs = (o) =>
+    Math.max(0, (o?.duration ?? o?.Duration ?? 0)) * 60000;
+
+  const hcStart = toUtcMs(hcWorkout.startTime);
+  const logStart = toUtcMs(existingLog.startTime);
+  if (Number.isNaN(hcStart) || Number.isNaN(logStart)) return false;
+
+  const hcEnd = hcWorkout.endTime ? toUtcMs(hcWorkout.endTime) : hcStart + durMs(hcWorkout);
+  const logEnd = existingLog.endTime ? toUtcMs(existingLog.endTime) : logStart + durMs(existingLog);
+
+  // Two workouts are the SAME session if their time intervals overlap (you
+  // can't do two workouts at once). A small grace absorbs the few-minutes
+  // difference between when Health Connect logged the ride and when the user
+  // pressed START (or typed the "Already Done" time). This is what prevents HC
+  // from re-importing a session the user already logged MANUALLY as a separate
+  // Pending/HC/route row (the old exact-minute match missed it). Do NOT revert
+  // to comparing only startTime.
+  const grace = 3 * 60000;
+  return hcStart < logEnd + grace && logStart < hcEnd + grace;
 };
 
 /**

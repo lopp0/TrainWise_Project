@@ -39,6 +39,8 @@
     "plugins": [
       "react-native-health-connect",
 "./plugins/withHealthConnectPermissionDelegate",
+"expo-audio",
+"expo-video",
       [
         "expo-build-properties",
         {

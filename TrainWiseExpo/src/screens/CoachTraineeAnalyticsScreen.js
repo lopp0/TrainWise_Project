@@ -11,11 +11,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Rect, Line, Polyline, Circle, Text as SvgText } from 'react-native-svg';
+import Slider from '@react-native-community/slider';
 import {
   getTraineePMC,
   getTraineeACWR,
   getTraineeForecast,
   getForecastHistory,
+  getTraineeWhatIf,
   mlIsOfflineError,
 } from '../services/mlApi';
 import ScreenHeader from '../components/ScreenHeader';
@@ -30,6 +32,30 @@ const CHART_W = screenWidth - 64; // card has 16 padding each side + inner margi
 // line is which), not load-status thresholds, so they intentionally stay
 // constant across themes and don't reuse the semantic green/yellow/red.
 const SERIES = { fitness: '#42A5F5', fatigue: '#FFA726', form: '#9575CD' };
+
+// Per-graph help text (the "?" on each card), mirroring the trainee Load tab.
+const HELP = {
+  forecast: {
+    title: 'Monthly forecast',
+    body:
+      'Projects where this athlete’s training load is heading by month end if they keep their current pace.\n\nIt fits a trend on the weeks already completed this month (their recent 7-day pace early on, then a linear or polynomial regression as more weeks finish) and re-simulates the acute:chronic ratio forward day by day — so chronic load rises with sustained training and the projected ratio stays realistic instead of dividing a rising acute by a frozen chronic.\n\nThe risk pill (Safe / Warning / High) comes from the projected end-of-month ratio. Read it as guidance that sharpens as the month fills in, not a guarantee.',
+  },
+  pmc: {
+    title: 'Fitness, Fatigue & Form',
+    body:
+      'The Performance Manager Chart.\n\nFitness (chronic load, ~28-day average) is the base the athlete has built. Fatigue (acute load, last 7 days) is recent tiredness. Form = Fitness − Fatigue.\n\nPositive Form means fresh and ready to perform; strongly negative means fatigued and due for recovery. A healthy pattern is Fitness rising gradually while Form dips during hard blocks and rebounds on a taper.',
+  },
+  acwr: {
+    title: 'Training load ratio (ACWR)',
+    body:
+      'Acute : Chronic Workload Ratio — the last 7 days of load divided by the 28-day weekly average.\n\nThe green band 0.8 to 1.3 is the sweet spot: enough load to adapt without spiking injury risk. Above 1.3 the athlete is ramping too fast; above the red 1.5 line is the danger zone. Below 0.8 for a long time means detraining.\n\nEach point is colored by its status, and with an active injury the safe range tightens (Gabbett 2016).',
+  },
+  whatif: {
+    title: 'What-if planner',
+    body:
+      'Plan load safely. Pick an intensity, then drag "add sessions" to see where the acute:chronic ratio would land if that many extra sessions were done this week.\n\nEach easy / medium / hard session is worth about 150 / 300 / 450 load (a session\'s load is its minutes times how hard it felt). The added load lifts the 7-day acute while the ~28-day chronic barely moves, so the ratio climbs. That is the same effect real sessions have, so you can see the risk pill turn red before it happens on the body.\n\nSet it back to 0 to return to the real numbers.',
+  },
+};
 
 // Risk pill / dot color from the Safe|Warning|High class.
 const riskColor = (riskClass) => {
@@ -154,6 +180,10 @@ const shortDate = (iso) => {
 
 const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
   const { trainee } = route.params || {};
+  // #174 — the SAME screen powers a trainee viewing their OWN analytics. When
+  // `self` is passed, `trainee` is the logged-in user and the copy is re-worded
+  // to the first person ("My analytics", "If you keep training like this").
+  const isSelf = !!route.params?.self;
   const traineeId = trainee?.userID ?? trainee?.UserID;
   const traineeName = trainee?.fullName ?? trainee?.FullName ?? `User #${traineeId}`;
   const firstName = traineeName.split(' ')[0];
@@ -167,6 +197,13 @@ const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
   const [history, setHistory] = useState([]);
   const [month, setMonth] = useState(null); // null = current month
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [helpTopic, setHelpTopic] = useState(null);
+
+  // What-if simulator (#185) state.
+  const [wiSessions, setWiSessions] = useState(0);
+  const [wiIntensity, setWiIntensity] = useState('medium');
+  const [wiResult, setWiResult] = useState(null);
+  const [wiLoading, setWiLoading] = useState(false);
 
   const loadAll = useCallback(async () => {
     if (!traineeId) { setLoading(false); return; }
@@ -197,6 +234,26 @@ const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
   }, [traineeId]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  // What-if simulator (#185): recompute on slider / intensity change, DEBOUNCED
+  // (350ms) so dragging doesn't hammer the ML service. Only runs once the screen
+  // is live and online. A stale in-flight response is dropped via `cancelled`.
+  useEffect(() => {
+    if (loading || offline || !traineeId) return undefined;
+    let cancelled = false;
+    setWiLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await getTraineeWhatIf(traineeId, wiSessions, wiIntensity);
+        if (!cancelled) setWiResult(res.data || null);
+      } catch (e) {
+        if (!cancelled) setWiResult(null);
+      } finally {
+        if (!cancelled) setWiLoading(false);
+      }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [traineeId, wiSessions, wiIntensity, loading, offline]);
 
   // Switch which month's forecast is shown (current or a stored past month).
   const selectMonth = async (monthKey) => {
@@ -290,8 +347,8 @@ const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
   return (
     <View style={styles.container}>
       <ScreenHeader
-        title="Analytics & forecast"
-        subtitle={traineeName}
+        title={isSelf ? 'My analytics' : 'Analytics & forecast'}
+        subtitle={isSelf ? 'Fitness, fatigue, load ratio & forecast' : traineeName}
         onBack={() => navigation.goBack()}
       />
 
@@ -314,7 +371,12 @@ const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
             {/* ===== Forecast card ===== */}
             <View style={[styles.card, styles.forecastCard]}>
               <View style={styles.forecastHead}>
-                <Text style={styles.cardTitle}>Monthly forecast</Text>
+                <View style={styles.titleWithHelp}>
+                  <Text style={styles.cardTitle}>Monthly forecast</Text>
+                  <TouchableOpacity onPress={() => setHelpTopic('forecast')} hitSlop={8}>
+                    <Ionicons name="help-circle-outline" size={18} color={Colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
                 <TouchableOpacity
                   style={styles.monthBtn}
                   onPress={() => setMonthPickerOpen(true)}
@@ -332,7 +394,7 @@ const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
               )}
 
               <Text style={styles.forecastLead}>
-                If {firstName} keeps training like this:
+                {isSelf ? 'If you keep training like this:' : `If ${firstName} keeps training like this:`}
               </Text>
               <Text style={styles.forecastHeadline}>{forecast?.headline}</Text>
 
@@ -402,9 +464,98 @@ const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
               )}
             </View>
 
+            {/* ===== What-if planner (#185) ===== */}
+            <View style={[styles.card, styles.whatifCard]}>
+              <View style={styles.titleRow}>
+                <Text style={styles.cardTitle}>What-if planner</Text>
+                <TouchableOpacity onPress={() => setHelpTopic('whatif')} hitSlop={8}>
+                  <Ionicons name="help-circle-outline" size={18} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.cardHint}>
+                {isSelf
+                  ? 'See how adding sessions this week would move your load ratio.'
+                  : `See how adding sessions this week would move ${firstName}'s load ratio.`}
+              </Text>
+
+              {/* intensity segmented control */}
+              <View style={styles.segRow}>
+                {['easy', 'medium', 'hard'].map((lvl) => (
+                  <TouchableOpacity
+                    key={lvl}
+                    style={[styles.segBtn, wiIntensity === lvl && styles.segBtnActive]}
+                    onPress={() => setWiIntensity(lvl)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.segText, wiIntensity === lvl && styles.segTextActive]}>
+                      {lvl[0].toUpperCase() + lvl.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* count slider */}
+              <View style={styles.wiSliderHead}>
+                <Text style={styles.wiSliderLabel}>Add sessions this week</Text>
+                <Text style={styles.wiSliderValue}>{wiSessions}</Text>
+              </View>
+              <Slider
+                style={styles.wiSlider}
+                minimumValue={0}
+                maximumValue={10}
+                step={1}
+                value={wiSessions}
+                onValueChange={setWiSessions}
+                minimumTrackTintColor={Colors.primary}
+                maximumTrackTintColor={Colors.border}
+                thumbTintColor={Colors.primary}
+              />
+
+              {/* live baseline → simulated comparison */}
+              {wiResult ? (
+                <View style={styles.wiResult}>
+                  <View style={styles.wiCompareRow}>
+                    <View style={styles.wiCompareCol}>
+                      <Text style={styles.wiColLabel}>Now</Text>
+                      <Text style={styles.wiRatio}>
+                        {wiResult.baseline?.acRatio != null ? Number(wiResult.baseline.acRatio).toFixed(2) : '—'}
+                      </Text>
+                      <View style={[styles.riskPill, { backgroundColor: riskColor(wiResult.baseline?.risk) }]}>
+                        <Text style={styles.riskPillText}>{wiResult.baseline?.risk || 'No data'}</Text>
+                      </View>
+                    </View>
+                    <Ionicons name="arrow-forward" size={22} color={Colors.textMuted} />
+                    <View style={styles.wiCompareCol}>
+                      <Text style={styles.wiColLabel}>
+                        With +{wiResult.addSessions}
+                      </Text>
+                      <Text style={[styles.wiRatio, { color: riskColor(wiResult.simulated?.risk) }]}>
+                        {wiResult.simulated?.acRatio != null ? Number(wiResult.simulated.acRatio).toFixed(2) : '—'}
+                      </Text>
+                      <View style={[styles.riskPill, { backgroundColor: riskColor(wiResult.simulated?.risk) }]}>
+                        <Text style={styles.riskPillText}>{wiResult.simulated?.risk || 'No data'}</Text>
+                      </View>
+                    </View>
+                  </View>
+                  <Text style={styles.wiExplain}>
+                    {wiResult.addSessions === 0
+                      ? 'Drag the slider to add sessions and see the effect on the load ratio.'
+                      : `Adding ${wiResult.addSessions} ${wiResult.intensity} session${wiResult.addSessions > 1 ? 's' : ''} (+${Math.round(wiResult.addedLoad)} load) takes the 7-day acute from ${Math.round(wiResult.baseline?.acute)} to ${Math.round(wiResult.simulated?.acute)}.`}
+                  </Text>
+                </View>
+              ) : wiLoading ? (
+                <ActivityIndicator color={Colors.primary} style={{ marginTop: 10 }} />
+              ) : null}
+            </View>
+
             {/* ===== PMC chart ===== */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Fitness, fatigue and form</Text>
+              <View style={styles.titleRow}>
+                <Text style={styles.cardTitle}>Fitness, fatigue and form</Text>
+                <TouchableOpacity onPress={() => setHelpTopic('pmc')} hitSlop={8}>
+                  <Ionicons name="help-circle-outline" size={18} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
               <Text style={styles.cardHint}>
                 Fitness = chronic load · Fatigue = acute load · Form = fitness minus fatigue
               </Text>
@@ -431,7 +582,12 @@ const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
 
             {/* ===== ACWR chart ===== */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Training load ratio (ACWR)</Text>
+              <View style={styles.titleRow}>
+                <Text style={styles.cardTitle}>Training load ratio (ACWR)</Text>
+                <TouchableOpacity onPress={() => setHelpTopic('acwr')} hitSlop={8}>
+                  <Ionicons name="help-circle-outline" size={18} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
               <Text style={styles.cardHint}>
                 Green band 0.8 to 1.3 is the safe zone · above 1.5 is overload risk
               </Text>
@@ -467,6 +623,28 @@ const CoachTraineeAnalyticsScreen = ({ route, navigation }) => {
           </>
         )}
       </ScrollView>
+
+      {/* per-graph help */}
+      <Modal
+        visible={!!helpTopic}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setHelpTopic(null)}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.helpBackdrop}
+          onPress={() => setHelpTopic(null)}
+        >
+          <View style={styles.helpCard}>
+            <Text style={styles.helpTitle}>{helpTopic ? HELP[helpTopic].title : ''}</Text>
+            <Text style={styles.helpBody}>{helpTopic ? HELP[helpTopic].body : ''}</Text>
+            <TouchableOpacity style={styles.helpClose} onPress={() => setHelpTopic(null)}>
+              <Text style={styles.helpCloseText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* month picker */}
       <Modal
@@ -534,6 +712,8 @@ const makeStyles = (C) =>
     },
     forecastCard: { borderColor: C.primary, borderWidth: 1.5 },
     cardTitle: { color: C.primary, fontSize: 15, fontWeight: '800' },
+    titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    titleWithHelp: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     cardHint: { color: C.textMuted, fontSize: 11, marginTop: 4, marginBottom: 10 },
     noData: { color: C.textMuted, fontSize: 13, textAlign: 'center', paddingVertical: 16 },
 
@@ -552,6 +732,33 @@ const makeStyles = (C) =>
     riskPill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 },
     riskPillText: { color: '#0A1628', fontSize: 12, fontWeight: '800' },
     riskMeta: { color: C.textSecondary, fontSize: 12, flexShrink: 1 },
+
+    // what-if planner (#185)
+    whatifCard: { borderColor: C.primary, borderWidth: 1.5 },
+    segRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+    segBtn: {
+      flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8,
+      borderWidth: 1, borderColor: C.border, backgroundColor: C.cardBackgroundLight,
+    },
+    segBtnActive: { borderColor: C.primary, backgroundColor: C.primary },
+    segText: { color: C.textSecondary, fontSize: 13, fontWeight: '700' },
+    segTextActive: { color: '#0A1628' },
+    wiSliderHead: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      marginTop: 16,
+    },
+    wiSliderLabel: { color: C.textSecondary, fontSize: 13 },
+    wiSliderValue: { color: C.primary, fontSize: 18, fontWeight: '800' },
+    wiSlider: { width: '100%', height: 40 },
+    wiResult: { marginTop: 6 },
+    wiCompareRow: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
+      marginTop: 4,
+    },
+    wiCompareCol: { alignItems: 'center', gap: 6, flex: 1 },
+    wiColLabel: { color: C.textMuted, fontSize: 12 },
+    wiRatio: { color: C.textPrimary, fontSize: 28, fontWeight: '900' },
+    wiExplain: { color: C.textSecondary, fontSize: 12, marginTop: 12, lineHeight: 17 },
 
     projChartWrap: { marginTop: 14 },
     projChartLabel: { color: C.textSecondary, fontSize: 11, marginBottom: 4 },
@@ -607,6 +814,14 @@ const makeStyles = (C) =>
       borderWidth: 1, borderColor: C.border,
     },
     modalTitle: { color: C.textPrimary, fontSize: 17, fontWeight: '800', marginBottom: 12 },
+
+    // per-graph help modal
+    helpBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', paddingHorizontal: 24 },
+    helpCard: { backgroundColor: C.cardBackground, borderRadius: 14, padding: 18, borderWidth: 1, borderColor: C.border },
+    helpTitle: { color: C.primary, fontSize: 17, fontWeight: '800', marginBottom: 10 },
+    helpBody: { color: C.textPrimary, fontSize: 14, lineHeight: 21, marginBottom: 16 },
+    helpClose: { backgroundColor: C.primary, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+    helpCloseText: { color: '#fff', fontSize: 15, fontWeight: '700' },
     monthOption: {
       flexDirection: 'row', alignItems: 'center', gap: 10,
       paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border,

@@ -15,6 +15,7 @@ import AcwrTrendChart from './AcwrTrendChart';
 import { Colors, Fonts, Spacing } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { getLoadAnalytics } from '../services/api';
+import { getTraineeAnalytics } from '../services/mlApi';
 import { computeLoadAnalytics } from '../utils/loadSeries';
 import { getWeekStartDate } from '../constants/weekStart';
 
@@ -22,10 +23,17 @@ import { getWeekStartDate } from '../constants/weekStart';
  * "Load Trend" + "Training Analysis" cards, shared by the trainee Load tab and
  * the coach's trainee detail so both sides read the exact same numbers.
  *
- * Data comes from GET /dailyload/user/{id}/analytics (C# LoadAnalyticsBL). If
- * that endpoint is unreachable (older deployed backend, offline) the same
- * series is computed on-device from the logs the screen already fetched
- * (utils/loadSeries.js mirrors the C# math).
+ * DATA SOURCE (verified 2026-07-19): the **Python ML service is primary**, the
+ * SAME architecture as the coach forecast and the ML-course notebook — the
+ * Classic rolling ACWR and Smooth EWMA series are computed in Python
+ * (GET /api/ml/trainee/{id}/analytics via services/mlApi.getTraineeAnalytics).
+ * Fallbacks, in order, keep the charts rendering when the ML service is offline:
+ *   1. Python  — services/mlApi.getTraineeAnalytics  (primary)
+ *   2. C#      — services/api.getLoadAnalytics (LoadAnalyticsBL) (fallback)
+ *   3. on-device mirror — utils/loadSeries.computeLoadAnalytics (last resort)
+ * All three implement the SAME formula (the C# LoadCalculationBL math is the
+ * canonical definition; Python ml/features.py and utils/loadSeries.js mirror it),
+ * so whichever answers, the numbers agree.
  *
  * The method toggle (Classic rolling vs Smooth EWMA) is a VIEW preference,
  * persisted per device. The official status / recommendations stay on Classic
@@ -85,6 +93,18 @@ const LoadAnalyticsSection = ({
     let cancelled = false;
     (async () => {
       setLoading(true);
+      // Same architecture as the coach forecast: the Python ML service is the
+      // primary source. If it's offline we fall back to the C# analytics
+      // endpoint, then to the on-device mirror — so the charts always render.
+      try {
+        const res = await getTraineeAnalytics(userId, 56);
+        if (!cancelled && res?.data?.series?.length) {
+          setData(res.data);
+          return;
+        }
+      } catch {
+        // ML service offline — try the C# backend next
+      }
       try {
         const res = await getLoadAnalytics(userId, 56);
         if (!cancelled && res?.data?.series) {
@@ -92,7 +112,7 @@ const LoadAnalyticsSection = ({
           return;
         }
       } catch {
-        // endpoint missing / offline: fall through to the on-device mirror
+        // C# endpoint missing / offline: fall through to the on-device mirror
       }
       if (!cancelled) {
         setData(
@@ -153,8 +173,23 @@ const LoadAnalyticsSection = ({
     return { now: sum(s.length - 7, s.length), prev: sum(s.length - 14, s.length - 7) };
   }, [data]);
 
+  // Rolling 7-day comparison: the last 7 days vs the 7 days before them. This is
+  // deliberately NOT the calendar-week bars above (the current bar is a PARTIAL
+  // week, so comparing it to a full week would read as a fake drop).
+  //
+  // A percentage on a near-empty baseline is noise, not information: a rest week
+  // of 90 load followed by 750 renders as "+733%", which is true but useless and
+  // looks broken next to the bars. Below MIN_BASELINE we show the absolute loads
+  // instead, and we cap the headline percentage so it stays readable.
+  const MIN_BASELINE = 100; // ≈ under one easy session in the whole prior week
   const volDeltaPct =
-    last7.prev > 0 ? Math.round(((last7.now - last7.prev) / last7.prev) * 100) : null;
+    last7.prev >= MIN_BASELINE
+      ? Math.round(((last7.now - last7.prev) / last7.prev) * 100)
+      : null;
+  const volDeltaAbs =
+    last7.prev < MIN_BASELINE && (last7.now > 0 || last7.prev > 0)
+      ? { now: Math.round(last7.now), prev: Math.round(last7.prev) }
+      : null;
 
   const summary = data?.summary;
   const monotony = summary?.monotony ?? 0;
@@ -322,9 +357,17 @@ const LoadAnalyticsSection = ({
                 styles.volumeDelta,
                 volDeltaPct > 20 && { color: Colors.yellow },
               ]}>
-              {volDeltaPct >= 0 ? '+' : ''}
-              {volDeltaPct}% vs the previous 7 days
+              {volDeltaPct > 300
+                ? 'over +300%'
+                : `${volDeltaPct >= 0 ? '+' : ''}${volDeltaPct}%`}
+              {' · last 7 days vs the 7 before'}
               {volDeltaPct > 20 ? ' · ramp up gently, aim for ~10%' : ''}
+            </Text>
+          )}
+          {volDeltaAbs != null && (
+            <Text style={styles.volumeDelta}>
+              {volDeltaAbs.now} load in the last 7 days vs {volDeltaAbs.prev} in the 7 before.
+              {' '}Not enough of a baseline to show a meaningful percentage.
             </Text>
           )}
 

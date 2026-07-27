@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useMemo} from 'react';
 import {
   View,
   Text,
@@ -12,16 +12,20 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {BarChart} from 'react-native-chart-kit';
+import {BarChart, LineChart} from 'react-native-chart-kit';
 import {Colors, Fonts, Spacing} from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import ScreenHeader from '../components/ScreenHeader';
 import Card from '../components/Card';
 import PrimaryButton from '../components/PrimaryButton';
 import LoadAnalyticsSection from '../components/LoadAnalyticsSection';
+import RiskGauge from '../components/RiskGauge';
+import { aggregateLoadHistory } from '../utils/loadHistory';
+import { computeInjuryRisk } from '../utils/injuryRisk';
 import { getActivityLogsByUser, getActiveInjuriesByUser, getCoachRecommendationsByUser } from '../services/api';
 import { useAuth } from '../api/AuthContext';
 import { buildRestRecommendation } from '../utils/restRecommendation';
+import { parseServerDate } from '../utils/serverDate';
 import {
   getWeekStartDate,
   getWeekStartDay,
@@ -30,7 +34,6 @@ import {
 } from '../constants/weekStart';
 import ScreenTutorial from '../components/ScreenTutorial';
 import { isTutorialDone, markTutorialDone } from '../utils/tutorialManager';
-
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -59,7 +62,7 @@ const WARNINGS_TUTORIAL_STEPS = [
           'Rest or reduce intensity immediately when you are here.',
   },
   {
-    icon: '📉',
+    icon: '🟡',
     title: 'Easing Off Zone',
     body: 'Below 0.8 means you are training too little compared to ' +
           'your normal level. This causes detraining — your fitness ' +
@@ -73,7 +76,7 @@ const WARNINGS_TUTORIAL_STEPS = [
           'recent changes. Both are valid — check both for a full picture.',
   },
   {
-    icon: '🤕',
+    icon: '🩹',
     title: 'Injuries Change Your Thresholds',
     body: 'When you have an active injury, the safe zone becomes stricter. ' +
           'The app protects you by warning you at lower load levels ' +
@@ -93,8 +96,15 @@ const getWeekRangeLabel = (offset, weekStartDay) => {
   return `${formatShortDate(ws)} – ${formatShortDate(we)}`;
 };
 
-const determineLoadLevel = (ratio) => {
+// Same bands as backend DetermineLoadLevel; an active injury tightens the
+// Red line to 1.2 (Yellow runs 0.8..<1.2 — no gap).
+const determineLoadLevel = (ratio, hasInjury = false) => {
   if (ratio == null || ratio <= 0) return 'Green';
+  if (hasInjury) {
+    if (ratio >= 1.2) return 'Red';
+    if (ratio >= 0.8) return 'Yellow';
+    return 'Green';
+  }
   if (ratio > 1.3) return 'Red';
   if (ratio >= 0.8) return 'Yellow';
   return 'Green';
@@ -102,7 +112,7 @@ const determineLoadLevel = (ratio) => {
 
 const sumSessionLoadsInRange = (logs, startDate, endDate) => {
   return logs.reduce((sum, log) => {
-    const st = new Date(log.startTime || log.StartTime);
+    const st = parseServerDate(log.startTime || log.StartTime);
     if (st >= startDate && st <= endDate) {
       return sum + Number(
         log.calculatedLoadForSession ?? log.CalculatedLoadForSession ?? 0,
@@ -148,6 +158,7 @@ const WarningsDashboardScreen = () => {
   );
   const [helpTopic, setHelpTopic] = useState(null);
   const [weekOffset, setWeekOffset] = useState(0); // 0 = current week, -1 = last week, etc.
+  const [loadRange, setLoadRange] = useState('week'); // #6 — 'week' | 'month' | 'year'
   const [allLogs, setAllLogs] = useState([]);
   const [allLoadHistory, setAllLoadHistory] = useState([]);
   const [weekStartDay, setWeekStartDayState] = useState(getWeekStartDay());
@@ -180,6 +191,31 @@ const WarningsDashboardScreen = () => {
 
   const recId = (rec) => String(rec.recID ?? rec.RecID);
   const coachUnseen = coachRecs.filter((r) => !seenRecIds.has(recId(r))).length;
+
+  // #183 — injury-risk gauge (ACWR + Foster monotony/strain), from the same
+  // confirmed logs the dashboard already loaded.
+  const injuryRisk = useMemo(
+    () => computeInjuryRisk(allLogs, user?.experienceLevel ?? user?.ExperienceLevel, hasActiveInjury),
+    [allLogs, user, hasActiveInjury],
+  );
+
+  // #10 — the "Current Status" AC ratio + level must agree with the Injury-Risk
+  // gauge and the Load-trend chart. All three read the SAME rolling ACWR
+  // (computeLoadAnalytics, surfaced via injuryRisk.ratio). The week-based number
+  // is only used when browsing a PAST week, where "current" rolling doesn't apply.
+  const isCurrentWeek = weekOffset === 0;
+  const displayRatio =
+    isCurrentWeek && injuryRisk.ratio != null ? injuryRisk.ratio : acRatio;
+  const displayLevel =
+    isCurrentWeek && injuryRisk.ratio != null
+      ? determineLoadLevel(displayRatio, hasActiveInjury)
+      : currentLoadLevel;
+  // Rebuild the recommendation text from the SAME rolling ratio so the number in
+  // the "Smart recommendation" can't disagree with the headline AC ratio.
+  const displayRecommendation =
+    isCurrentWeek && injuryRisk.ratio != null
+      ? buildRecommendation(displayLevel, displayRatio, stressScore)
+      : recommendation;
 
   // Folding the coach section open marks everything in it as seen (persisted),
   // so the red unseen-count badge clears and stays cleared across visits.
@@ -221,9 +257,13 @@ const WarningsDashboardScreen = () => {
         'A 0–100 reading of how hard your last 7 days have been compared to your personal baseline. Higher means more accumulated fatigue.',
     },
     weekly: {
-      title: 'Weekly Training Load',
+      title: 'Training Load chart',
       body:
-        'Each bar shows your 7-day rolling acute load at the end of that day. A plateau across days is normal; sharp jumps indicate heavy recent sessions.',
+        'Load for one session = duration (min) × exertion (1-10). This chart totals that load, and the Week / Month / Year buttons change the bucket:\n\n' +
+        '• WEEK — one bar per day for the selected week. Use the arrows to page back through previous weeks. Bar colours follow your daily load: green is light, yellow moderate, orange high, red very high.\n\n' +
+        '• MONTH — one bar per week for the last 6 weeks. Good for spotting whether your weekly volume is climbing, flat, or dropping.\n\n' +
+        '• YEAR — a line showing the total load of each of the last 12 calendar months, so you can see your season shape and long layoffs at a glance.\n\n' +
+        'Only confirmed workouts count. Pending Health Connect imports are excluded until you confirm them, so a bar can rise after you confirm a sync.',
     },
   };
 
@@ -245,7 +285,7 @@ const WarningsDashboardScreen = () => {
   useEffect(() => {
     renderWeek(allLogs, allLoadHistory, weekOffset);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekOffset, allLogs, allLoadHistory, weekStartDay]);
+  }, [weekOffset, allLogs, allLoadHistory, weekStartDay, hasActiveInjury]);
 
   const renderWeek = (logs, loadHistory, offset) => {
     const weekStart = getWeekStartDate(offset, weekStartDay);
@@ -255,7 +295,7 @@ const WarningsDashboardScreen = () => {
     // Per-day session-load sum for the displayed week only.
     // Two sessions on the same day sum together. Empty days stay 0.
     logs.forEach((log) => {
-      const st = new Date(log.startTime || log.StartTime);
+      const st = parseServerDate(log.startTime || log.StartTime);
       const d = new Date(st);
       d.setHours(0, 0, 0, 0);
       const diffDays = Math.round(
@@ -290,25 +330,44 @@ const WarningsDashboardScreen = () => {
     const chronic28Sum = sumSessionLoadsInRange(logs, chronic28Start, weekEnd);
     const chronic = chronic28Sum / 4; // weekly-equivalent average over 28 days
 
-    // Cold-start guard (mirrors backend LoadCalculationBL): a brand-new user's
-    // only workout falls in BOTH the acute window AND the 28-day window, so
-    // chronic = acute/4 and the ratio is a fixed 4.0 → every first session is a
-    // false Red. Until a real baseline exists (>= 7 distinct training days in
-    // the 28-day window), floor the chronic at the experience-based expected
-    // weekly load so early/small workouts are judged sanely.
-    const distinctDays = new Set();
+    // Cold-start guard + ramp (mirrors backend LoadCalculationBL.EffectiveChronic
+    // and utils/acwr.js — change one, change all):
+    //   < 7 days with load > 0 in the 28-day window: floor the chronic at the
+    //     experience-based expected weekly load (brand-new user's first session
+    //     isn't a fixed 4.0; a returning athlete isn't a false Red).
+    //   >= 7 active days: divide by the weeks actually covered instead of a
+    //     fixed 4 — chronic = sum28 / min(4, covered/7), covered from the first
+    //     loaded day. A steady 2-week-old user reads ~1.0, not a false Red 2.0.
+    const dayLoads = new Map();
     logs.forEach((log) => {
-      const st = new Date(log.startTime || log.StartTime);
+      const st = parseServerDate(log.startTime || log.StartTime);
       if (st >= chronic28Start && st <= weekEnd) {
         const dd = new Date(st);
         dd.setHours(0, 0, 0, 0);
-        distinctDays.add(dd.getTime());
+        const load = Number(
+          log.calculatedLoadForSession ?? log.CalculatedLoadForSession ?? 0,
+        );
+        dayLoads.set(dd.getTime(), (dayLoads.get(dd.getTime()) || 0) + load);
       }
     });
-    const baselineEstablished = distinctDays.size >= 7;
+    const activeDayKeys = [...dayLoads.entries()].filter(([, v]) => v > 0).map(([k]) => k);
+    const baselineEstablished = activeDayKeys.length >= 7;
     const bootstrapWeekly =
       BOOTSTRAP_WEEKLY[user?.experienceLevel ?? user?.ExperienceLevel] || 150;
-    const effChronic = baselineEstablished ? chronic : Math.max(chronic, bootstrapWeekly);
+    let effChronic;
+    if (!baselineEstablished) {
+      effChronic = Math.max(chronic, bootstrapWeekly);
+    } else {
+      const firstActive = Math.min(...activeDayKeys);
+      const coverEnd = Math.min(weekEnd.getTime(), Date.now());
+      const endDay = new Date(coverEnd);
+      endDay.setHours(0, 0, 0, 0);
+      const covered = Math.min(
+        28,
+        Math.max(7, Math.round((endDay.getTime() - firstActive) / 86400000) + 1),
+      );
+      effChronic = chronic28Sum / Math.min(4, covered / 7);
+    }
 
     // Ratio / level semantics (effChronic = chronic with the cold-start floor):
     //   - effChronic > 0 : standard ACWR.
@@ -317,10 +376,10 @@ const WarningsDashboardScreen = () => {
     let level = 'Green';
     if (effChronic > 0) {
       ratio = acute / effChronic;
-      level = determineLoadLevel(ratio);
+      level = determineLoadLevel(ratio, hasActiveInjury);
     } else if (acute > 0) {
       ratio = acute >= 1000 ? 2.0 : acute >= 300 ? 1.1 : 0.9;
-      level = determineLoadLevel(ratio);
+      level = determineLoadLevel(ratio, hasActiveInjury);
     }
 
     // Stress 0-100 scale.
@@ -410,6 +469,34 @@ const WarningsDashboardScreen = () => {
     ],
   };
 
+  // #6 — month/year use the same bar chart, fed by aggregateLoadHistory (this
+  // replaces the separate Load-History card — one chart, one UI, a range toggle).
+  // #3 fix: use a SINGLE dataset (the earlier max-pin second dataset rendered a
+  // phantom bar), and append a trailing empty slot so chart-kit doesn't clip the
+  // tall last (current-period) bar at the right edge.
+  const historyAgg = loadRange === 'week' ? null : aggregateLoadHistory(allLogs, loadRange);
+  const activeChartData =
+    loadRange === 'week'
+      ? chartData
+      : {
+          labels: [...historyAgg.bars.map((b) => b.label), ''],
+          datasets: [
+            { data: [...(historyAgg.bars.length ? historyAgg.bars.map((b) => b.load) : [0]), 0] },
+          ],
+        };
+
+  // #4 — the Year view used to be 12 cramped bars (labels + values overlapping on
+  // phone width, per device-test #4). A smooth area/line chart reads the 12-month
+  // trend far more cleanly. Label every OTHER month (anchored so the current month
+  // is always labelled) to stop the x-axis crowding.
+  const yearBars = loadRange === 'year' && historyAgg ? historyAgg.bars : [];
+  const yearLineData = {
+    labels: yearBars.map((b, i) => ((yearBars.length - 1 - i) % 2 === 0 ? b.label : '')),
+    datasets: [
+      { data: yearBars.length ? yearBars.map((b) => b.load) : [0], strokeWidth: 3 },
+    ],
+  };
+
   return (
     <View style={styles.container}>
       <ScreenHeader title="Warnings" subtitle="Training Load Overview" />
@@ -437,15 +524,15 @@ const WarningsDashboardScreen = () => {
                 <View
                   style={[
                     styles.statusDot,
-                    {backgroundColor: getLevelColor(currentLoadLevel)},
+                    {backgroundColor: getLevelColor(displayLevel)},
                   ]}
                 />
                 <Text
                   style={[
                     styles.statusText,
-                    {color: getLevelColor(currentLoadLevel)},
+                    {color: getLevelColor(displayLevel)},
                   ]}>
-                  {currentLoadLevel}
+                  {displayLevel}
                 </Text>
               </View>
               <View style={styles.metricsRow}>
@@ -456,7 +543,7 @@ const WarningsDashboardScreen = () => {
                       <Ionicons name="help-circle-outline" size={14} color={Colors.textSecondary} />
                     </TouchableOpacity>
                   </View>
-                  <Text style={styles.metricValue}>{acRatio.toFixed(2)}</Text>
+                  <Text style={styles.metricValue}>{displayRatio.toFixed(2)}</Text>
                 </View>
                 <View style={styles.metric}>
                   <View style={styles.metricLabelRow}>
@@ -465,7 +552,7 @@ const WarningsDashboardScreen = () => {
                       <Ionicons name="help-circle-outline" size={14} color={Colors.textSecondary} />
                     </TouchableOpacity>
                   </View>
-                  <Text style={[styles.metricValue, { color: getLevelColor(currentLoadLevel) }]}>
+                  <Text style={[styles.metricValue, { color: getLevelColor(displayLevel) }]}>
                     {acuteLoad}
                   </Text>
                 </View>
@@ -481,53 +568,105 @@ const WarningsDashboardScreen = () => {
               </View>
             </Card>
 
-            {/* Weekly Load Chart */}
+            {/* Training Load chart — Week / Month / Year in ONE chart (#6).
+                No extra marginTop: the previous card's marginBottom already
+                supplies the standard 16px gap (device-test #5). */}
             <Card>
               <View style={styles.titleRow}>
-                <Text style={styles.cardTitle}>Weekly Training Load</Text>
+                <Text style={styles.cardTitle}>Training Load</Text>
                 <TouchableOpacity onPress={() => setHelpTopic('weekly')} hitSlop={8}>
                   <Ionicons name="help-circle-outline" size={18} color={Colors.textSecondary} />
                 </TouchableOpacity>
               </View>
-              <View style={styles.weekNavRow}>
-                <TouchableOpacity
-                  style={styles.weekNavBtn}
-                  onPress={() => setWeekOffset((o) => o - 1)}
-                  hitSlop={8}
-                >
-                  <Ionicons name="chevron-back" size={20} color={Colors.primary} />
-                </TouchableOpacity>
-                <Text style={styles.weekNavLabel}>{getWeekRangeLabel(weekOffset, weekStartDay)}</Text>
-                <TouchableOpacity
-                  style={[styles.weekNavBtn, weekOffset >= 0 && styles.weekNavBtnDisabled]}
-                  onPress={() => weekOffset < 0 && setWeekOffset((o) => o + 1)}
-                  disabled={weekOffset >= 0}
-                  hitSlop={8}
-                >
-                  <Ionicons
-                    name="chevron-forward"
-                    size={20}
-                    color={weekOffset >= 0 ? Colors.textMuted : Colors.primary}
-                  />
-                </TouchableOpacity>
+
+              {/* Range toggle (folds in the old Load-History card) */}
+              <View style={styles.rangeToggle}>
+                {['week', 'month', 'year'].map((r) => (
+                  <TouchableOpacity
+                    key={r}
+                    style={[styles.rangeBtn, loadRange === r && styles.rangeBtnActive]}
+                    onPress={() => setLoadRange(r)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.rangeText, loadRange === r && styles.rangeTextActive]}>
+                      {r.charAt(0).toUpperCase() + r.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-              <BarChart
-                data={chartData}
-                width={screenWidth - Spacing.lg * 4}
-                height={220}
-                chartConfig={chartConfig}
-                fromZero
-                showValuesOnTopOfBars
-                withInnerLines
-                segments={4}
-                style={styles.chart}
-              />
-              <Text style={styles.chartCaption}>Daily session load (load units)</Text>
+
+              {/* Week nav only in week mode */}
+              {loadRange === 'week' && (
+                <View style={styles.weekNavRow}>
+                  <TouchableOpacity
+                    style={styles.weekNavBtn}
+                    onPress={() => setWeekOffset((o) => o - 1)}
+                    hitSlop={8}
+                  >
+                    <Ionicons name="chevron-back" size={20} color={Colors.primary} />
+                  </TouchableOpacity>
+                  <Text style={styles.weekNavLabel}>{getWeekRangeLabel(weekOffset, weekStartDay)}</Text>
+                  <TouchableOpacity
+                    style={[styles.weekNavBtn, weekOffset >= 0 && styles.weekNavBtnDisabled]}
+                    onPress={() => weekOffset < 0 && setWeekOffset((o) => o + 1)}
+                    disabled={weekOffset >= 0}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name="chevron-forward"
+                      size={20}
+                      color={weekOffset >= 0 ? Colors.textMuted : Colors.primary}
+                    />
+                  </TouchableOpacity>
+                </View>
+              )}
+              {loadRange === 'year' ? (
+                <LineChart
+                  data={yearLineData}
+                  width={screenWidth - Spacing.lg * 4}
+                  height={220}
+                  chartConfig={{
+                    ...chartConfig,
+                    fillShadowGradientFrom: Colors.primary,
+                    fillShadowGradientTo: Colors.cardBackground,
+                    fillShadowGradientFromOpacity: 0.35,
+                    fillShadowGradientToOpacity: 0.02,
+                    propsForDots: { r: '4', strokeWidth: '2', stroke: Colors.primary },
+                  }}
+                  bezier
+                  fromZero
+                  withInnerLines
+                  withVerticalLines={false}
+                  segments={4}
+                  style={styles.chart}
+                />
+              ) : (
+                <BarChart
+                  data={activeChartData}
+                  width={screenWidth - Spacing.lg * 4}
+                  height={220}
+                  chartConfig={chartConfig}
+                  fromZero
+                  showValuesOnTopOfBars
+                  withInnerLines
+                  segments={4}
+                  style={styles.chart}
+                />
+              )}
+              <Text style={styles.chartCaption}>
+                {loadRange === 'week'
+                  ? 'Daily session load (load units)'
+                  : loadRange === 'month'
+                  ? 'Weekly session load, last 6 weeks (load units)'
+                  : 'Monthly session load trend, last 12 months (load units)'}
+              </Text>
             </Card>
 
-            {/* Load Trend (Classic/EWMA toggle) + Training Analysis. Computed
-                by the backend LoadAnalyticsBL; falls back to the on-device
-                mirror (utils/loadSeries) using the logs fetched above. */}
+            {/* #183 — Injury-Risk Gauge, BELOW the load chart. */}
+            <View style={{ paddingHorizontal: Spacing.lg }}>
+              <RiskGauge risk={injuryRisk} />
+            </View>
+
             <LoadAnalyticsSection
               userId={userId}
               experienceLevel={user?.experienceLevel ?? user?.ExperienceLevel}
@@ -539,8 +678,8 @@ const WarningsDashboardScreen = () => {
             <Card>
               {(() => {
                 const visual = buildRestRecommendation({
-                  acRatio,
-                  loadLevel: currentLoadLevel,
+                  acRatio: displayRatio,
+                  loadLevel: displayLevel,
                   hasActiveInjury,
                 });
                 return (
@@ -561,7 +700,7 @@ const WarningsDashboardScreen = () => {
                         </Text>
                       </View>
                     </View>
-                    <Text style={styles.recommendationText}>{recommendation}</Text>
+                    <Text style={styles.recommendationText}>{displayRecommendation}</Text>
                     {visual.injuryWarning && (
                       <View style={styles.injuryBox}>
                         <Ionicons
@@ -578,8 +717,6 @@ const WarningsDashboardScreen = () => {
               })()}
             </Card>
 
-            {/* Messages from your coach (foldable). Collapsed shows just the
-                title + an unseen-count red dot; tap to unfold the messages. */}
             {coachRecs.length > 0 && (
               <Card>
                 <TouchableOpacity style={styles.coachHeader} activeOpacity={0.7} onPress={toggleCoach}>
@@ -808,7 +945,6 @@ const makeStyles = (Colors) => StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.border,
     backgroundColor: Colors.cardBackground,
-
   },
   secondaryButton: {
     alignItems: 'center',
@@ -818,12 +954,11 @@ const makeStyles = (Colors) => StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: Fonts.bodySize,
   },
-
   secondaryRow: {
-  flexDirection: 'row',
-  justifyContent: 'space-around',
-  paddingHorizontal: Spacing.md,
-},
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: Spacing.md,
+  },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -847,6 +982,17 @@ const makeStyles = (Colors) => StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: Spacing.sm,
   },
+  rangeToggle: {
+    flexDirection: 'row',
+    backgroundColor: Colors.inputBackground,
+    borderRadius: 8,
+    padding: 3,
+    marginBottom: Spacing.sm,
+  },
+  rangeBtn: { flex: 1, paddingVertical: 6, borderRadius: 6, alignItems: 'center' },
+  rangeBtnActive: { backgroundColor: Colors.primary },
+  rangeText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '700' },
+  rangeTextActive: { color: '#fff' },
   weekNavBtn: {
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
@@ -898,7 +1044,5 @@ const makeStyles = (Colors) => StyleSheet.create({
     fontWeight: Fonts.semiBold,
   },
 });
-
-
 
 export default WarningsDashboardScreen;

@@ -30,6 +30,20 @@ export const updateUser = (userId, data) =>
 export const changePassword = (userId, currentPassword, newPassword) =>
   api.put(`/users/${userId}/password`, { currentPassword, newPassword });
 
+// #110 — forgot / reset password. `forgot` never reveals whether the email
+// exists; in dev (AUTH_DEV_CODES=true) it returns { devCode } so the flow is
+// testable without an email provider.
+export const forgotPassword = (email) =>
+  api.post('/auth/forgot', { email });
+export const resetPassword = (email, code, newPassword) =>
+  api.post('/auth/reset', { email, code, newPassword });
+
+// #114 — email verification.
+export const requestEmailVerification = (userId) =>
+  api.post('/auth/verify/request', { userId });
+export const confirmEmailVerification = (userId, code) =>
+  api.post('/auth/verify/confirm', { userId, code });
+
 // #131 — body-measurement tracking (weight / body-fat over time).
 export const getBodyMeasurements = (userId) =>
   api.get(`/users/${userId}/measurements`);
@@ -129,9 +143,16 @@ export const deleteActivityLog = (activityId) =>
 export const getDailyLoadByUser = (userId) =>
   api.get(`/dailyload/user/${userId}`);
 
+// The device's UTC offset in minutes (Israel DST = 180). JS getTimezoneOffset
+// returns minutes BEHIND UTC, hence the sign flip. The backend uses it to
+// bucket session times to the user's LOCAL calendar day — without it a 00:30
+// workout counts on the previous day's load windows.
+export const deviceTzOffsetMinutes = () => -new Date().getTimezoneOffset();
+
 export const calculateDailyLoad = (userId, date = new Date()) =>
   api.post(`/dailyload/user/${userId}/calculate`, {
     date: date instanceof Date ? date.toISOString() : date,
+    tzOffsetMinutes: deviceTzOffsetMinutes(),
   });
 
 // Day-by-day trend series with BOTH AC-ratio methods (classic rolling + EWMA)
@@ -141,8 +162,43 @@ export const getLoadAnalytics = (userId, days = 56) =>
   api.get(`/dailyload/user/${userId}/analytics`, {
     // end = the DEVICE's calendar date: Azure runs on UTC, so between local
     // midnight and 03:00 the server's "today" is still yesterday.
-    params: { days, end: new Date().toLocaleDateString('en-CA') },
+    params: {
+      days,
+      end: new Date().toLocaleDateString('en-CA'),
+      tzOffsetMinutes: deviceTzOffsetMinutes(),
+    },
   });
+
+// ==================== WORKOUT SHARE (#181) ====================
+// Mark a workout shareable (owner only), then share the deep link.
+export const shareWorkout = (activityId, shared = true) =>
+  api.put(`/activitylog/${activityId}/share`, { shared });
+// Anonymous read of a shared workout (non-sensitive fields only).
+export const getPublicWorkout = (activityId) =>
+  api.get(`/activitylog/${activityId}/public`);
+
+// ==================== WORKOUT TEMPLATES (#119) ====================
+export const getWorkoutTemplates = (userId) =>
+  api.get(`/workouttemplates/user/${userId}`);
+export const createWorkoutTemplate = (template) =>
+  api.post('/workouttemplates', template);
+export const deleteWorkoutTemplate = (templateId) =>
+  api.delete(`/workouttemplates/${templateId}`);
+
+// ==================== NUTRITION / HYDRATION (#132) ====================
+// Today's entries + totals for the user's LOCAL calendar day.
+export const getNutritionDay = (userId, date = new Date()) =>
+  api.get(`/nutrition/user/${userId}/day`, {
+    params: {
+      date: (date instanceof Date ? date : new Date(date)).toLocaleDateString('en-CA'),
+      tzOffsetMinutes: deviceTzOffsetMinutes(),
+    },
+  });
+// kind = 'food' (name?/calories/barcode?) or 'water' (waterMl).
+export const addNutritionEntry = (userId, entry) =>
+  api.post(`/nutrition/user/${userId}`, entry);
+export const deleteNutritionEntry = (entryId) =>
+  api.delete(`/nutrition/${entryId}`);
 
 // ==================== RECOMMENDATIONS ====================
 export const getRecommendationsByUser = (userId) =>
@@ -223,6 +279,14 @@ export const getLeaderboard = ({
 export const setLeaderboardOptIn = (userId, on) =>
   api.put(`/board/leaderboard/optin/${userId}`, null, { params: { on } });
 
+// #143 — comments on a board post (+ one level of nested replies).
+export const getBoardComments = (postId) =>
+  api.get(`/board/${postId}/comments`);
+export const addBoardComment = (postId, userId, text, parentCommentId = null) =>
+  api.post(`/board/${postId}/comments`, { userID: Number(userId), text, parentCommentId });
+export const deleteBoardComment = (commentId, userId) =>
+  api.delete(`/board/comments/${commentId}`, { params: { userId } });
+
 // #171 — kudos ("cheers") on a workout (ActivityLog). Toggle on/off; returns
 // { count, kudoed } so the button reflects the viewer's own kudos state.
 export const toggleKudos = (logId, fromUserId) =>
@@ -274,13 +338,16 @@ export const getCoachesForTrainee = (userId) =>
 
 // ==================== CHAT / MESSAGES ====================
 // Chat is user<->user. `senderId` / `receiverId` are both Users.UserID.
-// `imagePath` (optional) is a path returned by uploadChatImage.
-export const sendMessage = ({ senderId, receiverId, text, imagePath }) =>
+// `imagePath` / `audioPath` (#139) / `videoPath` (#135) are paths returned by
+// the matching upload helper below (all optional).
+export const sendMessage = ({ senderId, receiverId, text, imagePath, audioPath, videoPath }) =>
   api.post('/messages', {
     senderID: Number(senderId),
     receiverID: Number(receiverId),
     text: text ?? '',
     imagePath: imagePath ?? null,
+    audioPath: audioPath ?? null,
+    videoPath: videoPath ?? null,
   });
 
 // Uploads a chat image to the backend (multipart), returns { path } where
@@ -319,6 +386,43 @@ export const uploadChatImage = async (localUri) => {
     throw new Error(`Server returned non-JSON: ${text.slice(0, 200)}`);
   }
 };
+
+// #139 / #135 — upload chat media (voice clip / form-check video) to the
+// backend. `endpoint` is 'audio' or 'video'; returns { path } = "/media/...".
+// Same raw-fetch + 90s AbortController pattern as uploadChatImage (video is
+// bigger, hence the longer timeout). The server sniffs the bytes and derives
+// the on-disk extension, so the client mime is only a hint.
+const uploadChatMedia = async (endpoint, localUri, mime, fallbackName) => {
+  const filename = localUri.split('/').pop() || fallbackName;
+  const form = new FormData();
+  form.append('file', { uri: localUri, name: filename, type: mime });
+
+  const url = `${API_BASE_URL}/messages/upload/${endpoint}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90000);
+  let response;
+  try {
+    const _t = getAuthToken();
+    response = await fetch(url, {
+      method: 'POST', body: form, signal: controller.signal,
+      headers: _t ? { Authorization: `Bearer ${_t}` } : undefined,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  const text = await response.text();
+  if (!response.ok) throw new Error(`HTTP ${response.status} — ${text || 'no response body'}`);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Server returned non-JSON: ${text.slice(0, 200)}`);
+  }
+};
+
+export const uploadChatAudio = (localUri) =>
+  uploadChatMedia('audio', localUri, 'audio/m4a', `voice_${Date.now()}.m4a`);
+export const uploadChatVideo = (localUri) =>
+  uploadChatMedia('video', localUri, 'video/mp4', `clip_${Date.now()}.mp4`);
 
 // Full thread between two users (oldest first).
 export const getConversation = (userA, userB) =>
@@ -364,11 +468,27 @@ export const removeUserActivityPreference = (userId, activityTypeId) =>
   api.delete(`/useractivitypreferences/${userId}/${activityTypeId}`);
 
 // ==================== DEVICES ====================
+// #163 — multi-device sessions. Routes match UserDevicesController
+// (api/users/{userId}/devices), NOT the older /userdevice path.
 export const getUserDevices = (userId) =>
-  api.get(`/userdevice/user/${userId}`);
+  api.get(`/users/${userId}/devices`);
+export const deleteUserDevice = (userId, deviceId) =>
+  api.delete(`/users/${userId}/devices/${deviceId}`);
 
 export const registerDevice = (data) =>
   api.post('/userdevice', data);
+
+// ==================== SESSIONS (real device sign-out) ====================
+// 2026-07-19 — replaces the advisory UserDevices list. Each login creates a
+// server-side session whose id is embedded in the JWT ("sid"); revoking it makes
+// that device's token stop working on its next request. Requires
+// sql/2026-07-19_add_user_sessions.sql.
+export const getUserSessions = (userId) =>
+  api.get(`/users/${userId}/sessions`);
+export const revokeUserSession = (userId, sessionId) =>
+  api.delete(`/users/${userId}/sessions/${sessionId}`);
+export const revokeOtherUserSessions = (userId) =>
+  api.post(`/users/${userId}/sessions/revoke-others`);
 
 // ==================== SOCIAL: PRESENCE / LOCATION (#3) ====================
 // Heartbeat — marks the user online (LastSeen = now). Call periodically while
@@ -427,6 +547,11 @@ export const getSentCoachOffers = (coachUserId) =>
 export const getGyms = (lat, lng, radiusKm = 25) =>
   api.get('/gyms', { params: { lat, lng, radiusKm } });
 
+// #146 — seeded gyms MERGED with live Google Places results (server proxies the
+// billable Places call; degrades to seeded-only when the key isn't configured).
+export const getNearbyGyms = (lat, lng, radiusKm = 25) =>
+  api.get('/gyms/nearby', { params: { lat, lng, radiusKm } });
+
 export const getGymCoaches = (gymId) =>
   api.get(`/gyms/${gymId}/coaches`);
 
@@ -438,5 +563,130 @@ export const removeCoachFromGym = (gymId, coachUserId) =>
 
 export const getGymsForCoach = (coachUserId) =>
   api.get(`/gyms/for-coach/${coachUserId}`);
+
+// ==================== COMMUNITY (medium batch 2026-07-17) ====================
+// #142 friend challenges. Metric ∈ load | workouts | distance. `inviteeCsv` is
+// a comma-separated list of friend UserIDs to auto-enrol.
+export const createChallenge = (payload) =>
+  api.post('/community/challenges', payload);
+export const getChallengesForUser = (userId) =>
+  api.get(`/community/challenges/user/${userId}`);
+export const getChallengeStandings = (challengeId) =>
+  api.get(`/community/challenges/${challengeId}/standings`);
+export const joinChallenge = (challengeId, userId) =>
+  api.post(`/community/challenges/${challengeId}/join/${userId}`, {});
+export const leaveChallenge = (challengeId, userId) =>
+  api.delete(`/community/challenges/${challengeId}/leave/${userId}`);
+export const getChallengeInvites = (userId) =>
+  api.get(`/community/challenges/invites/${userId}`);
+export const respondChallengeInvite = (challengeId, userId, accept) =>
+  api.put(`/community/challenges/${challengeId}/invite/${userId}/${accept}`, {});
+
+// #145 group runs / events.
+export const createEvent = (payload) =>
+  api.post('/community/events', payload);
+export const getEventsForUser = (userId) =>
+  api.get(`/community/events/user/${userId}`);
+export const getEventAttendees = (eventId) =>
+  api.get(`/community/events/${eventId}/attendees`);
+export const rsvpEvent = (eventId, userId, status) =>
+  api.put(`/community/events/${eventId}/rsvp`, { userID: userId, status });
+export const deleteEvent = (eventId, userId) =>
+  api.delete(`/community/events/${eventId}`, { params: { userId } });
+// #145 group chat — attendees discuss the event (time/place/links).
+// #7 — full parity with the 1:1 chat: a message may carry text and/or an image,
+// video or voice note. Fetching also marks the thread seen (read receipts), and
+// the POST returns the SAVED message so the caller can append it directly.
+// Media is uploaded with the SAME generic uploadChatImage/Audio/Video helpers.
+export const getEventMessages = (eventId, userId) =>
+  api.get(`/community/events/${eventId}/messages`, { params: { userId } });
+export const postEventMessage = (
+  eventId,
+  senderId,
+  { text = null, imagePath = null, videoPath = null, audioPath = null } = {}
+) =>
+  api.post(`/community/events/${eventId}/messages`, {
+    senderId,
+    text,
+    imagePath,
+    videoPath,
+    audioPath,
+  });
+// Toggle one emoji per user per message; fetch all reactions for the thread.
+export const reactToEventMessage = (eventId, messageId, userId, emoji) =>
+  api.post(`/community/events/${eventId}/messages/${messageId}/react`, { userId, emoji });
+export const getEventReactions = (eventId, userId) =>
+  api.get(`/community/events/${eventId}/reactions`, { params: { userId } });
+
+// ── #133 Assigned training programs ─────────────────────────────────────────
+// Coach builds a program (name + weekly template rows) and assigns it to a
+// trainee; assigning fans the rows onto the trainee's calendar. Each assignment
+// has a per-program chat thread (helpers below mirror the event-chat signatures
+// so EventChatScreen's channel resolver can reuse the exact same UI).
+export const createProgram = (coachUserId, payload) =>
+  api.post(`/programs/coach/${coachUserId}`, payload);
+export const getProgramsByCoach = (coachUserId) =>
+  api.get(`/programs/coach/${coachUserId}`);
+export const getProgram = (programId) =>
+  api.get(`/programs/${programId}`);
+export const updateProgram = (programId, payload) =>
+  api.put(`/programs/${programId}`, payload);
+export const deleteProgram = (programId) =>
+  api.delete(`/programs/${programId}`);
+export const assignProgram = (programId, { traineeUserId, startDate }) =>
+  api.post(`/programs/${programId}/assign`, { traineeUserId, startDate });
+export const getAssignmentsForTrainee = (traineeUserId) =>
+  api.get(`/programs/assignments/trainee/${traineeUserId}`);
+export const getAssignmentsForCoach = (coachUserId) =>
+  api.get(`/programs/assignments/coach/${coachUserId}`);
+export const getProgramAssignment = (assignmentId) =>
+  api.get(`/programs/assignments/${assignmentId}`);
+export const deleteAssignment = (assignmentId) =>
+  api.delete(`/programs/assignments/${assignmentId}`);
+
+// Per-assignment chat (SAME shape as getEventMessages/postEventMessage/… so the
+// group-chat screen treats a program thread as just another channel).
+export const getProgramMessages = (assignmentId, userId) =>
+  api.get(`/programs/assignments/${assignmentId}/messages`, { params: { userId } });
+export const postProgramMessage = (
+  assignmentId,
+  senderId,
+  { text = null, imagePath = null, videoPath = null, audioPath = null } = {}
+) =>
+  api.post(`/programs/assignments/${assignmentId}/messages`, {
+    senderId,
+    text,
+    imagePath,
+    videoPath,
+    audioPath,
+  });
+export const reactToProgramMessage = (assignmentId, messageId, userId, emoji) =>
+  api.post(`/programs/assignments/${assignmentId}/messages/${messageId}/react`, { userId, emoji });
+export const getProgramReactions = (assignmentId, userId) =>
+  api.get(`/programs/assignments/${assignmentId}/reactions`, { params: { userId } });
+
+// #169 coach marketplace + reviews.
+export const getCoachMarketplace = (viewerId, { search = null, sort = 'rating' } = {}) =>
+  api.get('/community/coaches', { params: { viewerId, search, sort } });
+export const getCoachReviews = (coachUserId) =>
+  api.get(`/community/coaches/${coachUserId}/reviews`);
+export const upsertCoachReview = (coachUserId, reviewerUserId, rating, text) =>
+  api.post(`/community/coaches/${coachUserId}/reviews`, { reviewerUserID: reviewerUserId, rating, text });
+
+// #144 activity feed (friends' recent workouts + board posts, merged).
+export const getActivityFeed = (userId, limit = 40) =>
+  api.get(`/community/feed/${userId}`, { params: { limit } });
+
+// #134 — coach comments on a workout log.
+export const getWorkoutComments = (activityId) =>
+  api.get(`/workoutcomments/${activityId}`);
+export const addWorkoutComment = (activityId, authorUserId, text) =>
+  api.post(`/workoutcomments/${activityId}`, { authorUserID: authorUserId, text });
+export const deleteWorkoutComment = (commentId, userId) =>
+  api.delete(`/workoutcomments/comment/${commentId}`, { params: { userId } });
+
+// #165 — per-activity personal bests.
+export const getActivityBests = (userId) =>
+  api.get(`/records/${userId}/activity-bests`);
 
 export default api;

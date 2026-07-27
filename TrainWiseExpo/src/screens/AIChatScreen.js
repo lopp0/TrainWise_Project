@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,28 +11,80 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import { getGPTResponse } from '../api/openai';
+import { useAuth } from '../api/AuthContext';
+import { getActivityLogsByUser, getAllActivityTypes } from '../services/api';
+import { buildDataContext } from '../utils/aiDataContext';
 
 const SYSTEM_PROMPT = `You are TrainWise AI, a specialized fitness assistant built into the TrainWise training app.
 You ONLY answer questions about workouts, training plans, exercise technique, injury prevention, and injury recovery.
 If the user asks about anything unrelated to fitness, workouts, or injuries, politely decline and redirect them to ask a fitness-related question.
+When the athlete's own training data is provided below, use those real numbers to answer questions about their week, load, or overtraining.
 Keep responses concise, practical, and motivating. Use bullet points when listing multiple items.`;
+
+const GREETING = {
+  id: '0',
+  role: 'assistant',
+  content: "Hi! I'm TrainWise AI 💪\nAsk me anything about your training, recovery, or injuries!",
+};
 
 const AIChatScreen = ({ navigation }) => {
   const styles = useThemedStyles(makeStyles);
-  const [messages, setMessages] = useState([
-    {
-      id: '0',
-      role: 'assistant',
-      content: "Hi! I'm TrainWise AI 💪\nAsk me anything about your training, recovery, or injuries!",
-    },
-  ]);
+  const { userId, user } = useAuth();
+  // Persist the conversation per user so it survives leaving the screen (#3).
+  const chatKey = userId ? `@trainwise_aichat_${userId}` : null;
+  const loadedRef = useRef(false);
+  // #176 — the user's own training data, injected into the system prompt so the
+  // assistant can answer grounded questions ("how was my week?").
+  const dataContextRef = useRef('');
+
+  useEffect(() => {
+    if (!userId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const [logsRes, typesRes] = await Promise.all([
+          getActivityLogsByUser(userId),
+          getAllActivityTypes(),
+        ]);
+        if (alive) dataContextRef.current = buildDataContext(logsRes.data || [], typesRes.data || [], user?.experienceLevel);
+      } catch {
+        // best-effort — the assistant still works without grounding data
+      }
+    })();
+    return () => { alive = false; };
+  }, [userId, user?.experienceLevel]);
+  const [messages, setMessages] = useState([GREETING]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const flatListRef = useRef(null);
+
+  // Load saved history on mount; persist on every change once loaded.
+  useEffect(() => {
+    if (!chatKey) return;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(chatKey);
+        const saved = raw ? JSON.parse(raw) : null;
+        if (Array.isArray(saved) && saved.length) setMessages(saved);
+      } catch { /* start fresh */ }
+      loadedRef.current = true;
+    })();
+  }, [chatKey]);
+
+  useEffect(() => {
+    if (!chatKey || !loadedRef.current) return;
+    AsyncStorage.setItem(chatKey, JSON.stringify(messages.slice(-50))).catch(() => {});
+  }, [messages, chatKey]);
+
+  const clearChat = useCallback(() => {
+    setMessages([GREETING]);
+    if (chatKey) AsyncStorage.removeItem(chatKey).catch(() => {});
+  }, [chatKey]);
 
   const sendMessage = useCallback(async () => {
     const text = inputText.trim();
@@ -44,8 +96,11 @@ const AIChatScreen = ({ navigation }) => {
     setInputText('');
     setLoading(true);
 
+    const systemContent = dataContextRef.current
+      ? `${SYSTEM_PROMPT}\n\n${dataContextRef.current}`
+      : SYSTEM_PROMPT;
     const apiMessages = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: systemContent },
       ...updatedMessages.map(({ role, content }) => ({ role, content })),
     ];
 
@@ -91,12 +146,14 @@ const AIChatScreen = ({ navigation }) => {
           </View>
           <Text style={styles.headerTitle}>TrainWise AI</Text>
         </View>
-        <View style={{ width: 24 }} />
+        <TouchableOpacity onPress={clearChat} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="trash-outline" size={22} color={Colors.textMuted} />
+        </TouchableOpacity>
       </View>
 
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="padding"
         keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
       >
         {/* Messages list */}

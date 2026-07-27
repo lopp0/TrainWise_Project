@@ -1,17 +1,28 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, LayoutAnimation } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, LayoutAnimation, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useThemedStyles } from '../theme/useThemedStyles';
 import ActivityIcon from './ActivityIcon';
 import { computeWeeklySummary } from '../utils/weeklyStats';
+import { getGPTResponse } from '../api/openai';
+import { buildDataContext } from '../utils/aiDataContext';
 
 /**
- * B-8 — collapsible "This week at a glance" card placed under the Home
- * dashboard. All values are derived from the confirmed ActivityLogs already
- * fetched by HomeScreen (passed in as `logs`); it never makes its own API call.
- * Default state is expanded; collapses with the same LayoutAnimation chevron
- * pattern used by the Connect/AddWorkout collapsible cards.
+ * "THIS WEEK" — unified weekly card (merges the old "This week at a glance"
+ * stat grid with the #153 AI "week in review"). All stats derive from the
+ * confirmed ActivityLogs already fetched by HomeScreen (`logs`); the AI recap is
+ * generated on tap and cached per ISO week per user (never auto-spends).
+ * Collapsed by default.
  */
+const isoWeekKey = (d = new Date()) => {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - dayNum + 3);
+  const firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
+  const week = 1 + Math.round(((date - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+  return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+};
 // Module-level sub-component receives `styles` as a prop (it can't close over
 // the component-scoped themed styles otherwise — see lessons 2026-05-31).
 const Stat = ({ icon, value, label, valueColor, delta, deltaColor, styles }) => (
@@ -41,13 +52,51 @@ const acColorFor = (r) => {
   return '#f44336';
 };
 
-const WeeklySummaryCard = ({ logs, activityTypes, experienceLevel = 1 }) => {
+const WeeklySummaryCard = ({ logs, activityTypes, experienceLevel = 1, userId }) => {
   const styles = useThemedStyles(makeStyles);
   const [open, setOpen] = useState(false); // collapsed by default
   const summary = useMemo(
     () => computeWeeklySummary(logs, activityTypes, experienceLevel),
     [logs, activityTypes, experienceLevel]
   );
+
+  // AI "week in review" (merged in) — cached per ISO week per user.
+  const [aiText, setAiText] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const cacheKey = `@trainwise_week_review_${userId}_${isoWeekKey()}`;
+
+  useEffect(() => {
+    AsyncStorage.getItem(cacheKey).then((v) => { if (v) setAiText(v); }).catch(() => {});
+  }, [cacheKey]);
+
+  const generate = useCallback(async () => {
+    setAiLoading(true);
+    try {
+      const context = buildDataContext(logs, activityTypes, experienceLevel);
+      const messages = [
+        {
+          role: 'system',
+          content:
+            'You are TrainWise AI, writing a short weekly training recap for a recreational athlete. ' +
+            'Ground EVERY statement in the numbers provided and never invent or round up figures. ' +
+            'When you say "this week", use ONLY the THIS WEEK line; the 28-day numbers are background ' +
+            'context and must never be described as "this week". Structure: one encouraging headline ' +
+            'sentence, 2-3 bullet observations (volume, consistency, load balance), then one concrete ' +
+            'tip for next week. Under 120 words. Be warm and specific, not generic.',
+        },
+        { role: 'user', content: `Here is my training data:\n${context}\n\nWrite my week in review.` },
+      ];
+      const reply = await getGPTResponse(messages);
+      if (reply) {
+        setAiText(reply);
+        AsyncStorage.setItem(cacheKey, reply).catch(() => {});
+      }
+    } catch {
+      setAiText('Could not generate your review right now. Please try again.');
+    } finally {
+      setAiLoading(false);
+    }
+  }, [logs, activityTypes, cacheKey]);
 
   const toggle = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -86,6 +135,7 @@ const WeeklySummaryCard = ({ logs, activityTypes, experienceLevel = 1 }) => {
         (!summary.hasData ? (
           <Text style={styles.empty}>No workouts logged this week yet.</Text>
         ) : (
+         <>
           <View style={styles.grid}>
             <Stat
               styles={styles}
@@ -158,6 +208,34 @@ const WeeklySummaryCard = ({ logs, activityTypes, experienceLevel = 1 }) => {
               label="AC ratio"
             />
           </View>
+
+          {/* AI "week in review" (merged) */}
+          <View style={styles.aiSection}>
+            <View style={styles.aiHeader}>
+              <Ionicons name="sparkles" size={14} color={styles._primary} />
+              <Text style={styles.aiTitle}>AI RECAP</Text>
+            </View>
+            {aiLoading ? (
+              <View style={styles.aiCenter}>
+                <ActivityIndicator color={styles._primary} />
+                <Text style={styles.aiThinking}>Reviewing your week…</Text>
+              </View>
+            ) : aiText ? (
+              <>
+                <Text style={styles.aiText}>{aiText}</Text>
+                <TouchableOpacity onPress={generate} style={styles.regen}>
+                  <Ionicons name="refresh" size={13} color={styles._muted} />
+                  <Text style={styles.regenText}>Regenerate</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity style={styles.genBtn} onPress={generate} activeOpacity={0.85}>
+                <Ionicons name="sparkles" size={15} color="#fff" />
+                <Text style={styles.genBtnText}>Generate weekly insight</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+         </>
         ))}
     </View>
   );
@@ -227,6 +305,22 @@ const makeStyles = (Colors) => {
       marginTop: 2,
       textAlign: 'center',
     },
+    aiSection: {
+      marginTop: 6, paddingTop: 12,
+      borderTopWidth: 1, borderTopColor: Colors.border,
+    },
+    aiHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+    aiTitle: { color: Colors.primary, fontSize: 12, fontWeight: '800', letterSpacing: 0.4 },
+    aiCenter: { alignItems: 'center', paddingVertical: 10, gap: 8 },
+    aiThinking: { color: Colors.textMuted, fontSize: 12, fontStyle: 'italic' },
+    aiText: { color: Colors.textPrimary, fontSize: 14, lineHeight: 21 },
+    genBtn: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+      backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 11,
+    },
+    genBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+    regen: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-end', marginTop: 10 },
+    regenText: { color: Colors.textSecondary, fontSize: 12, fontWeight: '700' },
   });
   s._primary = Colors.primary;
   s._muted = Colors.textMuted;

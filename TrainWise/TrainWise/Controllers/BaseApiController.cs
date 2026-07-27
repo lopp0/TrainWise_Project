@@ -22,6 +22,15 @@ namespace TrainWise.Controllers
 
         /// <summary>True if the authenticated caller is flagged as a coach.</summary>
         protected bool CallerIsCoach => User?.FindFirst("isCoach")?.Value == "1";
+/// <summary>The authenticated caller's session id (from the "sid" claim), or 0 if absent (legacy token).</summary>
+protected int CallerSessionId
+{
+    get
+    {
+        var raw = User?.FindFirst("sid")?.Value;
+        return int.TryParse(raw, out var id) ? id : 0;
+    }
+}
 
         /// <summary>
         /// Ownership gate that is SAFE to add before enforcement is switched on:

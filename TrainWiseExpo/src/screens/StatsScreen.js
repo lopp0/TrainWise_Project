@@ -17,6 +17,7 @@ import { getActivityLogs, putActivityLog, postActivityLog } from '../api/api';
 import { calculateDailyLoad } from '../services/api';
 import { getStructuredWorkouts } from '../api/HealthConnectService';
 import { buildWeeklyData, getBarColor } from './HomeScreen';
+import { parseServerDate } from '../utils/serverDate';
 import { Colors, Fonts } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
 
@@ -136,6 +137,10 @@ const StatsScreen = ({ navigation, route }) => {
   // View state
   const [viewMode, setViewMode] = useState('overview'); // 'overview' | 'detail'
   const [selectedDayIdx, setSelectedDayIdx] = useState(null);
+  // #4 — the SPECIFIC workout being edited (from the Home drill-down). Lets a
+  // day with several workouts edit the exact one, not just the day's last log.
+  const [editingLog, setEditingLog] = useState(null);
+  const [editLogId, setEditLogId] = useState(null);
 
   // Edit form
   const [editDuration, setEditDuration] = useState('');
@@ -178,32 +183,42 @@ const StatsScreen = ({ navigation, route }) => {
     if (route?.params?.selectedDayIndex !== undefined) {
       setPendingDayIdx(route.params.selectedDayIndex);
     }
+    if (route?.params?.editLogId !== undefined) {
+      setEditLogId(route.params.editLogId);
+    }
   }, [route?.params]);
 
   const weeklyData = buildWeeklyData(backendLogs, hcWorkouts);
   const maxLoad = Math.max(...weeklyData.map((d) => d.load), 20);
 
-  // Once loading is done + there's a pending day idx, open detail view
+  // Once loading is done + there's a pending day idx, open detail view. When a
+  // specific editLogId was passed (Home drill-down), edit THAT workout.
   useEffect(() => {
     if (!loading && pendingDayIdx !== null) {
-      openDetail(pendingDayIdx, weeklyData);
+      const specific =
+        editLogId != null
+          ? (backendLogs || []).find((l) => (l.activityID ?? l.ActivityID) === editLogId)
+          : null;
+      openDetail(pendingDayIdx, weeklyData, specific);
       setPendingDayIdx(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, pendingDayIdx]);
 
-  const openDetail = (dayIdx, data) => {
+  const openDetail = (dayIdx, data, specificLog) => {
     const dayData = (data || weeklyData)[dayIdx];
     if (!dayData) return;
 
     setSelectedDayIdx(dayIdx);
 
-    if (dayData.source === 'backend' && dayData.log) {
-      const log = dayData.log;
-      setEditDuration(String(log.duration ?? 0));
-      setEditExertion(String(log.exertionLevel ?? 0));
-      setEditDistance(String(log.distanceKM ?? 0));
-      setEditPulse(String(log.avgHeartRate ?? 0));
+    // Prefer the specific tapped workout; else fall back to the day's log.
+    const log = specificLog || (dayData.source === 'backend' ? dayData.log : null);
+    setEditingLog(log || null);
+    if (log) {
+      setEditDuration(String(log.duration ?? log.Duration ?? 0));
+      setEditExertion(String(log.exertionLevel ?? log.ExertionLevel ?? 0));
+      setEditDistance(String(log.distanceKM ?? log.DistanceKM ?? 0));
+      setEditPulse(String(log.avgHeartRate ?? log.AvgHeartRate ?? 0));
     } else {
       // Empty day OR Health Connect estimate — zeros until the user logs something.
       setEditDuration('0');
@@ -220,7 +235,9 @@ const StatsScreen = ({ navigation, route }) => {
 
     setSaving(true);
     try {
-      const baseLog = dayData.log || dayData.hcWorkout || {};
+      // #4 — edit the SPECIFIC workout when one was targeted (drill-down); else
+      // fall back to the day's log / a new session.
+      const baseLog = editingLog || dayData.log || dayData.hcWorkout || {};
       const durationMin = parseInt(editDuration) || 0;
 
       const now = new Date();
@@ -236,38 +253,65 @@ const StatsScreen = ({ navigation, route }) => {
         return;
       }
 
-      const endTime = baseLog.endTime
-        ? new Date(baseLog.endTime)
-        : new Date(dayData.date.getTime() + 12 * 60 * 60 * 1000);
-      const startTime = baseLog.startTime
-        ? new Date(baseLog.startTime)
-        : new Date(endTime.getTime() - durationMin * 60000);
-
       const exertion = parseInt(editExertion) || 5;
+
+      // Preserve the original workout's timing + source. The old code hardcoded
+      // sourceDevice:'Health Connect' and, when a base time was missing, defaulted
+      // the start to noon-minus-duration — so editing a manual workout silently
+      // turned it into a 9:00 AM Health-Connect entry. Now: keep the real start/
+      // end (parsed as UTC via parseServerDate so there's no per-edit timezone
+      // drift) and keep the real source; only a genuinely new session falls back,
+      // and it stays 'Manual', anchored to a sane time (never shifted by duration).
+      const origStart = baseLog.startTime ?? baseLog.StartTime ?? null;
+      const origEnd = baseLog.endTime ?? baseLog.EndTime ?? null;
+
+      let startTime;
+      if (origStart) {
+        startTime = parseServerDate(origStart);
+      } else {
+        const anchor = new Date(dayData.date);
+        const today = new Date();
+        if (anchor.toDateString() === today.toDateString()) {
+          startTime = today; // logging today's session "now"
+        } else {
+          anchor.setHours(12, 0, 0, 0); // noon of the selected day
+          startTime = anchor;
+        }
+      }
+      const endTime = origEnd
+        ? parseServerDate(origEnd)
+        : new Date(startTime.getTime() + durationMin * 60000);
+
+      // NEVER silently convert a workout to Health Connect on edit — keep the
+      // original source; a brand-new manually-entered session is 'Manual'.
+      const sourceDevice = baseLog.sourceDevice ?? baseLog.SourceDevice ?? 'Manual';
+
       const payload = {
         userID: userId,
-        activityTypeID: baseLog.activityTypeID || 5,
+        activityTypeID: baseLog.activityTypeID ?? baseLog.ActivityTypeID ?? 5,
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
         duration: durationMin,
         exertionLevel: exertion,
         distanceKM: parseFloat(editDistance) || 0,
         avgHeartRate: parseInt(editPulse) || 0,
-        maxHeartRate: baseLog.maxHeartRate || 0,
-        caloriesBurned: baseLog.caloriesBurned || 0,
-        sourceDevice: 'Health Connect',
+        maxHeartRate: baseLog.maxHeartRate ?? baseLog.MaxHeartRate ?? 0,
+        caloriesBurned: baseLog.caloriesBurned ?? baseLog.CaloriesBurned ?? 0,
+        sourceDevice,
         calculatedLoadForSession: Math.round(durationMin * exertion),
         isConfirmed: true,
       };
 
-      if (dayData.source === 'backend' && dayData.log) {
-        // Update existing confirmed log
-        await putActivityLog({
-          ...payload,
-          activityID: dayData.log.activityID,
-        });
+      const editId = editingLog
+        ? (editingLog.activityID ?? editingLog.ActivityID)
+        : (dayData.source === 'backend' && dayData.log
+            ? (dayData.log.activityID ?? dayData.log.ActivityID)
+            : null);
+      if (editId != null) {
+        // Update the existing confirmed log in place (preserves its source/time).
+        await putActivityLog({ ...payload, activityID: editId });
       } else {
-        // Create a new confirmed log from Health Connect data
+        // Create a new manually-entered log for this day.
         await postActivityLog(payload);
       }
 

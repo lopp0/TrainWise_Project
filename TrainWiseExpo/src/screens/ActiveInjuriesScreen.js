@@ -13,6 +13,7 @@ import { useThemedStyles } from '../theme/useThemedStyles';
 import ScreenHeader from '../components/ScreenHeader';
 import Card from '../components/Card';
 import PainTracker from '../components/PainTracker';
+import RehabSuggestions from '../components/RehabSuggestions';
 import {
   getAllInjuryTypes,
   getActiveInjuriesByUser,
@@ -129,6 +130,8 @@ const ActiveInjuriesScreen = ({ navigation }) => {
                 </View>
                 {/* #127 — daily pain-level tracker */}
                 <PainTracker injuryId={inj.injuryID} />
+                {/* #126 — rehab / recovery suggestions for this injury type */}
+                <RehabSuggestions injuryTypeId={inj.injuryTypeID} />
               </View>
             ))}
           </Card>

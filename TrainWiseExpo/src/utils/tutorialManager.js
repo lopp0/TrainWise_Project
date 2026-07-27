@@ -8,6 +8,16 @@ const KEYS = {
   addWorkout:    '@tw_tutorial_add_workout',
   injuryReport:  '@tw_tutorial_injury_report',
   warnings:      '@tw_tutorial_warnings',
+ programBuilder: '@tw_tutorial_program_builder',
+liveRun:        '@tw_tutorial_live_run',
+ nutrition:      '@tw_tutorial_nutrition',
+ challenges:     '@tw_tutorial_challenges',
+ coachMarketplace: '@tw_tutorial_coach_marketplace',
+ events:           '@tw_tutorial_events',
+ eventChat:         '@tw_tutorial_event_chat',
+
+
+
 };
 
 export const isTutorialDone = async (screenKey) => {

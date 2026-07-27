@@ -21,6 +21,7 @@ import { useAuth } from '../api/AuthContext';
 import { useSocial } from '../api/SocialContext';
 import {
   getGyms,
+  getNearbyGyms,
   getNearbyUsers,
   getGymCoaches,
   getUserMiniProfile,
@@ -32,6 +33,7 @@ import {
   removeCoachFromGym,
   getCosmeticsForUsers,
   sendMessage,
+  getCoachReviews,
 } from '../services/api';
 import Avatar from '../components/Avatar';
 import UserProfileCard from '../components/UserProfileCard';
@@ -58,7 +60,7 @@ const VIEW_LABEL = { all: 'Everyone', trainees: 'Trainees', coaches: 'Coaches', 
 
 const ConnectScreen = ({ navigation }) => {
   const { userId, user } = useAuth();
-  const { pendingTotal } = useSocial();
+  const { pendingTotal, challengeInviteCount } = useSocial();
   const styles = useThemedStyles(makeStyles);
 
   const isCoachViewer = !!user?.isCoach;
@@ -119,7 +121,10 @@ const ConnectScreen = ({ navigation }) => {
         // ~25 km covers all of Netanya and reaches Ruppin Academic Center
         // (~6 km NE) while keeping the results local to the user's area.
         const [g, p] = await Promise.all([
-          getGyms(center.latitude, center.longitude, 25),
+          // #146 — merged endpoint: seeded gyms + live Google Places nearby
+          // (server-side key, cached). Falls back to seeded-only when Places is
+          // off, so this is a safe drop-in for the old getGyms call.
+          getNearbyGyms(center.latitude, center.longitude, 25),
           getNearbyUsers(userId, center.latitude, center.longitude, 25),
         ]);
         setGyms(Array.isArray(g.data) ? g.data : []);
@@ -344,6 +349,12 @@ const ConnectScreen = ({ navigation }) => {
   const toggleGymListing = async () => {
     if (!gym) return;
     const gid = gym.gymID ?? gym.GymID;
+    // #146 — Google Places gyms are transient (negative synthetic ids, not in
+    // our DB), so a coach can't list themselves there.
+    if (gid <= 0) {
+      Alert.alert('Not available', 'This gym is from Google Maps and not in TrainWise yet.');
+      return;
+    }
     setActing(true);
     try {
       if (iAmListedAtGym) {
@@ -518,6 +529,34 @@ const ConnectScreen = ({ navigation }) => {
       {/* A-3: Connect sub-tabs (Map / Board / Leaderboard) */}
       <ConnectTabs active="map" navigation={navigation} />
 
+      {/* Community quick-links (2026-07-17 batch): #142 challenges, #145 events.
+          The coach marketplace chip was REMOVED (device-test #7) — coach
+          discovery + reviews now live ONLY in the map's "Coaches" filter: tap a
+          coach pin/row to see their rating and the "Reviews & rate" button. */}
+      <View style={styles.communityStrip}>
+        {[
+          ['Challenges', 'flag-outline', 'Challenges', challengeInviteCount],
+          ['Events', 'calendar-outline', 'Events', 0],
+        ].map(([label, icon, route, badge]) => (
+          <TouchableOpacity
+            key={route}
+            style={styles.communityChip}
+            onPress={() => navigation.navigate(route)}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={badge > 0 ? `${label}, ${badge} new` : label}
+          >
+            <Ionicons name={icon} size={16} color={Colors.primary} />
+            <Text style={styles.communityChipText}>{label}</Text>
+            {badge > 0 && (
+              <View style={styles.communityBadge}>
+                <Text style={styles.communityBadgeText}>{badge > 99 ? '99+' : badge}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+
       {/* Map (resizable) */}
       <View style={[styles.mapWrap, { height: mapHeight }]}>
         {GoogleMaps?.View && coords ? (
@@ -665,6 +704,10 @@ const ConnectScreen = ({ navigation }) => {
                   setProfile(null);
                   navigation.navigate('Requests');
                 }}
+                onOpenReviews={(coachId) => {
+                  setProfile(null);
+                  navigation.navigate('CoachMarketplace', { openCoachId: coachId });
+                }}
                 onClose={() => setProfile(null)}
               />
             ) : null}
@@ -703,7 +746,7 @@ const ConnectScreen = ({ navigation }) => {
 };
 
 // ── User mini-profile sheet content ────────────────────────────────────────
-const UserSheet = ({ styles, profile, viewerIsCoach, viewerId, acting, onAddFriend, onUnfriend, onOfferCoach, onMessage, onInvite, onRespond, onClose }) => {
+const UserSheet = ({ styles, profile, viewerIsCoach, viewerId, acting, onAddFriend, onUnfriend, onOfferCoach, onMessage, onInvite, onRespond, onOpenReviews, onClose }) => {
   const status = profile.friendStatus;
   const iRequested = profile.friendRequesterID === viewerId;
   const isFriend = status === 'accepted';
@@ -714,6 +757,23 @@ const UserSheet = ({ styles, profile, viewerIsCoach, viewerId, acting, onAddFrie
   const frameItem = profile.equippedFrame ? findShopItem(profile.equippedFrame) : null;
   const badgeItem = profile.equippedBadge ? findShopItem(profile.equippedBadge) : null;
   const titleItem = profile.equippedTitle ? findShopItem(profile.equippedTitle) : null;
+
+  // #169/5b — coach rating summary shown inline on the map sheet.
+  const [rating, setRating] = React.useState({ avg: 0, count: 0 });
+  React.useEffect(() => {
+    if (!profile.isCoach) return;
+    let alive = true;
+    getCoachReviews(profile.userID)
+      .then((res) => {
+        const rows = Array.isArray(res.data) ? res.data : [];
+        if (!alive) return;
+        const count = rows.length;
+        const avg = count ? rows.reduce((s, r) => s + (r.rating ?? r.Rating ?? 0), 0) / count : 0;
+        setRating({ avg, count });
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [profile.isCoach, profile.userID]);
 
   return (
     <>
@@ -743,6 +803,28 @@ const UserSheet = ({ styles, profile, viewerIsCoach, viewerId, acting, onAddFrie
           <Ionicons name="close" size={24} color={styles._muted} />
         </TouchableOpacity>
       </View>
+
+      {/* 5b — coach rating + reviews, merged onto the map sheet. Tap to open the
+          full reviews list (and rate, if you're their trainee). */}
+      {profile.isCoach && (
+        <TouchableOpacity style={styles.coachRateRow} onPress={() => onOpenReviews?.(profile.userID)} activeOpacity={0.85}>
+          <View style={[styles.coachStars, styles.coachStarsLeft]}>
+            {[0, 1, 2, 3, 4].map((i) => {
+              const full = Math.floor(rating.avg);
+              const half = rating.avg - full >= 0.5;
+              const name = i < full ? 'star' : i === full && half ? 'star-half' : 'star-outline';
+              return <Ionicons key={i} name={name} size={15} color="#ffb300" />;
+            })}
+            <Text style={styles.coachRateText} numberOfLines={1}>
+              {rating.count > 0 ? `${rating.avg.toFixed(1)} (${rating.count})` : 'No reviews yet'}
+            </Text>
+          </View>
+          <View style={styles.coachRateLinkWrap}>
+            <Text style={styles.coachRateLink}>Reviews & rate</Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.primary} />
+          </View>
+        </TouchableOpacity>
+      )}
 
       {/* Top activity types — find common ground */}
       <Text style={styles.sheetLabel}>Top workout types</Text>
@@ -933,6 +1015,42 @@ const makeStyles = (C) => {
     },
     title: { color: C.primary, fontSize: 28, fontWeight: '900', fontStyle: 'italic' },
     subtitle: { color: C.textSecondary, fontSize: 12, marginTop: 2 },
+    communityStrip: {
+      flexDirection: 'row',
+      gap: 6,
+      paddingHorizontal: 16,
+      paddingBottom: 8,
+    },
+    communityChip: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
+      paddingVertical: 8,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: C.border,
+      backgroundColor: C.cardBackground,
+    },
+    communityChipText: { color: C.textSecondary, fontSize: 11, fontWeight: '700' },
+    communityBadge: {
+      position: 'absolute',
+      top: -5,
+      right: -5,
+      minWidth: 18,
+      height: 18,
+      borderRadius: 9,
+      backgroundColor: C.danger,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 4,
+      borderWidth: 1.5,
+      borderColor: C.background,
+    },
+    // Match the tab-bar / bell badge design (fontSize 11, weight 800) so every
+    // red count bubble in the app reads the same (device-test #3).
+    communityBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
     headerActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     bell: { padding: 4 },
     bellBadge: {
@@ -1087,6 +1205,17 @@ const makeStyles = (C) => {
     sheetName: { color: C.textPrimary, fontSize: 20, fontWeight: '900' },
     sheetSub: { color: C.textSecondary, fontSize: 13, marginTop: 3 },
     sheetLabel: { color: C.primary, fontSize: 12, fontWeight: '800', letterSpacing: 0.4, marginTop: 8, marginBottom: 8, textTransform: 'uppercase' },
+    coachRateRow: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      backgroundColor: C.cardBackgroundLight, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, marginTop: 12,
+    },
+    coachStars: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    // Left group takes remaining width and lets the rating text ellipsize so it
+    // never crops the "Reviews & rate" link on narrow sheets (device-test #7).
+    coachStarsLeft: { flex: 1, minWidth: 0, marginRight: 8 },
+    coachRateText: { color: C.textSecondary, fontSize: 13, fontWeight: '700', marginLeft: 4, flexShrink: 1 },
+    coachRateLinkWrap: { flexDirection: 'row', alignItems: 'center', gap: 2, flexShrink: 0 },
+    coachRateLink: { color: C.primary, fontSize: 13, fontWeight: '800' },
     chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
     actChip: {
       backgroundColor: C.cardBackgroundLight,

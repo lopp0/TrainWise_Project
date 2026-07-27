@@ -329,6 +329,24 @@ const TrainingCalendarScreen = ({ navigation, route }) => {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
+        {/* #154 — AI plan generator entry (self-planning only, not coach mode). */}
+        {!coachMode && (
+          <TouchableOpacity style={styles.aiPlanBtn} onPress={() => navigation.navigate('AIPlan')} activeOpacity={0.85}>
+            <Ionicons name="sparkles" size={16} color={Colors.primary} />
+            <Text style={styles.aiPlanText}>Generate a week with AI</Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+          </TouchableOpacity>
+        )}
+
+        {/* #133 — the trainee's assigned programs from their coach. */}
+        {!coachMode && (
+          <TouchableOpacity style={styles.aiPlanBtn} onPress={() => navigation.navigate('MyPrograms')} activeOpacity={0.85}>
+            <Ionicons name="clipboard-outline" size={16} color={Colors.primary} />
+            <Text style={styles.aiPlanText}>My training programs</Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+          </TouchableOpacity>
+        )}
+
         {/* Weekday header */}
         <View style={styles.weekRow}>
           {DAY_LABELS.map((d, i) => (
@@ -566,6 +584,12 @@ const makeStyles = (C) => StyleSheet.create({
     paddingHorizontal: 20, paddingVertical: 10,
   },
   monthLabel: { color: C.textPrimary, fontSize: 18, fontWeight: '800' },
+  aiPlanBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12,
+    backgroundColor: C.cardBackground, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 14,
+    borderWidth: 1, borderColor: C.border,
+  },
+  aiPlanText: { color: C.textPrimary, fontSize: 14, fontWeight: '700', flex: 1 },
   scroll: { paddingHorizontal: 12, paddingBottom: 40 },
 
   weekRow: { flexDirection: 'row' },
