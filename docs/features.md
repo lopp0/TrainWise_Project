@@ -61,8 +61,8 @@ weather‑aware suggestions, and an ML forecast.
   `Program.cs` `OnTokenValidated` rejects a revoked session. Users list their devices and **sign out
   others** (`SessionBL`; supersedes the old `UserDevices`). Legacy tokens (no `sid`) keep working.
 - **Password recovery + email verification** — PBKDF2‑hashed, single‑use, TTL codes (`AuthRecoveryBL`,
-  `AuthCodes` table); `EmailSender` (SMTP from env vars, best‑effort) delivers them; flows never reveal
-  whether an email exists. `AUTH_DEV_CODES=true` echoes the code in the response for testing. Full detail:
+  `AuthCodes` table); `EmailService` (Maileroo HTTP sending API, best‑effort) delivers them; flows never
+  reveal whether an email exists. `AUTH_DEV_CODES=true` echoes the code in the response for testing. Full detail:
   [`SECURITY.md`](SECURITY.md) and [`../tasks/security_audit_2026_07_02.md`](../tasks/security_audit_2026_07_02.md).
 
 ---
@@ -216,7 +216,7 @@ There are **no** server‑side background/hosted services — the C# API is requ
 | Google reCAPTCHA | Signup bot protection | site key in client, secret in Azure (`RECAPTCHA_SECRET`), fail‑open |
 | Google Places API | Nearby‑gyms search (server‑side proxy) | **billable SKU**; key in `GOOGLE_PLACES_KEY` env var, results cached |
 | Open Food Facts | Nutrition barcode lookup | free public API (no key), called client‑side |
-| SMTP (Gmail / SendGrid / …) | Password‑reset + email‑verification emails (`EmailSender`) | creds from `SMTP_*` env vars; unset = disabled (best‑effort, never breaks the auth flow) |
+| Maileroo | Password‑reset + email‑verification emails (`EmailService`, HTTP sending API) | API key in .NET user‑secrets locally / `Maileroo__ApiKey` env var in Azure (never committed); `FromAddress`/`FromName` in `appsettings.json`; unset key = disabled (best‑effort, never breaks the auth flow) |
 
 ---
 
@@ -297,8 +297,8 @@ There are **no** server‑side background/hosted services — the C# API is requ
   the local service reachable; flip `ML_MODE='azure'` + rebuild to run off the cloud. The serverless Azure
   SQL auto‑pauses, so the first request after idle can lag ~30 s.
 - `AUTH_ENFORCE` is still **off** (legacy tokenless calls allowed, so session revocation only bites once the
-  client sends its token); **SMTP is unconfigured** (reset/verify emails don't send until `SMTP_HOST` is set);
-  the privacy‑policy `CONTACT_EMAIL` is a placeholder.
+  client sends its token); **email now delivers via Maileroo** (`EmailService`; key in .NET user‑secrets
+  locally — Azure needs the `Maileroo__ApiKey` app setting); the privacy‑policy `CONTACT_EMAIL` is a placeholder.
 - **Dormant, kept in‑tree**: activity feed (#144), coach comments (#134 + `WorkoutComments*`), the standalone
   `TimerScreen` (interval timer merged inline), the `UserDevices` table (superseded by `UserSessions`), and
   the i18n language picker (English‑only now).

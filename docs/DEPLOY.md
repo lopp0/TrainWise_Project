@@ -64,11 +64,12 @@ The current Azure target (as of the last redeploy) is:
   - `FIREBASE_CREDENTIALS_JSON` — service‑account JSON for FCM push (`PushSender`).
   - `GOOGLE_PLACES_KEY` — server‑side Google Places key for the nearby‑gyms proxy (`PlacesService`, billable
     SKU). Leave unset to disable the live Places lookup (falls back to the seeded gyms).
-  - `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` / `SMTP_SSL` — transactional email
-    (`EmailSender`) for password‑reset + verification. Unset = emails don't send. Gmail needs an **App
-    Password** (2‑Step Verification on); SendGrid uses host `smtp.sendgrid.net`, user literally `apikey`.
+  - `Maileroo__ApiKey` — Maileroo sending‑API key (`EmailService`) for password‑reset + verification email.
+    **Double underscore** maps to the `Maileroo:ApiKey` config key. Unset = emails don't send. The non‑secret
+    `Maileroo:FromAddress` / `Maileroo:FromName` live in `appsettings.json`; locally the key is kept in
+    .NET user‑secrets (`dotnet user-secrets set "Maileroo:ApiKey" …`), never committed.
   - `AUTH_DEV_CODES=true` *(dev/demo only)* — echoes the reset/verify code in the API response so the flows
-    are testable without SMTP. Never set this in a real deployment.
+    are testable without email. Never set this in a real deployment.
 - **Schema parity** — run every `sql/` migration against Azure SQL too (SSMS → connect to
   `<your-sql-server>.database.windows.net`). The schema must match local SQL Express. **Run
   `2026-07-02_security_hardening.sql` (it widens `Users.Password` for the PBKDF2 hash) BEFORE publishing

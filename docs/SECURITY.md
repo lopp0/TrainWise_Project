@@ -44,8 +44,8 @@ raise it directly with the project owner — do not open a public issue with rep
 - A locally generated `deviceId` (`dev-<timestamp>-<rand>`) is persisted per install.
 - **Password recovery + email verification** (`AuthRecoveryBL`, `AuthCodes` table) — codes are **PBKDF2‑
   hashed at rest, single‑use, and TTL‑bound** (reset 15 min, verify 60 min). The request endpoints reply
-  identically whether or not the email exists (no account enumeration). `EmailSender` (`System.Net.Mail`,
-  SMTP from env vars) delivers them best‑effort — an outage never breaks the flow. `AUTH_DEV_CODES=true`
+  identically whether or not the email exists (no account enumeration). `EmailService` (Maileroo HTTP
+  sending API) delivers them best‑effort — an outage never breaks the flow. `AUTH_DEV_CODES=true`
   (dev only) echoes the code in the response.
 - **Real device sessions + revocation** (`SessionBL`, `UserSessions` table) — every token carries a `sid`
   claim; `Program.cs` `OnTokenValidated` rejects a token whose session was revoked (10 s validity cache).
@@ -124,9 +124,11 @@ Read from environment variables on the backend, never hardcoded:
 - **`GOOGLE_PLACES_KEY`** — server‑side Google Places key for the nearby‑gyms proxy (`PlacesService`, a
   **billable** SKU). Lives only in Azure config, **never** shipped in the app; unset = live Places
   lookup disabled (seeded gyms still work).
-- **`SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` / `SMTP_SSL`** — transactional‑email
-  credentials for `EmailSender` (Gmail needs an **App Password**, not the account password). All read from
-  env vars; unset = email disabled. `AUTH_DEV_CODES` is a dev‑only convenience, not a secret.
+- **`Maileroo__ApiKey`** — the Maileroo sending‑API key used by `EmailService` for the reset / verification
+  emails. **Never committed**: it lives in **.NET user‑secrets** locally (`dotnet user-secrets set "Maileroo:ApiKey" …`)
+  and as the `Maileroo__ApiKey` **App Service** setting in Azure (double underscore → the `Maileroo:ApiKey`
+  config key). Unset = email disabled (best‑effort). The non‑secret `Maileroo:FromAddress` / `Maileroo:FromName`
+  live in `appsettings.json`. `AUTH_DEV_CODES` is a dev‑only convenience, not a secret.
 
 ### DB secret is externalized to Azure config
 `DBservice.Connect()` reads the connection string from **environment variables first** (Azure App Service
