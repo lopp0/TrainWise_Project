@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dd3cb2f0-6850-4d70-aee8-81170a5cdc4e</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.3" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+    <PackageReference Include="FirebaseAdmin" Version="3.1.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Lets TrainWise.Tests exercise the internal static load-window math. -->
+    <InternalsVisibleTo Include="TrainWise.Tests" />
+  </ItemGroup>
+
+</Project>

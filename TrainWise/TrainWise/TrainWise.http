@@ -1,0 +1,6 @@
+@TrainWise_HostAddress = http://localhost:5084
+
+GET {{TrainWise_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

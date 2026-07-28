@@ -1,0 +1,106 @@
+﻿using Microsoft.AspNetCore.Mvc;
+using TrainWise.BL;
+using TrainWise.BL.Models;
+
+namespace TrainWise.Controllers
+{
+    [ApiController]
+    [Route("api/users/{userId}/devices")]
+    public class UserDevicesController : BaseApiController
+    {
+        private readonly UserDeviceBL _bl = new UserDeviceBL();
+
+        [HttpGet]
+        public IActionResult GetDevices(int userId)
+        {
+            if (!CallerMayAct(userId)) return Forbid();
+            try
+            {
+                return Ok(_bl.GetByUser(userId));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+
+        [HttpPost]
+        public IActionResult Create(int userId, [FromBody] CreateDeviceRequest request)
+        {
+            if (!CallerMayAct(userId)) return Forbid();
+            try
+            {
+                var d = new UserDevice
+                {
+                    UserID = userId,
+                    DeviceName = request.DeviceName,
+                    LastSync = request.LastSync,
+                    PermissionsGranted = request.PermissionsGranted
+                };
+
+                int id = _bl.Create(d);
+                d.DeviceID = id;
+                return Ok(d);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+
+        // #163 — DELETE /api/users/{userId}/devices/{deviceId} — revoke a session.
+        [HttpDelete("{deviceId}")]
+        public IActionResult Delete(int userId, int deviceId)
+        {
+            if (!CallerMayAct(userId)) return Forbid();
+            try
+            {
+                _bl.Delete(userId, deviceId);
+                return Ok(new { ok = true });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+
+        [HttpPut("{deviceId}")]
+        public IActionResult Update(int userId, int deviceId, [FromBody] UpdateDeviceRequest request)
+        {
+            if (!CallerMayAct(userId)) return Forbid();
+            try
+            {
+                var d = new UserDevice
+                {
+                    UserID = userId,
+                    DeviceID = deviceId,
+                    DeviceName = request.DeviceName,
+                    LastSync = request.LastSync,
+                    PermissionsGranted = request.PermissionsGranted
+                };
+                _bl.Update(d);
+                return Ok("Updated");
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+    }
+}

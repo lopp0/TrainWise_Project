@@ -1,0 +1,18 @@
+# TrainWise Coach-Analytics ML service + notebook
+# Same libraries used across the Python Course ML lessons.
+flask
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+pyodbc
+joblib
+PyJWT  # only needed when ML_AUTH_ENFORCE=true (JWT validation)
+
+# ── Azure (Linux App Service) ONLY ─────────────────────────────────────────
+# These are installed automatically by Azure at deploy time; the environment
+# markers keep local Windows `pip install -r requirements.txt` from touching
+# them (gunicorn is Unix-only; pymssql has no need on the local pyodbc path).
+gunicorn; sys_platform == "linux"   # production WSGI server (Azure startup cmd)
+pymssql;  sys_platform == "linux"   # SQL-auth driver for Azure SQL (see db.py)
