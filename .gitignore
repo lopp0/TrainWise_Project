@@ -104,3 +104,6 @@ ml/models/*.pkl
 
 # Python ML Azure deploy-staging folder (duplicate of ml/ + regenerable .pkl)
 ml_deploy_clean/
+
+# Presentation deck / marketing + demo video guides (not app source; per owner: do NOT push)
+presentation/

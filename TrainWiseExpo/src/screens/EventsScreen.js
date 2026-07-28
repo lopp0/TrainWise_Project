@@ -1,4 +1,6 @@
-import React, { useCallback, useState } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
+import ScreenTutorial from '../components/ScreenTutorial';
+import { isTutorialDone, markTutorialDone } from '../utils/tutorialManager';
 import {
   View,
   Text,
@@ -48,10 +50,32 @@ const fmtWhen = (d) => {
   });
 };
 
+const EVENTS_TUTORIAL_STEPS = [
+  {
+    icon: '📅',
+    title: 'Plan a Group Event',
+    body: 'Tap + to create a group run or session. Set a title, time, and optionally a meeting place and details.',
+  },
+  {
+    icon: '✅',
+    title: 'RSVP',
+    body: 'Friends see your event and respond Going, Maybe, or No — tap "X going" to see who is coming.',
+  },
+  {
+    icon: '💬',
+    title: 'Group Chat',
+    body: "Anyone who's Going or Maybe (plus the organizer) gets a group chat to coordinate the details.",
+  },
+];
+
 const EventsScreen = ({ navigation }) => {
   const { userId } = useAuth();
   const styles = useThemedStyles(makeStyles);
   const [items, setItems] = useState([]);
+  const [showTutorial, setShowTutorial] = useState(false);
+  useEffect(() => {
+    isTutorialDone('events').then((d) => { if (!d) setShowTutorial(true); });
+  }, []);
   const [loading, setLoading] = useState(true);
 
   const [showCreate, setShowCreate] = useState(false);
@@ -301,6 +325,11 @@ const EventsScreen = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+      <ScreenTutorial
+        visible={showTutorial}
+        steps={EVENTS_TUTORIAL_STEPS}
+        onFinish={() => { setShowTutorial(false); markTutorialDone('events'); }}
+      />
     </SafeAreaView>
   );
 };

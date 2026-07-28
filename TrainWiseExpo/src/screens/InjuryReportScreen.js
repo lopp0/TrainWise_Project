@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import ScreenTutorial from '../components/ScreenTutorial';
+import { isTutorialDone, markTutorialDone } from '../utils/tutorialManager';
 import {
   View,
   Text,
@@ -37,11 +39,59 @@ import { getGPTResponse } from '../api/openai';
 import { parseServerDate } from '../utils/serverDate';
 import { useAuth } from '../api/AuthContext';
 
+const INJURY_TUTORIAL_STEPS = [
+  {
+    icon: '🤕',
+    title: 'Why Report an Injury?',
+    body: 'When you report an active injury, TrainWise adjusts your ' +
+          'AC Ratio thresholds — warning you earlier before you risk ' +
+          'making the injury worse. Your safety is the priority.',
+  },
+  {
+    icon: '📊',
+    title: 'Injury Severity Scale',
+    body: 'Rate your injury from 1 (mild discomfort) to 10 (severe pain). ' +
+          'Higher severity means the app will be more conservative ' +
+          'with your training load recommendations.',
+  },
+  {
+    icon: '🤖',
+    title: 'Get AI Advice',
+    body: 'Tap "AI advice" to get instant guidance from our sports ' +
+          'medicine AI. It analyzes your injury type and gives you ' +
+          'evidence-based recovery tips and return-to-training guidance.',
+  },
+  {
+    icon: '👨‍⚕️',
+    title: 'Send to Your Coach',
+    body: 'Tap "Send to coach" to notify your personal coach directly. ' +
+          'They will be able to adjust your training plan and provide ' +
+          'personalized advice based on your injury.',
+  },
+  {
+    icon: '📸',
+    title: 'Add a Photo',
+    body: 'Use "Scan injury (photo)" to attach an image of the injury. ' +
+          'This helps your coach and the AI give more accurate advice.',
+  },
+  {
+    icon: '✅',
+    title: 'Always Submit the Report',
+    body: 'After filling in the details, always tap SUBMIT REPORT. ' +
+          'Only submitted injuries affect your AC Ratio thresholds — ' +
+          'if you do not submit, the app cannot protect you.',
+  },
+];
+
 const InjuryReportScreen = ({ navigation, route }) => {
   const { userId } = useAuth();
   const styles = useThemedStyles(makeStyles);
 
   const [injuryTypes, setInjuryTypes] = useState([]);
+  const [showTutorial, setShowTutorial] = useState(false);
+  useEffect(() => {
+    isTutorialDone('injuryReport').then((d) => { if (!d) setShowTutorial(true); });
+  }, []);
   const [selectedInjury, setSelectedInjury] = useState(null);
   const [bodyMapOpen, setBodyMapOpen] = useState(false); // #125
   const [severity, setSeverity] = useState(5);
@@ -622,6 +672,11 @@ const InjuryReportScreen = ({ navigation, route }) => {
           </View>
         </View>
       </Modal>
+      <ScreenTutorial
+        visible={showTutorial}
+        steps={INJURY_TUTORIAL_STEPS}
+        onFinish={() => { setShowTutorial(false); markTutorialDone('injuryReport'); }}
+      />
     </View>
   );
 };

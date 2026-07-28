@@ -275,13 +275,13 @@ class PDFBuilder:
         self.page.insert_text((MARGIN_L, 280), "TrainWise",
                               fontsize=48, color=PINK, fontname="hebo")
         self.page.insert_text((MARGIN_L, 320),
-                              "Mobile App  |  Complete Project Reference",
+                              "Full-Stack Fitness + Injury-Prevention Platform",
                               fontsize=16, color=WHITE, fontname="helv")
         self.page.insert_text((MARGIN_L, 360),
-                              "React Native + Expo  /  ASP.NET Core 8  /  SQL Server",
+                              "React Native + Expo  /  ASP.NET Core 8  /  Python ML  /  SQL Server",
                               fontsize=12, color=(0.7, 0.75, 0.85))
         self.page.insert_text((MARGIN_L, 460),
-                              "Every screen. Every endpoint. Every table.",
+                              "Architecture, ML, security and deployment, current.",
                               fontsize=13, color=WHITE, fontname="hebo")
         self.page.insert_text((MARGIN_L, 480),
                               "Use this document as the canonical reference for any",
@@ -293,10 +293,10 @@ class PDFBuilder:
                               "Author: Liron Vaknin",
                               fontsize=11, color=WHITE)
         self.page.insert_text((MARGIN_L, PAGE_H - 80),
-                              "Generated: 2026-04-16",
+                              "Generated: 2026-07-26",
                               fontsize=11, color=WHITE)
         self.page.insert_text((MARGIN_L, PAGE_H - 60),
-                              "Document built by Claude Code (claude-opus-4-6)",
+                              "Document built by Claude Code (claude-opus-4-8)",
                               fontsize=9, color=(0.6, 0.65, 0.75))
         self.new_page()
 
@@ -321,1127 +321,652 @@ def build():
         "1.  Project Overview",
         "2.  Technology Stack",
         "3.  Repository Layout",
-        "4.  Architecture (4 layers)",
-        "5.  SQL Server Database",
-        "       5.1  All tables",
-        "       5.2  All stored procedures",
-        "       5.3  AC-Ratio training-load algorithm",
-        "6.  Backend - C# ASP.NET Core 8",
-        "       6.1  Program.cs / appsettings",
-        "       6.2  Controllers (12)",
-        "       6.3  Business Logic (BL)",
-        "       6.4  Data Access Layer (DAL)",
-        "       6.5  Models",
-        "7.  Frontend - React Native Expo",
-        "       7.1  App bootstrap",
-        "       7.2  AuthContext + session flow",
-        "       7.3  Navigation tree",
-        "       7.4  api.js / services/api.js (split)",
-        "       7.5  Health Connect integration",
-        "       7.6  Sync pipeline",
-        "       7.7  Theme & components",
-        "       7.8  Every screen",
-        "8.  End-to-End Data Flows",
-        "9.  Build & Run instructions",
-        "10. Known Issues & Architectural Gaps",
-        "11. File Index",
+        "4.  Architecture (4 tiers: App / API / ML / DB)",
+        "5.  Backend Deployment Modes (Azure / Local LAN)",
+        "6.  Authentication & Security",
+        "7.  SQL Server Database (schema, migrations, seed)",
+        "8.  AC-Ratio Training-Load Algorithm",
+        "9.  Backend - C# ASP.NET Core 8",
+        "       9.1  Controllers (29)",
+        "       9.2  Business Logic (39) & Data Access (29)",
+        "       9.3  Models (47)",
+        "10. Frontend - React Native Expo",
+        "       10.1  Navigation tree (4 tabs)",
+        "       10.2  Module layout & theme system",
+        "       10.3  Screens (by group)",
+        "       10.4  Health Connect integration",
+        "11. ML Service - Python / Flask (the smart element)",
+        "12. Feature Inventory (grouped)",
+        "13. End-to-End Data Flows",
+        "14. Build, Run & Deploy",
+        "15. Known Issues & Backlog",
+        "16. File Index & Change Log",
     ]
     for line in toc:
         p.body(line)
-    p.spacer(10)
+    p.spacer(6)
+    p.small("This edition supersedes the 2026-04-16 draft. Major changes since then: "
+            "JWT auth + security hardening, the intensityFactor removal, the dynamic "
+            "cold-start load math, the Python ML service, and dozens of shipped features.")
 
-    # ============================================================================
+    # ========================================================================
     # 1. PROJECT OVERVIEW
-    # ============================================================================
+    # ========================================================================
     p.h1("1.  Project Overview")
     p.body(
-        "TrainWise is a mobile fitness application that helps amateur and "
-        "semi-professional athletes monitor training load and prevent injuries. "
-        "Users log workouts (manually or imported from Health Connect on "
-        "Android), and the system calculates an Acute:Chronic workload ratio "
-        "(AC ratio), classifies risk on a Green / Yellow / Red traffic-light "
-        "scale, and surfaces personalized recommendations. Coaches can connect "
-        "to their trainees through a QR-code based handshake and receive a "
-        "summary of each trainee's current load."
+        "TrainWise is a full-stack fitness and injury-prevention platform for "
+        "runners, gym-goers and their coaches. Its reason to exist is one "
+        "sports-science idea: the Acute:Chronic Workload Ratio (ACWR), the "
+        "relationship between the last 7 days of training (acute) and the 28-day "
+        "baseline (chronic). Spiking that ratio is one of the best-known "
+        "predictors of soft-tissue injury. TrainWise logs every workout (typed "
+        "in by hand or synced automatically from Android Health Connect), "
+        "computes the ACWR with a colour-coded Green / Yellow / Red warning, and "
+        "layers a Python machine-learning service on top that forecasts where a "
+        "trainee's load is heading and classifies overload risk."
     )
-    p.spacer(6)
+    p.body(
+        "Around that core sits a complete consumer app: coach/trainee linking "
+        "and chat, a social layer (friends, gyms, live presence), gamification "
+        "(badges, coins, streaks, shop, leaderboards), an AI assistant, "
+        "nutrition, GPS run tracking, assigned training programs, a calendar, "
+        "and more. It is a real three-tier system deployable fully on Azure or "
+        "on a local LAN."
+    )
+    p.spacer(4)
     p.h2("Primary user stories")
     p.bullet("As an athlete, I log a workout and immediately see whether my "
-             "training load is in a safe zone or trending towards overload.")
-    p.bullet("As an athlete, I get personalized recommendations after each "
-             "session (rest, light activity, push harder).")
-    p.bullet("As an athlete, I report an injury so the system tightens my "
-             "load thresholds for the recovery window.")
-    p.bullet("As a coach, I scan a trainee's QR code, see all my trainees on "
-             "one screen with their current AC ratio and load level.")
-    p.bullet("As a user, I import workouts from Google / Samsung Health "
-             "(Android Health Connect) so I do not have to enter them manually.")
-
-    p.spacer(6)
-    p.h2("Project authors & branches")
+             "load is in the safe zone or trending to overload (traffic light).")
+    p.bullet("As an athlete, my workouts import automatically from Health "
+             "Connect so I do not have to enter them by hand.")
+    p.bullet("As an athlete, I report an injury and the system tightens my load "
+             "thresholds for the recovery window.")
+    p.bullet("As a coach, I connect to a trainee (QR / coach-offer) and see "
+             "their PMC, ACWR trend, monthly forecast and risk on one screen.")
+    p.bullet("As a coach or trainee, I run a 'what-if' simulation to see where "
+             "my risk lands before I train the extra sessions.")
+    p.spacer(4)
+    p.h2("At a glance")
     p.kv("Author:", "Liron Vaknin")
-    p.kv("Repo:",   "TrainWise_GitHub  (single git repo at TrainWise_Project root)")
-    p.kv("Backend branch:", "main / Lirone's-Branch (mirror of TrainWise_GitHub)")
-    p.kv("Recent commits:", "793af4b 'Adding .sln File',  0626afb 'Server_Side'")
+    p.kv("Tiers:", "Mobile app / REST API / ML service / SQL database")
+    p.kv("Scale:", "~163 frontend files, ~145 C# files, ~10 ML modules, 32 SQL scripts")
+    p.kv("Features:", "~109 shipped (see section 12); backlog in tasks/feature_backlog.md")
+    p.kv("Canonical docs:", "CLAUDE.md (engineering), PROJECT_SUMMARY.md (overview), this PDF")
 
-    # ============================================================================
+    # ========================================================================
     # 2. TECH STACK
-    # ============================================================================
+    # ========================================================================
     p.h1("2.  Technology Stack")
 
     p.h2("Frontend")
-    p.bullet("React Native 0.81.5 + React 19.1.0")
-    p.bullet("Expo SDK 54 (managed workflow)")
-    p.bullet("React Navigation v7  -  native stack + bottom tabs")
-    p.bullet("axios 1.x for HTTP")
-    p.bullet("@react-native-async-storage/async-storage  -  session persistence")
-    p.bullet("react-native-chart-kit  -  weekly load bar charts")
-    p.bullet("react-native-qrcode-svg  -  coach/trainee handshake")
-    p.bullet("react-native-health-connect  -  Android Health Connect (real device only)")
-    p.bullet("@expo/vector-icons (Ionicons)  -  tab bar icons")
+    p.bullet("React Native 0.81.5 + React 19.1.0, Expo SDK 54 (New Architecture required)")
+    p.bullet("JavaScript only (no TypeScript despite tsconfig.json)")
+    p.bullet("React Navigation v7 (native stack + bottom tabs)")
+    p.bullet("axios; @react-native-async-storage; react-native-svg (custom charts)")
+    p.bullet("react-native-reanimated / worklets; react-native-health-connect")
+    p.bullet("expo-maps / location / task-manager (GPS), camera, notifications, "
+             "local-authentication, image-picker, audio, video, sharing")
+    p.bullet("@react-native-google-signin; react-native-qrcode-svg; webview (reCAPTCHA)")
 
     p.h2("Backend")
-    p.bullet("ASP.NET Core 8.0 (net8.0) Web API")
-    p.bullet("Microsoft.Data.SqlClient 6.1.3  -  SQL Server access")
-    p.bullet("Swashbuckle.AspNetCore 6.6.2  -  Swagger / OpenAPI")
-    p.bullet("Built-in Microsoft.Extensions.Configuration for appsettings.json")
-    p.bullet("CORS: AllowAnyOrigin (development), no auth middleware")
+    p.bullet("ASP.NET Core 8.0 Web API, raw ADO.NET (Microsoft.Data.SqlClient)")
+    p.bullet("JWT bearer auth (Microsoft.AspNetCore.Authentication.JwtBearer)")
+    p.bullet("Built-in rate limiting; Swagger (Development only)")
+    p.bullet("FirebaseAdmin (FCM push); Google token + reCAPTCHA server verification")
 
-    p.h2("Database")
-    p.bullet("Microsoft SQL Server Express")
-    p.bullet("Instance: Lirone\\SQLEXPRESS  -  database: TrainWise")
-    p.bullet("Connection: Integrated Security (Windows auth), Encrypt=False")
-    p.bullet("16 tables, 49 stored procedures (the entire DAL layer is sproc-based)")
+    p.h2("ML / Data Science")
+    p.bullet("Python 3.10+, Flask (port 8000), pandas, numpy")
+    p.bullet("scikit-learn: LinearRegression, PolynomialFeatures, RandomForest, KMeans")
+    p.bullet("matplotlib / seaborn (notebooks), joblib (model export)")
+    p.bullet("pyodbc (local, Windows auth) / pymssql + gunicorn (Azure)")
 
-    p.h2("Mobile testing path")
-    p.bullet("Android phone -> Expo Go app -> connects to PC via USB")
-    p.bullet("adb reverse tcp:5249 tcp:5249  -  exposes PC port 5249 on phone")
-    p.bullet("Frontend uses base URL http://127.0.0.1:5249  -  resolved on PHONE")
-    p.bullet("Backend runs HTTP only (HTTPS dev cert is not trusted by phone)")
+    p.h2("Database & Cloud")
+    p.bullet("SQL Server: Azure SQL (cloud) or SQL Express Lirone\\SQLEXPRESS (local)")
+    p.bullet("Azure App Service (API + ML), Azure SQL Serverless (auto-pause)")
+    p.bullet("External: Google Health Connect / Maps / Weather / Air-Quality / "
+             "Places, Google Sign-In, OpenAI, Firebase Cloud Messaging, Open Food Facts")
 
-    # ============================================================================
+    # ========================================================================
     # 3. REPO LAYOUT
-    # ============================================================================
+    # ========================================================================
     p.h1("3.  Repository Layout")
+    p.body("The real project root is c:\\Dev\\TrainWise. Four cooperating "
+           "sub-projects, no shared package manager.")
     p.code_block(
-        "TrainWise_Project/\n"
-        "  TrainWise_GitHub/                <-- C# backend (active)\n"
-        "    BL/                            -- Business logic (12 classes)\n"
-        "      Models/                      -- POCOs (15 classes)\n"
-        "    Controllers/                   -- ASP.NET controllers (12)\n"
-        "    DAL/                           -- Data access (14 classes)\n"
-        "      DBservice.cs                 -- Base: SqlConnection + sproc helper\n"
-        "    Program.cs                     -- ASP.NET startup\n"
-        "    appsettings.json               -- ConnectionString to SQL Express\n"
-        "    TrainWise.csproj               -- Net8 project file\n"
-        "    TrainWise.sln                  -- Solution file\n"
+        "TrainWise/                          <-- project root\n"
+        "  CLAUDE.md                         master engineering doc (592 lines)\n"
+        "  PROJECT_SUMMARY.md                full project overview\n"
+        "  generate_docs_pdf.py              THIS script (PyMuPDF)\n"
+        "  TrainWise_Project_Documentation.pdf   output of this script\n"
         "\n"
-        "  TrainWiseExpo/                   <-- React Native frontend (active)\n"
-        "    App.js                         -- Provider chain root\n"
-        "    index.js                       -- registerRootComponent(App)\n"
-        "    app.json                       -- Expo config\n"
-        "    package.json                   -- RN 0.81 / React 19 / Expo 54\n"
-        "    assets/images/wowowow.png      -- Brand logo (cover screen)\n"
-        "    src/\n"
-        "      api/                         -- AuthContext + axios + Health Connect\n"
-        "        api.js                     -- Base axios + auth/login + ActivityLog\n"
-        "        AuthContext.js             -- Global session (user, login, logout)\n"
-        "        HealthConnectService.js    -- Real native module wrapper\n"
-        "        HealthConnectService.mock.js  -- Expo Go fallback (no native)\n"
-        "        SyncService.js             -- HC -> backend orchestration\n"
-        "        useSyncWorkouts.js         -- Hook: triggerSync(), state\n"
-        "        GoogleFitScreen.js         -- Health Connect UI screen\n"
-        "      services/\n"
-        "        api.js                     -- The other axios with all CRUD funcs\n"
-        "      navigation/\n"
-        "        NavigationStack.js         -- AuthStack / AppStack tabs\n"
-        "      screens/                     -- 11 screens\n"
-        "      components/                  -- Card, ScreenHeader, PrimaryButton\n"
-        "      theme/colors.js              -- Color/Font/Spacing tokens\n"
-        "      constants/google.js          -- GOOGLE_WEB_CLIENT_ID\n"
+        "  TrainWise/TrainWise/              <-- C# backend (TrainWise.sln)\n"
+        "    Controllers/   (29)   BL/  (39)   DAL/  (29)   Models/ (47)\n"
+        "    Program.cs   appsettings.json   wwwroot/images/\n"
+        "  TrainWise/TrainWise.Tests/        xUnit: pins the load-window math\n"
         "\n"
-        "  github - server-side/            <-- Old duplicate (BL/Controllers/DAL\n"
-        "                                       only, no .csproj). Candidate for\n"
-        "                                       deletion - awaiting confirmation.\n"
+        "  TrainWiseExpo/                    <-- React Native / Expo app\n"
+        "    App.js  index.js  app.json  app.config.js  eas.json  package.json\n"
+        "    android/                        native project (manual HC edits)\n"
+        "    src/  api/  services/  navigation/  screens/ (~60)\n"
+        "          components/ (~55)  utils/ (~55)  theme/  i18n/  config/\n"
         "\n"
-        "  generate_docs_pdf.py             <-- This script\n"
-        "  TrainWise_Project_Documentation.pdf\n"
+        "  ml/                               <-- Python ML microservice\n"
+        "    app.py db.py config.py features.py forecast.py risk.py auth.py\n"
+        "    models/*.pkl   notebook/*.ipynb (gradeable)\n"
+        "  ml_deploy_clean/                  clean copy for the Azure deploy\n"
         "\n"
-        "  ../SQL/TrainWiseDB_Script.sql    <-- DB schema + seed (UTF-16LE!)\n"
+        "  sql/                              32 schema + migration + seed scripts\n"
+        "  tasks/                            session resumes, checklists, lessons.md\n"
+        "  Python Course ML/                 the 7-lesson ML course (context)\n"
     )
 
-    # ============================================================================
+    # ========================================================================
     # 4. ARCHITECTURE
-    # ============================================================================
-    p.h1("4.  Architecture - 4 layers")
+    # ========================================================================
+    p.h1("4.  Architecture - 4 tiers")
     p.body(
-        "Every request flows through exactly four layers. Each layer talks "
-        "only to the one directly below it. The DAL never instantiates a BL, "
-        "BL never reads HttpContext, etc. This keeps the boundaries clean."
+        "The mobile app talks to two services: the C# REST API for all app "
+        "data, and the Python ML service for analytics/forecast. Both read the "
+        "same SQL database. The C# backend keeps a strict three-layer shape."
     )
     p.code_block(
-        "  Mobile UI (React Native screens)\n"
-        "        |  axios (HTTP/JSON)\n"
-        "        v\n"
-        "  Controller          -- thin: validate route, call BL, map exceptions\n"
-        "        |\n"
-        "        v\n"
-        "  BL (Business Logic) -- input validation, cross-entity rules\n"
-        "        |\n"
-        "        v\n"
-        "  DAL (Data Access)   -- inherits DBservice, calls stored procedure\n"
-        "        |\n"
-        "        v\n"
-        "  SQL Server          -- stored procedures own the algorithm\n"
+        "  Mobile app (React Native)\n"
+        "    |  axios -> services/api.js  (all app data)\n"
+        "    |  axios -> services/mlApi.js (analytics / forecast / what-if)\n"
+        "    v                          v\n"
+        "  C# REST API                Python ML service (Flask :8000)\n"
+        "  Controller -> BL -> DAL       features / forecast / risk\n"
+        "    |  (ADO.NET)                 |  (pyodbc / pymssql)\n"
+        "    v                           v\n"
+        "  ===============  SQL Server  ===============\n"
+    )
+    p.card("One formula, four implementations",
+           "The ACWR load math is the single source of truth in C# "
+           "LoadCalculationBL (internal static helpers), and is mirrored "
+           "byte-for-byte by ml/features.py (Python) and by utils/acwr.js + "
+           "utils/loadSeries.js (on-device JS). The C# xUnit test project pins "
+           "hand-computed vectors so the four never drift. Keeping them in "
+           "lockstep is a defining challenge of the project.")
+    p.card("Backend three-layer",
+           "Controllers are thin REST surfaces (Route api/[controller], "
+           "[FromBody] on POST/PUT). BL holds business logic. DAL is manual "
+           "ADO.NET over stored procedures (older features) or inline "
+           "parameterised SQL (newer features). No EF Core, no migrations "
+           "folder; the schema is managed by the scripts in sql/.")
+
+    # ========================================================================
+    # 5. DEPLOYMENT MODES
+    # ========================================================================
+    p.h1("5.  Backend Deployment Modes")
+    p.body(
+        "Two interchangeable modes, flipped by a one-line switch plus an APK "
+        "rebuild. BACKEND_MODE lives in src/config/backend.js (both axios "
+        "clients import API_BASE_URL from it, so they can never drift). ML_MODE "
+        "lives in src/services/mlApi.js. As of this writing both are 'local'."
+    )
+    p.h2("Mode A - Azure (works anywhere)")
+    p.bullet("API on Azure App Service; Azure SQL (trainwiseadmin01.database."
+             "windows.net / TrainWiseDB).")
+    p.bullet("ML service live at trainwise-ml-...azurewebsites.net (/health -> db:true).")
+    p.bullet("DB connection injected via the App Service Connection-strings "
+             "blade; DBservice.Connect() reads env vars so it wins over appsettings.json.")
+    p.bullet("Cost kept low by Azure SQL Serverless (auto-pause; first call after "
+             "idle can take ~30s to wake).")
+    p.h2("Mode B - Local LAN")
+    p.bullet("API in VS 2022 (bind 0.0.0.0:5249), SQL Express, ML service "
+             "(python app.py, :8000), phone over the same WiFi (or adb reverse over USB).")
+    p.bullet("Requires: firewall rules (TCP 5249 + 8000, Private profile), "
+             "usesCleartextTraffic=true in the manifest, and LOCAL_PC_IP current.")
+    p.warning("The C# backend code is identical in both modes",
+              "Nothing in Controllers/BL/DAL changes when switching. Only client "
+              "config (backend.js / mlApi.js) and the DB connection source differ.")
+
+    # ========================================================================
+    # 6. AUTH & SECURITY
+    # ========================================================================
+    p.h1("6.  Authentication & Security")
+    p.body(
+        "Since the 2026-07-02 security pass the API has a real identity layer "
+        "(the old 'no auth, trusts a client-supplied userId' model is gone)."
+    )
+    p.h2("JWT bearer auth")
+    p.bullet("JwtService (HS256) mints a token on login / signup / google-login, "
+             "carrying uid, isCoach/isTrainee, and a session id (sid).")
+    p.bullet("Program.cs validates a token when present. AUTH_ENFORCE (env flag) "
+             "is the stage-2 switch: when true, every endpoint without "
+             "[AllowAnonymous] requires a valid token. Off by default so older "
+             "tokenless APKs keep working during rollout.")
+    p.bullet("BaseApiController exposes ownership gates (CallerMayAct, "
+             "CallerOwnsOrCoaches, ...) that DENY a token belonging to a "
+             "different user even while enforcement is off - closing IDOR/BOLA.")
+    p.bullet("Session revocation: OnTokenValidated checks sid against "
+             "SessionBL.IsSessionActive, so 'log out this device' is real.")
+    p.h2("Other hardening")
+    p.bullet("PBKDF2 password hashing (PasswordHasher: SHA-256 / 100k / salted, "
+             "verify-and-upgrade from legacy plaintext).")
+    p.bullet("Rate limiting (10/min/IP on auth endpoints, 300/min/IP global).")
+    p.bullet("Generic 500 body (never leak ex.Message / SQL / paths); the detail "
+             "stays in the server log.")
+    p.bullet("Upload validation (UploadValidator: 6 MB cap + magic-byte sniff, "
+             "server-derived extension; client filename ignored).")
+    p.bullet("Server-side Google ID-token verification (GoogleTokenVerifier) and "
+             "signup reCAPTCHA (CaptchaVerifier, fail-open when unset).")
+    p.warning("Secrets discipline",
+              "After a Google API key leaked via a push (now rotated), the "
+              "project enforces a pre-commit secret scan and a safe-push "
+              "checklist. Keys live in .env (gitignored) + app.config.js "
+              "injection; appsettings.json carries the Azure SQL password "
+              "locally but its committed version has only the clean local string "
+              "and must never be committed with the password. EXPO_PUBLIC_* vars "
+              "(the Maps + OpenAI keys) are baked into the APK in plaintext - do "
+              "not distribute the APK publicly.")
+
+    # ========================================================================
+    # 7. DATABASE
+    # ========================================================================
+    p.h1("7.  SQL Server Database")
+    p.body(
+        "Raw ADO.NET against SQL Server. The base schema + stored procedures "
+        "live in sql/TWDB.sql; 30+ dated migration scripts layer on the newer "
+        "features. There is no EF migration runner, so every script must be run "
+        "on BOTH the local and Azure databases."
+    )
+    p.h2("7.1  Table families (roughly 40 tables)")
+    p.bullet("Core: Users, ActivityTypes, ActivityLogs, DailyLoad, "
+             "LoadParameters, Recommendations.")
+    p.bullet("Coaching: Coaches, CoachTrainees, CoachRecommendations, "
+             "WorkoutComments (coach feedback), MonthlyForecasts (ML snapshots).")
+    p.bullet("Injuries: InjuryTypes, InjuryCategories, InjuriesReports, InjuryPainLog.")
+    p.bullet("Messaging: Messages, MessageReactions, MessageTyping.")
+    p.bullet("Social: Friendships, Gyms, GymCoaches, CoachOffers (+ Users.LastSeen "
+             "/ Latitude / Longitude for presence + geo).")
+    p.bullet("Community / gamification: WorkoutBoard posts + likes + comments, "
+             "WorkoutKudos, Challenges + participants, Events + RSVPs, cosmetics, records.")
+    p.bullet("Planning: PlannedWorkouts (calendar), TrainingPrograms / "
+             "ProgramWorkouts / ProgramAssignments + program chat tables.")
+    p.bullet("Health & sessions: BodyMeasurements, NutritionLog, WorkoutTemplates, "
+             "UserSessions, UserDevices (+ push token).")
+    p.h2("7.2  Stored procedures & inline SQL")
+    p.body(
+        "Older features use ~49+ stored procedures (naming sp_VerbNoun); the "
+        "newest features (programs, calendar, community, event chat) use inline "
+        "parameterised SQL in the DAL. Both are parameterised - the project "
+        "never string-concatenates user input into SQL."
+    )
+    p.h2("7.3  Reference / seed data (required on any fresh DB)")
+    p.body(
+        "sql/seed_reference_data.sql (idempotent) seeds the lookup tables the "
+        "dropdowns and the load algorithm need: 20 ActivityTypes, 20 InjuryTypes "
+        "+ categories, 20 TrainingGoals, and the single LoadParameters tuning "
+        "row. The social migration additionally seeds fake demo users + 10 real "
+        "Netanya gyms (from Google Places). Without the seed, a fresh DB has "
+        "empty dropdowns and a broken load calc."
     )
 
-    p.spacer(4)
-    p.card("Why stored procedures?",
-           "All business-critical reads (GetActivityLogsForLoad, "
-           "GetUserLoadContext) and writes (SaveDailyLoad) live in T-SQL. The "
-           "C# DAL is a thin marshaller: open connection, call sproc, map "
-           "rows. The AC-Ratio formula itself is computed in the DailyLoadDAL "
-           "(C# pulls the activity rows, runs the math, then calls "
-           "sp_SaveDailyLoad to persist).")
-
-    # ============================================================================
-    # 5. DATABASE
-    # ============================================================================
-    p.h1("5.  SQL Server Database")
-    p.h2("5.1  Tables (16)")
-
-    tables = [
-        ("Users",
-         "UserID (PK identity), FullName, BirthYear, Gender, Height, Weight, "
-         "ActivityLevel, CreatedAt, DeviceType, UserName, Email, "
-         "Password char(8) (plain text!), ExperienceLevel (1=Beginner, "
-         "2=Regular, 3=Advanced), BaseLineDailyLoad, BaseLineWeeklyLoad, "
-         "HealthDeclaration bit, ConfirmTerms bit, TermConfirmationDate, "
-         "ProfileImagePath, IsBaselineEstablished bit, "
-         "BaselineEstablishedDate, IsCoach bit"),
-        ("ActivityTypes",
-         "ActivityTypeID (PK identity), TypeName, IntensityFactor decimal(5,2). "
-         "Seeded with Running 1.30, Walking 0.80, Cycling 1.10, CrossFit 1.50, "
-         "Swimming 1.20."),
-        ("ActivityLogs",
-         "ActivityID (PK), UserID, ActivityTypeID, StartTime, EndTime, "
-         "DistanceKM, AvgHeartRate, MaxHeartRate, CaloriesBurned, "
-         "SourceDevice, ExertionLevel tinyint (1-10), Duration smallint "
-         "(minutes), CalculatedLoadForSession smallint (Duration x Exertion x "
-         "IntensityFactor), IsConfirmed bit."),
-        ("DailyLoad",
-         "LoadID (PK), UserID, Date, AcuteLoad float (last 7 days), "
-         "ChronicLoad float (last 28 days), AC_Ratio float (acute / chronic), "
-         "StressScore int (0-100), LoadLevel nvarchar(20) ('Green' / 'Yellow' "
-         "/ 'Red')."),
-        ("LoadParameters",
-         "Single-row config table. BeginnerDailyLoad / RegularDailyLoad / "
-         "AdvanceDailyLoad (smallint), BeginnerAcuteLoad / RegularAcuteLoad / "
-         "AdvanceAcuteLoad, LowLoadRatio (float), SafeZoneLowRange (float), "
-         "SafeZoneHighRange (float), OverLoad (float). Reference values used "
-         "until a personal baseline is established."),
-        ("Recommendations",
-         "RecID (PK), UserID, Date, LoadLevel, RecommendationText nvarchar(max), "
-         "Type. System-generated suggestions per daily load calculation."),
-        ("Coaches",
-         "CoachID (PK), FullName, Email, UserID (nullable link to Users)."),
-        ("CoachTrainees",
-         "Composite PK (CoachID, UserID), ConnectionDate, AllowNotifications. "
-         "Many-to-many: a coach can have many trainees."),
-        ("CoachRecommendations",
-         "RecID (PK), CoachID, UserID, Date, Title, Text. Coach-authored "
-         "messages to a specific trainee."),
-        ("InjuryTypes",
-         "InjuryTypeID (PK), InjuryName. Catalog of injury labels (Knee Pain, "
-         "Shin Splints, Ankle Sprain, ...)."),
-        ("InjuryCategories",
-         "Composite PK (InjuryTypeID, CategoryName). Many categories per "
-         "injury type."),
-        ("InjuriesReports",
-         "InjuryID (PK), UserID, InjuryTypeID, Date, Severity (1-10 in UI but "
-         "BL validates 1-5), Notes nvarchar(max), IsActiveInjury bit."),
-        ("TrainingGoals",
-         "GoalID (PK), GoalName. Catalog of goals user can pick from."),
-        ("UserTrainingGoals",
-         "Composite PK (UserID, GoalID). Many-to-many user <-> goal."),
-        ("UserActivityPreferences",
-         "Composite PK (UserID, ActivityTypeID). Activities the user marks as "
-         "preferred."),
-        ("UserDevices",
-         "DeviceID (PK), UserID, DeviceName, LastSync datetime, "
-         "PermissionsGranted bit. Used by SyncService.updateDeviceLastSync to "
-         "track the last successful Health Connect pull."),
-    ]
-    for name, desc in tables:
-        p.card(name, desc)
-
-    # ----- Stored procedures -----
-    p.h2("5.2  Stored Procedures (49)")
+    # ========================================================================
+    # 8. AC-RATIO ALGORITHM
+    # ========================================================================
+    p.h1("8.  AC-Ratio Training-Load Algorithm")
     p.body(
-        "The DAL never builds dynamic SQL; every call goes through one of "
-        "these. Naming convention: sp_VerbNoun."
-    )
-
-    sp_groups = [
-        ("Users",
-         ["sp_InsertUser", "sp_UpdateUser", "sp_DeleteUser", "sp_GetUserByID",
-          "sp_GetAllUsers", "sp_GetUserSummary", "sp_GetUserLoadContext",
-          "sp_UpdateUserBaseline", "sp_UpdateUserProfileImage",
-          "sp_LoginUser  (email + 8-char plaintext password)"]),
-        ("Activity",
-         ["sp_InsertActivityLog", "sp_UpdateActivityLog",
-          "sp_DeleteActivityLog", "sp_GetActivityLogsByUser",
-          "sp_GetActivityLogsForLoad  (last 28 days, with IntensityFactor "
-          "joined - feeds C# AC ratio calc)",
-          "sp_GetAllActivityTypes", "sp_InsertActivityType"]),
-        ("Daily load",
-         ["sp_GetDailyLoadByUser",
-          "sp_SaveDailyLoad  (upsert + optional baseline establishment)"]),
-        ("Recommendations",
-         ["sp_InsertRecommendation", "sp_GetRecommendationsByUser",
-          "sp_InsertCoachRecommendation",
-          "sp_GetCoachRecommendationsByUser"]),
-        ("Coach",
-         ["sp_InsertCoach", "sp_DeleteCoach", "sp_GetCoachByID",
-          "sp_GetCoachByUserID", "sp_ConnectTraineeToCoach",
-          "sp_DisconnectTrainee", "sp_GetTraineesWithLoadByCoach",
-          "sp_GetTraineeDailyLoadForCoach"]),
-        ("Injuries",
-         ["sp_InsertInjuryReport", "sp_GetInjuriesByUser",
-          "sp_GetActiveInjuriesByUser", "sp_GetAllInjuryTypes"]),
-        ("Goals & Preferences",
-         ["sp_AddUserTrainingGoal", "sp_RemoveUserTrainingGoal",
-          "sp_AddUserActivityPreference",
-          "sp_RemoveUserActivityPreference", "sp_GetAllTrainingGoals"]),
-        ("Devices & config",
-         ["sp_InsertUserDevice", "sp_UpdateUserDevice", "sp_GetUserDevices",
-          "sp_GetLoadParameters"]),
-    ]
-    for group, items in sp_groups:
-        p.h3(group)
-        for sp in items:
-            p.bullet(sp)
-
-    # ----- AC ratio algorithm -----
-    p.h2("5.3  AC-Ratio Training-Load Algorithm")
-    p.body(
-        "TrainWise classifies each day on a Green / Yellow / Red traffic "
-        "light. The classification is based on the Acute:Chronic Workload "
-        "Ratio (AC ratio), a published sports-medicine model."
+        "Implemented in BL/LoadCalculationBL.cs (CalculateAndSave) and mirrored "
+        "in Python + JS. This is the app's reason to exist."
     )
     p.h3("Per-session load")
     p.code_block(
-        "sessionLoad = Duration (min)  x  Exertion (1-10)  x  IntensityFactor\n"
+        "sessionLoad = Duration (min)  x  Exertion (RPE 1-10)\n"
         "\n"
-        "IntensityFactor comes from ActivityTypes:\n"
-        "  Running 1.30   Walking 0.80   Cycling 1.10\n"
-        "  CrossFit 1.50  Swimming 1.20\n"
+        "NOTE: the old IntensityFactor multiplier was REMOVED across DB,\n"
+        "backend and frontend. Load is duration x exertion only.\n"
     )
-    p.h3("Acute & chronic load")
+    p.h3("Acute, chronic, ratio (mirrors LoadCalculationBL)")
     p.code_block(
-        "AcuteLoad   = sum of session loads in the last 7 days\n"
-        "ChronicLoad = sum of session loads in the last 28 days, divided by 4\n"
-        "AC_Ratio    = AcuteLoad / ChronicLoad   (NULL when ChronicLoad = 0)\n"
-    )
-    p.h3("Traffic-light classification")
-    p.code_block(
-        "Lookup thresholds from LoadParameters:\n"
-        "  LowLoadRatio       (e.g. 0.8)\n"
-        "  SafeZoneLowRange   (e.g. 0.8)\n"
-        "  SafeZoneHighRange  (e.g. 1.3)\n"
-        "  OverLoad           (e.g. 1.5)\n"
+        "sessions bucketed per LOCAL calendar day (tzOffsetMinutes); pending\n"
+        "Health-Connect imports (IsConfirmed = 0) are EXCLUDED, NULL = confirmed\n"
         "\n"
-        "if AC_Ratio < LowLoadRatio              -> Yellow ('undertraining')\n"
-        "elif SafeLow <= AC_Ratio <= SafeHigh    -> Green  (safe zone)\n"
-        "elif SafeHigh < AC_Ratio < OverLoad     -> Yellow (caution)\n"
-        "else                                    -> Red    (overload risk)\n"
+        "acute   = sum of session loads in the last 7 days\n"
+        "chronic = EffectiveChronic(28-day window)  (see below)\n"
+        "ratio   = acute / chronic     (NULL/Green when chronic = 0)\n"
     )
-    p.h3("Bootstrap mode (no baseline yet)")
-    p.body(
-        "Until the user has 28 days of data, IsBaselineEstablished = 0 and "
-        "the system uses LoadParameters absolute thresholds (Beginner / "
-        "Regular / Advance daily/acute) keyed off ExperienceLevel. Once the "
-        "baseline window closes, sp_SaveDailyLoad upgrades the user to "
-        "personal baselines (BaseLineDailyLoad / BaseLineWeeklyLoad)."
-    )
-    p.h3("Active-injury modifier")
-    p.body(
-        "If sp_GetUserLoadContext returns HasActiveInjury=1, the C# layer "
-        "tightens the Yellow/Red thresholds (currently a TODO marker in "
-        "DailyLoadDAL - see Known Issues)."
-    )
-
-    # ============================================================================
-    # 6. BACKEND
-    # ============================================================================
-    p.h1("6.  Backend - C# ASP.NET Core 8")
-
-    p.h2("6.1  Program.cs / appsettings")
-    p.body("Startup is intentionally minimal:")
+    p.h3("EffectiveChronic - dynamic cold-start floor + covered-days ramp")
     p.code_block(
-        "var builder = WebApplication.CreateBuilder(args);\n"
-        "builder.Services.AddControllers();\n"
-        "builder.Services.AddEndpointsApiExplorer();\n"
-        "builder.Services.AddSwaggerGen();\n"
-        "builder.Services.AddCors(o => o.AddDefaultPolicy(p =>\n"
-        "    p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));\n"
-        "var app = builder.Build();\n"
-        "if (app.Environment.IsDevelopment()) {\n"
-        "    app.UseSwagger();\n"
-        "    app.UseSwaggerUI();\n"
-        "}\n"
-        "app.UseHttpsRedirection();   // <-- comment out for phone testing\n"
-        "app.UseCors();\n"
-        "app.UseAuthorization();      // present but no AddAuthentication()\n"
-        "app.MapControllers();\n"
-        "app.Run();\n"
+        "if < 7 active days in the 28-day window (cold start / layoff):\n"
+        "    chronic = max(sum28 / 4, experienceBootstrap)\n"
+        "    bootstrap weekly = Beginner 150 / Regular 280 / Advance 420\n"
+        "else (>= 7 active days):\n"
+        "    covered = days from the first loaded day through today (7..28)\n"
+        "    chronic = sum28 / min(4, covered / 7)     # ramp\n"
     )
-    p.h3("appsettings.json")
-    p.code_block(
-        '"ConnectionStrings": {\n'
-        '  "myProjDB": "Data Source=Lirone\\\\SQLEXPRESS;'
-        'Initial Catalog=TrainWise;Integrated Security=True;Encrypt=False"\n'
-        '}\n'
-    )
-    p.h3("Listening URL")
-    p.kv("HTTP:",  "http://localhost:5249  (the URL the phone reaches via adb reverse)")
-    p.kv("HTTPS:", "https://localhost:7126 (dev cert, do NOT use from phone)")
-    p.kv("Swagger:", "http://localhost:5249/swagger")
-
-    # ----- Controllers -----
-    p.h2("6.2  Controllers")
     p.body(
-        "All controllers follow the same shape: instantiate the matching BL "
-        "in the constructor, wrap each action in try / catch, return Ok / "
-        "BadRequest / 500."
+        "The floor is DYNAMIC (based on the trailing window), not the one-shot "
+        "IsBaselineEstablished flag - so a returning-from-layoff athlete no "
+        "longer stores a false Red. The covered-days ramp stops a steady "
+        "2-week-old user reading a false 2.0; a full 28-day history is unchanged (/4)."
     )
-
-    controllers = [
-        ("UsersController",
-         "[ApiController] [Route(\"api/users\")]",
-         ["POST   /api/users                          - Create",
-          "PUT    /api/users/{id}                      - Update",
-          "DELETE /api/users/{id}                      - Delete",
-          "GET    /api/users/{id}                      - GetById",
-          "GET    /api/users                           - GetAll",
-          "PUT    /api/users/{id}/profile-image        - SetProfileImagePath"]),
-        ("ActivityLogController",
-         "[ApiController] [Route(\"api/activitylog\")]",
-         ["POST   /api/activitylog                     - Create",
-          "PUT    /api/activitylog                     - Update",
-          "DELETE /api/activitylog/{id}                - Delete",
-          "GET    /api/activitylog/user/{userId}       - GetByUser"]),
-        ("DailyLoadController",
-         "[ApiController] [Route(\"api/dailyload\")]",
-         ["POST   /api/dailyload/user/{userId}/calculate - "
-          "Run AC-ratio calc for today, save, return tuple",
-          "GET    /api/dailyload/user/{userId}         - GetByUser (history)"]),
-        ("RecommendationController",
-         "[ApiController] [Route(\"api/recommendation\")]",
-         ["POST   /api/recommendation                  - Create",
-          "GET    /api/recommendation/user/{userId}    - GetByUser"]),
-        ("InjuryReportController",
-         "[ApiController] [Route(\"api/injuryreport\")]",
-         ["POST   /api/injuryreport                    - Create",
-          "GET    /api/injuryreport/user/{userId}      - GetByUser",
-          "GET    /api/injuryreport/user/{userId}/active - GetActive"]),
-        ("InjuryTypesController",
-         "[ApiController] [Route(\"api/injurytypes\")]",
-         ["GET    /api/injurytypes                     - GetAll"]),
-        ("CoachController",
-         "[ApiController] [Route(\"api/coach\")]",
-         ["GET    /api/coach/{id}                      - GetById",
-          "GET    /api/coach/{id}/trainees             - GetTrainees"]),
-        ("TrainingGoalsController",
-         "[ApiController] [Route(\"api/traininggoals\")]",
-         ["GET    /api/traininggoals                   - GetAll"]),
-        ("UserGoalsController",
-         "[ApiController] [Route(\"api/usertraininggoals\")]",
-         ["POST   /api/usertraininggoals               - AddGoal",
-          "DELETE /api/usertraininggoals/{userId}/{goalId} - RemoveGoal"]),
-        ("UserActivityPreferencesController",
-         "[ApiController] [Route(\"api/useractivitypreferences\")]",
-         ["POST   /api/useractivitypreferences         - AddPreference",
-          "DELETE /api/useractivitypreferences/{userId}/{actId} - RemovePref"]),
-        ("CoachRecommendationsController",
-         "(MISSING [ApiController] AND [Route] attributes!)",
-         ["Effectively unreachable as written.",
-          "Frontend tries /api/coachrecommendations/user/{id} - will 404."]),
-        ("UserDevicesController",
-         "(MISSING [ApiController] AND [Route] attributes!)",
-         ["Effectively unreachable as written.",
-          "Frontend tries /api/userdevice/user/{id} - will 404.",
-          "Also: src/api/api.js calls /api/users/{id}/devices  -  inconsistent."]),
-    ]
-    for name, attrs, routes in controllers:
-        p.h3(name)
-        p.small(attrs)
-        for r in routes:
-            p.bullet(r)
-
-    p.spacer(6)
-    p.warning("No AuthController exists",
-              "Frontend /api/auth/login points to a controller that does NOT "
-              "exist in the codebase. The sp_LoginUser stored procedure IS "
-              "present in the database, so the only missing piece is a thin "
-              "AuthController + AuthBL + UserDAL.LoginByEmailPassword that "
-              "wraps it. Until that lands, the LoginScreen will throw on "
-              "every submit.")
-
-    # ----- BL layer -----
-    p.h2("6.3  Business Logic (BL)")
-    bls = [
-        ("UserBL",
-         "Create / Update / Delete / GetById / GetAll / SetProfileImagePath. "
-         "Validates: FullName non-empty, BirthYear in [1950..now], Height>0, "
-         "Weight>0, ActivityLevel in [1..5], DeviceType non-empty."),
-        ("ActivityLogBL",
-         "Create / Update / Delete / GetByUser. Validates UserID, "
-         "ActivityTypeID, StartTime<EndTime, DistanceKM>=0, and that the user "
-         "actually exists (calls UserDAL.GetUserById)."),
-        ("DailyLoadBL",
-         "CalculateForDay(userId, date) -> tuple(acute, chronic, acRatio, "
-         "stressScore, loadLevel). Validates user exists and date<=today. "
-         "GetByUser(userId) -> List<DailyLoad>."),
-        ("RecommendationBL",
-         "Create (validates UserID, LoadLevel, RecommendationText, Type) and "
-         "GetByUser."),
-        ("InjuryReportBL",
-         "Create (Severity must be 1..5, Date<=today, user must exist) and "
-         "GetByUser. NOTE: frontend slider is 1..10 - mismatch."),
-        ("CoachBL",
-         "GetTrainees(coachId) -> List<TraineeSummary>. "
-         "GetTraineeLoad(coachId, userId) -> List<DailyLoad>."),
-        ("CoachRecommendationBL",
-         "Create + GetByUser. Validates CoachID, UserID, Title, Text non-empty."),
-        ("UserDeviceBL",
-         "Create / Update / GetByUser. Validates UserID and DeviceName."),
-        ("InjuryTypeBL",        "GetAll() catalog reader."),
-        ("TrainingGoalCatalogBL", "GetAll() catalog reader."),
-        ("UserActivityPreferenceBL",
-         "AddPreference / RemovePreference. Both validate userId>0 and "
-         "activityTypeId>0."),
-        ("UserTrainingGoalBL",
-         "AddGoal / RemoveGoal. Both validate userId>0 and goalId>0."),
-    ]
-    for name, desc in bls:
-        p.card(name, desc)
-
-    # ----- DAL -----
-    p.h2("6.4  Data Access Layer (DAL)")
-    p.body(
-        "Every DAL inherits from DBservice. The base class supplies two "
-        "methods:"
-    )
+    p.h3("Traffic-light classification (DetermineLoadLevel)")
     p.code_block(
-        "protected SqlConnection Connect()\n"
-        "    -> reads ConnectionStrings:myProjDB from appsettings, opens conn\n"
+        "healthy:   ratio < 0.8 Green | 0.8..1.3 Yellow | > 1.3 Red\n"
+        "injured:   ratio < 0.8 Green | 0.8..<1.2 Yellow | >= 1.2 Red\n"
         "\n"
-        "protected SqlCommand CreateCommandWithStoredProcedure(\n"
-        "    string spName, SqlConnection con, Dictionary<string,object> params)\n"
-        "    -> builds SqlCommand of type StoredProcedure, binds parameters\n"
-    )
-    p.body("Method-level summary (one bullet per method):")
-    dals = [
-        "ActivityLogDAL.Insert / Update / Delete / GetByUser",
-        "ActivityTypeDAL.GetAll / Insert",
-        "CoachDAL.GetCoachById / GetTraineesWithLoad / GetTraineeLoadHistory",
-        "CoachRecommendationDAL.Insert / GetByUser",
-        "DailyLoadDAL.CalculateDailyLoad (the algorithm) / GetDailyLoadByUser",
-        "InjuryReportDAL.InsertInjuryReport / GetInjuriesByUser",
-        "InjuryTypeDAL.GetAll",
-        "RecommendationDAL.InsertRecommendation / GetByUser",
-        "TrainingGoalDAL.GetAll",
-        "UserActivityPreferenceDAL.AddPreference / RemovePreference",
-        "UserDAL.InsertUser / UpdateUser / DeleteUser / GetUserById / GetAllUsers / "
-        "UpdateUserProfileImage  (NO Login method yet)",
-        "UserDeviceDAL.Insert / Update / GetByUser",
-        "UserTrainingGoalDAL.AddGoal / RemoveGoal",
-    ]
-    for d in dals:
-        p.bullet(d)
-
-    p.spacer(4)
-    p.h3("DailyLoadDAL.CalculateDailyLoad - the heart of the app")
-    p.body(
-        "The C# orchestrator: pulls activity rows via "
-        "sp_GetActivityLogsForLoad (last 28 days, joined to ActivityTypes for "
-        "IntensityFactor), pulls thresholds + baseline via "
-        "sp_GetUserLoadContext, computes Acute / Chronic / AC ratio / stress / "
-        "load level, persists via sp_SaveDailyLoad (which also upgrades the "
-        "user from bootstrap-mode to personal-baseline mode when ready), and "
-        "returns a tuple back up to the BL."
+        "Levels are graded from the UNROUNDED ratio (1.3049 is Red, not the\n"
+        "displayed 1.30). An active injury tightens the Red line with no gap.\n"
     )
 
-    # ----- Models -----
-    p.h2("6.5  Models (POCOs in BL/Models/)")
-    models = [
-        ("User",
-         "UserID, FullName, BirthYear, Gender, Height, Weight, ActivityLevel, "
-         "CreatedAt, DeviceType, ProfileImagePath?  -  MISSING Email, "
-         "Password, IsCoach, ExperienceLevel, BaseLine* fields that exist in "
-         "the SQL table. See Known Issues."),
-        ("ActivityLog",
-         "ActivityID, UserID, ActivityTypeID, StartTime, EndTime, DistanceKM, "
-         "AvgHeartRate, MaxHeartRate, CaloriesBurned, SourceDevice  -  "
-         "MISSING ExertionLevel, Duration, CalculatedLoadForSession, "
-         "IsConfirmed (frontend sends them, backend silently drops)."),
-        ("ActivityType",          "ActivityTypeID, TypeName  (no IntensityFactor!)"),
-        ("DailyLoad",             "LoadID, UserID, Date, AcuteLoad, ChronicLoad, "
-                                  "AC_Ratio?, StressScore, LoadLevel"),
-        ("Recommendation",        "RecID, UserID, Date, LoadLevel, "
-                                  "RecommendationText, Type"),
-        ("Coach",                 "CoachID, FullName, Email"),
-        ("CoachTrainee",          "CoachID, UserID  (just the relation)"),
-        ("CoachRecommendation",   "RecID, CoachID, UserID, Date, Title, Text"),
-        ("InjuryReport",          "InjuryID, UserID, InjuryTypeID, Date, Severity, "
-                                  "Notes  -  no IsActiveInjury field"),
-        ("InjuryType",            "InjuryTypeID, InjuryName"),
-        ("TraineeSummary",        "UserID, FullName, BirthYear, Gender, "
-                                  "DeviceType + LastDate, AcuteLoad, "
-                                  "ChronicLoad, AC_Ratio, LoadLevel  (the row "
-                                  "rendered on a coach's trainee list)"),
-        ("TrainingGoal",          "GoalID, GoalName"),
-        ("UserActivityPreference","UserID, ActivityTypeID"),
-        ("UserDevice",            "DeviceID, UserID, DeviceName, LastSync, "
-                                  "PermissionsGranted"),
-        ("UserTrainingGoal",      "UserID, GoalID"),
-    ]
-    for n, d in models:
-        p.kv(n + ":", d)
+    # ========================================================================
+    # 9. BACKEND
+    # ========================================================================
+    p.h1("9.  Backend - C# ASP.NET Core 8")
+    p.h2("9.1  Controllers (29)")
+    p.body("All follow the same shape: instantiate the matching BL, gate via "
+           "BaseApiController, return Ok / BadRequest / generic 500.")
+    p.bullet("Auth & users: Auth, Users, UserDevices, Sessions")
+    p.bullet("Load & activity: ActivityLog, ActivityType, DailyLoad, "
+             "LoadParameters, Recommendation")
+    p.bullet("Injuries: InjuryReport, InjuryTypes")
+    p.bullet("Coach: Coach, CoachTrainee, CoachRecommendations, Calendar, Programs")
+    p.bullet("Messaging & social: Messages, Social, Gyms, Community")
+    p.bullet("Workouts+: Nutrition, Records, WorkoutTemplates, WorkoutBoard, "
+             "WorkoutComments")
+    p.bullet("Goals & prefs: TrainingGoals, UserGoals, UserActivityPreferences")
+    p.h2("9.2  Business Logic (39) & Data Access (29)")
+    p.bullet("Core load: LoadCalculationBL (the algorithm), LoadAnalyticsBL "
+             "(rolling + EWMA trend), LoadParametersBL")
+    p.bullet("Auth/security services: JwtService, PasswordHasher, "
+             "GoogleTokenVerifier, CaptchaVerifier, AuthRecoveryBL, SessionBL, "
+             "InputValidator, UploadValidator, EmailSender")
+    p.bullet("Domain BL: User, ActivityLog, InjuryReport, Coach, CoachTrainee, "
+             "Message, Social, Gym, Nutrition, Records, Board, Community, "
+             "Calendar, Program, WorkoutTemplate, WorkoutComment, "
+             "Recommendation, CoachRecommendation, UserDevice")
+    p.bullet("Integrations: PushSender (FCM/FirebaseAdmin), PlacesService (Google Places)")
+    p.bullet("DAL: one per domain over DBservice.cs (Connect + sproc helper); "
+             "newer DALs (Program, Calendar, Community, Board) use inline "
+             "parameterised SQL.")
+    p.h2("9.3  Models (47)")
+    p.body("POCOs shared between layers (User, ActivityLog, DailyLoad, "
+           "LoadParameters, UserLoadContext, Coach*, Message*, Social*, "
+           "Program*, Calendar*, Community*, Records*, Nutrition*, ...) plus a "
+           "handful of Create*/Update* request objects. Unlike the 2026-04 "
+           "draft, the models now carry the full column set (Email, IsCoach, "
+           "IsTrainee, ExperienceLevel, baseline fields, ExertionLevel, "
+           "Duration, CalculatedLoadForSession, IsConfirmed).")
 
-    # ============================================================================
-    # 7. FRONTEND
-    # ============================================================================
-    p.h1("7.  Frontend - React Native Expo")
-
-    p.h2("7.1  App bootstrap")
+    # ========================================================================
+    # 10. FRONTEND
+    # ========================================================================
+    p.h1("10. Frontend - React Native Expo")
+    p.h2("10.1  Navigation tree (4 tabs)")
     p.code_block(
-        "index.js\n"
-        "  registerRootComponent(App)\n"
+        "AppNavigator (auth vs app based on the session)\n"
+        "+-- AuthStack: Welcome -> Login | SignUp -> SignUpFinal\n"
+        "+-- AppTabs (Home / Load / Health / Connect)\n"
+        "      HomeTab   -> Home, Stats, Warnings, AddWorkout, Injury,\n"
+        "                   ActiveInjuries, WorkoutSummary/Route, Settings,\n"
+        "                   ConnectQR, Shop, AIChat/Plan, Chat, MyNetwork,\n"
+        "                   CoachTraineeDetail -> CoachTraineeAnalytics,\n"
+        "                   Profile, PersonalRecords, TrainingCalendar,\n"
+        "                   Programs, Timer, Achievements, LiveRun\n"
+        "      LoadTab   -> WarningsDashboard (load trend + analytics)\n"
+        "      HealthTab -> HealthConnect (GoogleFitScreen) + WorkoutRoute\n"
+        "      ConnectTab-> Connect, Requests, MyNetwork, Chat, Board,\n"
+        "                   Leaderboard, Feed, Challenges, Events, EventChat\n"
         "\n"
-        "App.js\n"
-        "  <AuthProvider>\n"
-        "    <SafeAreaProvider>\n"
-        "      <NavigationContainer>\n"
-        "        <AppNavigator />\n"
-        "      </NavigationContainer>\n"
-        "    </SafeAreaProvider>\n"
-        "  </AuthProvider>\n"
-        "\n"
-        "app.json\n"
-        "  slug: TrainWiseExpo,  scheme: trainwiseexpo,\n"
-        "  newArchEnabled: true, no plugins\n"
+        "Coach-only users see only Home + Connect (Load/Health hidden).\n"
     )
-
-    p.h2("7.2  AuthContext + session flow")
+    p.h2("10.2  Module layout & theme system")
+    p.bullet("config/backend.js - the single BACKEND_MODE + API_BASE_URL source.")
+    p.bullet("api/ + services/ - AuthContext + JWT token store, the axios "
+             "clients, Health Connect service + sync, messages/social contexts, "
+             "weather + OpenAI + Google-auth helpers. services/mlApi.js = the ML client.")
+    p.bullet("theme/ - a MUTABLE Colors singleton swapped by applyTheme(); every "
+             "screen must read it via the useThemedStyles(makeStyles) hook "
+             "(a StyleSheet.create at module scope freezes colours and never "
+             "theme-switches).")
+    p.bullet("i18n/ - EN / HE / FR translations foundation.")
+    p.bullet("utils/ (~55) - pure logic: acwr / loadSeries mirrors, badges, "
+             "quests, calories, recovery, injuryRisk, achievements, etc.")
+    p.h2("10.3  Screens (by group)")
+    p.bullet("Auth: Welcome, Login, SignUp, SignUpFinal, ForgotPassword")
+    p.bullet("Load core: Home, HomeRouter, Stats, WarningsDashboard, "
+             "WorkoutSummary; components LoadAnalyticsSection + AcwrTrendChart")
+    p.bullet("Workouts: AddWorkout, Timer, LiveRun, WorkoutRoute, ExerciseLibrary, "
+             "PersonalRecords, NutritionScreen")
+    p.bullet("Injuries: InjuryReport, ActiveInjuries")
+    p.bullet("Coach: CoachDashboard, CoachTraineeDetail, CoachTraineeAnalytics "
+             "(PMC/ACWR/forecast/what-if), CoachPrograms, ProgramBuilder, "
+             "CoachMarketplace")
+    p.bullet("Programs/calendar: TrainingCalendar, MyPrograms, ProgramDetail")
+    p.bullet("Social/community: Connect, ConnectQR, Requests, MyCoach (MyNetwork), "
+             "WorkoutBoard, Leaderboard, Feed, Challenges, Events, EventChat, "
+             "SharedWorkout")
+    p.bullet("Chat & AI: Chat, AIChat, AIPlan")
+    p.bullet("Gamification & misc: Shop, Achievements, Profile, Settings, Health "
+             "Connect (GoogleFitScreen)")
+    p.h2("10.4  Health Connect integration")
     p.body(
-        "src/api/AuthContext.js owns the session. There are NO JWT tokens. "
-        "After login the User object is normalized and persisted to "
-        "AsyncStorage under '@trainwise_user'. On every app start, "
-        "bootstrapAsync rehydrates from storage and flips isLoading=false."
-    )
-    p.h3("Hook surface")
-    p.code_block(
-        "const {\n"
-        "  user,            // full User object or null\n"
-        "  userId,          // shorthand: user?.userId\n"
-        "  deviceId,        // user?.deviceId (set later by sync flow)\n"
-        "  isLoggedIn,      // !!user\n"
-        "  isLoading,       // true during bootstrap & login\n"
-        "  error,           // last error string\n"
-        "  login,           // (email, password) => Promise<User>\n"
-        "  logout,          // () => clears AsyncStorage + state\n"
-        "  updateUser,      // (partial) => merge + persist\n"
-        "} = useAuth();\n"
-    )
-    p.warning("Hooks rule  -  call inside the component, never at module scope",
-              "All five fixed screens (Add Workout, Connect QR, Injury "
-              "Report, Settings, Warnings Dashboard) had `const { userId } = "
-              "useAuth();` at the TOP of the file (module scope). React's "
-              "useContext returned null, the app crashed with `useContext of "
-              "null` on the very first render. Always put `useAuth()` INSIDE "
-              "the component function body, after the function signature.")
-
-    p.h2("7.3  Navigation tree")
-    p.code_block(
-        "AppNavigator (decides based on isLoggedIn)\n"
-        "|\n"
-        "+-- AuthStack  (when NOT logged in)\n"
-        "|     +-- Welcome   (WelcomeScreen)\n"
-        "|     +-- Login     (LoginScreen)\n"
-        "|\n"
-        "+-- AppStack  (BottomTabs, when logged in)\n"
-        "      +-- HomeTab   -> HomeStack\n"
-        "      |     +-- HomeMain         (HomeScreen)\n"
-        "      |     +-- Stats            (StatsScreen)\n"
-        "      |     +-- Warnings         (WarningsDashboardScreen)\n"
-        "      |     +-- AddWorkout       (AddWorkoutScreen)\n"
-        "      |     +-- InjuryReport     (InjuryReportScreen)\n"
-        "      |     +-- WorkoutSummary   (WorkoutSummaryScreen)\n"
-        "      |     +-- Settings         (SettingsScreen)\n"
-        "      |     +-- ConnectQR        (ConnectQRScreen)\n"
-        "      +-- HealthTab -> HealthStack\n"
-        "      |     +-- HealthConnectMain (GoogleFitScreen)\n"
-        "      +-- ProfileTab -> ProfileStack\n"
-        "            +-- ProfileMain      (ProfileScreen)\n"
+        "Read-only sync from Google Health Connect into backend ActivityLogs "
+        "(HealthConnectService -> SyncService -> useSyncWorkouts). A persistent "
+        "tombstone set stops deleted workouts re-importing. Getting the app to "
+        "APPEAR in Health Connect on Android 14+/16 required a "
+        "VIEW_PERMISSION_USAGE + HEALTH_PERMISSIONS activity-alias in the "
+        "manifest (the months-long 'Android 16 wall'). Six read permissions; "
+        "the app ships as a RELEASE APK (not Expo Go), and expo prebuild / EAS "
+        "must NOT be used (they wipe the manual native edits)."
     )
 
-    p.h2("7.4  api.js  (TWO files - know which is which!)")
-    p.warning("Two parallel API surfaces",
-              "src/api/api.js and src/services/api.js are both axios clients "
-              "talking to the same backend, but with different baseURL "
-              "conventions and different naming. Both are imported across "
-              "the app. Don't merge them lightly - migrating consumers is "
-              "non-trivial.")
-    p.h3("src/api/api.js  (BASE_URL = http://127.0.0.1:5249)")
+    # ========================================================================
+    # 11. ML SERVICE
+    # ========================================================================
+    p.h1("11. ML Service - Python / Flask (the smart element)")
     p.body(
-        "axios instance + login(email, password) which POSTs to "
-        "/api/auth/login (THIS ENDPOINT DOES NOT EXIST yet). Plus: "
-        "getActivityLogs(userId), postActivityLog, putActivityLog, "
-        "deleteActivityLog, getUserDevices, postUserDevice, putUserDevice, "
-        "setBaseURL, getBaseURL."
+        "A standalone Flask microservice (ml/app.py, port 8000) the app calls "
+        "directly. It reads the same SQL database and mirrors the C# load "
+        "formula exactly. It implements the spec in "
+        "Python Course ML/TrainWise_Smart_Injury_Prevention_Updated.pdf and is "
+        "the project's ML / Data-Science deliverable. It is live on Azure "
+        "(trainwise-ml) but the app uses the local instance by default."
     )
-    p.h3("src/services/api.js  (API_BASE_URL = http://127.0.0.1:5249/api)")
-    p.body(
-        "axios instance pre-rooted at /api. Exposes: getUserById, updateUser, "
-        "updateProfileImage, getAllActivityTypes, createActivityLog, "
-        "getActivityLogsByUser, getDailyLoadByUser, calculateDailyLoad, "
-        "getRecommendationsByUser, getCoachRecommendationsByUser, "
-        "getAllInjuryTypes, createInjuryReport, getInjuriesByUser, "
-        "getActiveInjuriesByUser, getCoachById, getTraineesByCoach, "
-        "getAllTrainingGoals, addUserTrainingGoal, removeUserTrainingGoal, "
-        "addUserActivityPreference, removeUserActivityPreference, "
-        "getUserDevices, registerDevice."
-    )
-    p.body(
-        "Both files document the adb-reverse trick at the top: phone reaches "
-        "PC localhost via USB-bridged 127.0.0.1:5249. WiFi-only setups "
-        "require swapping the IP to the PC's LAN IPv4 (e.g. 192.168.1.117) "
-        "and disabling AP isolation on the router."
-    )
-
-    p.h2("7.5  Health Connect integration")
-    p.body(
-        "src/api/HealthConnectService.js wraps the native "
-        "react-native-health-connect module. It uses CommonJS require() "
-        "instead of ES import so the load can be wrapped in a try/catch - in "
-        "Expo Go the native module isn't registered and "
-        "TurboModuleRegistry.getEnforcing throws. When that happens, the "
-        "module falls back to HealthConnectService.mock.js which returns "
-        "empty/zero values for every function. Result: app runs in Expo Go, "
-        "Health Connect actually works on a real Android build."
-    )
-    p.h3("Exercise type mapping  (HC -> ActivityTypeID)")
+    p.h3("Endpoints")
     p.code_block(
-        "56 RUNNING       -> 1\n"
-        "79 WALKING       -> 2\n"
-        " 8 BIKING        -> 3\n"
-        "80 WEIGHTLIFTING -> 4\n"
-        " * (other)       -> 5  (default)\n"
+        "GET /health\n"
+        "GET /api/ml/trainee/<id>/pmc         Fitness / Fatigue / Form series\n"
+        "GET /api/ml/trainee/<id>/acwr        AC ratio + safe-zone thresholds\n"
+        "GET /api/ml/trainee/<id>/analytics   rolling + bias-corrected EWMA\n"
+        "GET /api/ml/trainee/<id>/forecast    monthly projection + risk (+snapshot)\n"
+        "GET /api/ml/trainee/<id>/forecast/history\n"
+        "GET /api/ml/trainee/<id>/whatif?addSessions=&intensity=easy|medium|hard\n"
     )
-    p.h3("Required permissions")
-    p.bullet("READ_STEPS")
-    p.bullet("READ_DISTANCE")
-    p.bullet("READ_EXERCISE")
-    p.bullet("READ_HEART_RATE")
-    p.bullet("READ_TOTAL_CALORIES_BURNED")
-
-    p.h2("7.6  Sync pipeline")
-    p.body("src/api/SyncService.syncWorkoutsToBackend(userId, deviceId, "
-           "lookbackDays=7) executes seven steps:")
-    p.bullet("1. initializeHealthConnect()  -  abort if SDK status false")
-    p.bullet("2. checkPermissions()  -  abort if any missing")
-    p.bullet("3. getStructuredWorkouts(startDate, endDate) from Health Connect")
-    p.bullet("4. getActivityLogs(userId) from backend  -  for dedup")
-    p.bullet("5. Deduplicate: workouts whose StartTime is within 60s of an "
-             "existing log are dropped")
-    p.bullet("6. POST each new workout via postActivityLog")
-    p.bullet("7. updateDeviceLastSync(userId, deviceId)  -  PUT new LastSync")
-    p.body("Returns { success, synced, skipped, errors[], workouts[] }.")
-    p.h3("useSyncWorkouts() hook")
+    p.h3("Task 1 - Regression (monthly forecast)")
     p.body(
-        "Wraps SyncService for screens. Exposes triggerSync, "
-        "requestHCPermissions, checkHCPermissions, plus state isSyncing, "
-        "lastSyncTime, syncResult, error, permissionsGranted, syncAttempts."
+        "Splits the month into fixed weeks and fits the COMPLETED weeks: recent "
+        "pace under 2 weeks, LinearRegression at 2, PolynomialFeatures(2) at 4+ "
+        "only if it clearly fits better. Chronic is recomputed day-by-day in a "
+        "forward simulation (so a rising acute is divided by a rising chronic "
+        "and the ratio converges, instead of the old frozen-chronic bug that "
+        "produced impossible ratios). Confidence = R-squared. Snapshots append "
+        "to MonthlyForecasts, so a month refines weekly and past months stay "
+        "reviewable. A global model (forecast_model.pkl, trained on documented "
+        "synthetic data) runs alongside as a secondary comparison."
     )
-
-    p.h2("7.7  Theme & components")
-    p.h3("theme/colors.js")
-    p.code_block(
-        "Colors:\n"
-        "  background       #0A1628  (dark navy)\n"
-        "  cardBackground   #132036\n"
-        "  primary          #E91E63  (TrainWise pink)\n"
-        "  primaryDark      darker pink\n"
-        "  primaryLight     lighter pink\n"
-        "  accent           #FF6090\n"
-        "  textPrimary      #FFFFFF\n"
-        "  textSecondary    light grey\n"
-        "  textMuted        muted grey\n"
-        "  inputBackground  / inputBorder / border\n"
-        "  green / yellow / red / shadow\n"
-        "\n"
-        "Fonts: titleSize 28, subtitleSize 18, bodySize 15, captionSize 12,\n"
-        "       bold '700', semiBold '600'\n"
-        "\n"
-        "Spacing: xs 4, sm 8, md 16, lg 24, xl 32, xxl 48\n"
+    p.h3("Task 2 - Classification (overload risk)")
+    p.body(
+        "Labels each state Safe / Warning / High. Loads risk_model.pkl (a "
+        "RandomForest chosen in the notebook over LogisticRegression) when "
+        "present, else falls back to the threshold rule so the badge always "
+        "renders. Features: AC ratio, acute, chronic, experience, age, "
+        "active-injury count."
     )
-    p.h3("Components")
-    p.bullet("Card({children, style})  -  rounded card with shadow + horizontal margin")
-    p.bullet("PrimaryButton({title, onPress, loading, disabled, style})  -  "
-             "filled pink button, ActivityIndicator while loading")
-    p.bullet("ScreenHeader({title, subtitle, onBack})  -  centered title + "
-             "optional back-arrow at top-left")
-
-    # ----- Screens -----
-    p.h2("7.8  Screens (11)")
-
-    screens = [
-        ("WelcomeScreen.js  (Auth)",
-         "Brand entry screen with the wowowow.png logo + CurvedText laying "
-         "each character along an arc. Two CTAs: 'Sign Up' -> SignUp; "
-         "'HERE!' (under SIGN IN prompt) -> Login."),
-        ("LoginScreen.js  (Auth)",
-         "Themed login form (pink/purple/mint border). Inputs: email + "
-         "password. Calls useAuth().login(email, password) which POSTs to "
-         "/api/auth/login (AuthController -> UserBL.Authenticate). 'NEW HERE? "
-         "CREATE AN ACCOUNT' link -> SignUp."),
-        ("SignUpScreen.js / SignUpFinal.js  (Auth)",
-         "Two-step registration. SignUpScreen collects identity + body "
-         "metrics; SignUpFinal collects credentials + activity preferences. "
-         "Final POST -> /api/Users (registerUser(payload) -> UsersController "
-         "-> UserBL.Create). Server hardcodes ProfileImagePath, baseline "
-         "fields, CreatedAt -- those keys are ignored if sent by the client."),
-        ("HomeScreen.js  (HomeTab)",
-         "Greeting + settings gear + avatar. Weekly bar chart driven by "
-         "buildWeeklyData(backendLogs) -- BACKEND ONLY (no Health Connect "
-         "fallback so a deleted log stays empty). Bar colors come from "
-         "session-load thresholds: <=150 green, <300 yellow, <500 orange, "
-         "500+ red. Auto-refreshes via useFocusEffect when the user returns "
-         "to the tab. Three big buttons: Add Workout, See Warnings, Report "
-         "Injury."),
-        ("StatsScreen.js  (HomeStack)",
-         "Two view modes. Overview = weekly bar chart + 'X training sessions "
-         "this week' summary. Detail = zoomed 3-day chart + edit form "
-         "(duration / exertion / distance / pulse). Imports getBarColor from "
-         "HomeScreen so the colors match. Selected bar keeps its load color "
-         "(opacity + width changes mark selection -- NOT a fixed pink). "
-         "Empty days show all zeros. Apply changes PUTs/POSTs to "
-         "/api/ActivityLog and recalcs the edited day + today via "
-         "calculateDailyLoad."),
-        ("WarningsDashboardScreen.js  (HomeStack)",
-         "Computes status, AC ratio, stress, and the weekly bar chart "
-         "client-side from ActivityLogs (NOT from DailyLoad rows -- those "
-         "are 7-day rolling snapshots and would leak prior-week sessions "
-         "into this-week bars). For the displayed Sun-Sat: acute = sum of "
-         "session loads in week, chronic = sum(prior 21 days)/3, "
-         "ratio = acute/chronic. Color thresholds: ratio<0.8 Green, "
-         "0.8<=ratio<=1.3 Yellow, ratio>1.3 Red. Refresh button recalcs all "
-         "7 days (loop i=6..0) so stale DailyLoad rows are flushed."),
-        ("AddWorkoutScreen.js  (HomeStack)",
-         "Loads getAllActivityTypes() into chip selector (fallback list "
-         "hard-coded if API fails). Inputs: duration (min), exertion "
-         "(1-10 dot row), distance (km), avg + max heart rate. Computes "
-         "sessionLoad = duration * exertion (intensityFactor was REMOVED "
-         "across DB/backend/frontend), POSTs createActivityLog(...), then "
-         "calls calculateDailyLoad(userId), navigates to WorkoutSummary "
-         "with the result."),
-        ("WorkoutSummaryScreen.js  (HomeStack)",
-         "Read-only result page. Receives 'summary' via route.params: "
-         "activityName, duration, exertion, sessionLoad, loadLevel, "
-         "acuteLoad, chronicLoad, acRatio, stressScore, recommendation. "
-         "Displays Session Details card, Load Assessment card with colored "
-         "Green/Yellow/Red badge + 4 metrics grid (Acute Load 7-day, "
-         "Chronic Load 28-day, AC Ratio, Stress 0-100), Recommendation card."),
-        ("InjuryReportScreen.js  (HomeStack)",
-         "Top-level screen now: loads getAllInjuryTypes(), reports a NEW "
-         "injury (chip selector + severity 1-10 + notes), AND shows a "
-         "drill-down card with active-injury count -> navigates to "
-         "ActiveInjuriesScreen. Refreshes activeCount on focus. POSTs "
-         "createInjuryReport({ userID, injuryTypeID, date, severity, "
-         "notes, isActiveInjury: true })."),
-        ("ActiveInjuriesScreen.js  (HomeStack)",
-         "Lists every active injury for the user (hosted as a separate "
-         "screen so the report form stays uncluttered). Each row has a "
-         "Mark Recovered button -> markInjuryRecovered API call which "
-         "flips isActiveInjury=false on the backend."),
-        ("SettingsScreen.js  (HomeStack)",
-         "Loads getUserById(userId) into form fields: fullName, email, "
-         "birthYear, gender, height, weight. Save calls updateUser(userId, "
-         "{...}). Has trainee/coach toggle (cosmetic only). Privacy + Terms "
-         "buttons show static Alert text. Bottom 'Connect to Coach / "
-         "Trainee' navigates to ConnectQR."),
-        ("ConnectQRScreen.js  (HomeStack)",
-         "Two modes: 'show' renders a QR code containing JSON {app: "
-         "'TrainWise', type: 'coach-connect', userId, timestamp}; 'scan' "
-         "shows a paste-text area + 'Open Camera' stub. handleConnect "
-         "validates JSON has app=='TrainWise', shows confirm Alert. No "
-         "backend call yet - the connect handshake is local-only."),
-        ("ProfileScreen.js  (ProfileTab)",
-         "Reads 'user' from useAuth and renders rows: Full Name, Email, "
-         "Username, Activity Level, Experience Level, Height, Weight, Role "
-         "(Coach/Trainee). Single Logout button calls useAuth().logout()."),
-        ("GoogleFitScreen.js  (HealthTab, lives in src/api/)",
-         "Health Connect UI + workout management. On mount: "
-         "checkHCPermissions, loadWorkouts. Pull-to-refresh reloads activity "
-         "logs. Buttons: Request Permissions, Sync Now (calls triggerSync), "
-         "Manual Refresh. Each row has a per-row Delete button (Alert "
-         "confirm then deleteActivityLog + recalc). Renders FlatList of "
-         "synced workouts with last-sync timestamp + error banner when sync "
-         "fails."),
-    ]
-    for n, d in screens:
-        p.h3(n)
-        p.body(d)
-        p.spacer(2)
-
-    # ============================================================================
-    # 8. END-TO-END FLOWS
-    # ============================================================================
-    p.h1("8.  End-to-End Data Flows")
-
-    p.h2("Login flow  (working)")
-    p.code_block(
-        "LoginScreen handleSubmit\n"
-        "  -> useAuth().login(email, password)\n"
-        "       AuthContext.login\n"
-        "         -> apiLogin(email, password)\n"
-        "              src/api/api.js POST /api/auth/login\n"
-        "                AuthController.Login\n"
-        "                  -> UserBL.Authenticate(email, password)\n"
-        "                    -> UserDAL.LoginByEmailPassword\n"
-        "                       (calls sp_LoginUser)\n"
-        "                    <- returns full User row\n"
-        "         persists user object to AsyncStorage,\n"
-        "         exposes userId via useAuth.\n"
-        "  -> isLoggedIn flips true,\n"
-        "     AppNavigator swaps from AuthStack to AppStack.\n"
+    p.h3("Charts, clustering, what-if")
+    p.bullet("PMC: Fitness (chronic) / Fatigue (acute) / Form (fitness - fatigue).")
+    p.bullet("ACWR chart: ratio over time, 0.8-1.3 safe band shaded, 1.5 danger line.")
+    p.bullet("KMeans clustering segments trainees by load profile.")
+    p.bullet("What-if: injects N easy/medium/hard sessions (150/300/450) onto "
+             "today and recomputes with the SAME rolling math; verified "
+             "+3 hard: 1.06 Warning -> 1.93 High.")
+    p.h3("Notebooks (gradeable, course-style)")
+    p.body(
+        "ml/notebook/*.ipynb follow the course flow: clean, EDA (seaborn "
+        "heatmaps), regression (MAE/MSE/RMSE/R2 + residuals), classification "
+        "(Accuracy/Precision/Recall/F1 + confusion matrix + multiclass ROC/AUC), "
+        "KMeans, and joblib export. Real data drives the charts; synthetic data "
+        "trains the global models, and the split is documented for the grader."
     )
+    p.card("Sports-science basis",
+           "ACWR (Gabbett 2016), bias-corrected EWMA (Williams 2017 + the Adam "
+           "zero-init correction, Kingma & Ba 2015), the PMC fitness-fatigue "
+           "model, and Foster's monotony & strain (1998). Real, cited methods.")
 
-    p.h2("Add workout flow  (working)")
+    # ========================================================================
+    # 12. FEATURE INVENTORY
+    # ========================================================================
+    p.h1("12. Feature Inventory (grouped)")
+    p.body("~109 shipped features. Highlights by area:")
+    p.h3("Load & injury core")
+    p.body("ACWR dashboard (Home + Load tab), Warnings dashboard, load-trend "
+           "analytics (rolling + EWMA), injury reporting + active tracking + "
+           "mark-recovered, body-map picker, pain logging, rehab suggestions, "
+           "injury-risk gauge.")
+    p.h3("Workouts & wearables")
+    p.body("Manual add-workout, Health Connect sync, workout templates, interval "
+           "timer, live GPS run (background tracking), HR zones, CSV/PDF export, "
+           "notes/photos, exercise library, personal bests, deep-link share.")
+    p.h3("Coach / trainee")
+    p.body("QR + coach-offer linking, per-trainee dashboard, ML analytics "
+           "(PMC/ACWR/forecast/what-if), assigned programs (fan out to calendar), "
+           "coach comments, video form-check, progress reports, marketplace + reviews.")
+    p.h3("Social & community")
+    p.body("Friends, gyms map (real Netanya gyms), live presence, workout board + "
+           "comments + kudos, activity feed, friend challenges, group events, "
+           "leaderboards + seasonal divisions.")
+    p.h3("Chat, gamification, AI, health")
+    p.body("User chat (text/image/voice) + reactions + typing + group chat + FCM "
+           "push; badges + coins + shop + streaks + quests + confetti; weather "
+           "smart card, AI week-in-review / plan / ask-my-data / injury-photo "
+           "advice; nutrition + barcode + calorie ring, weight/body composition, "
+           "sleep/HRV readiness.")
+    p.h3("Platform / UX")
+    p.body("Dark + light themes + accent picker, i18n (EN/HE/FR), biometric "
+           "login, forgot/reset password + email verification, multi-device "
+           "sessions, notification preferences, What's-New changelog, accessibility pass.")
+
+    # ========================================================================
+    # 13. DATA FLOWS
+    # ========================================================================
+    p.h1("13. End-to-End Data Flows")
+    p.h2("Add workout")
     p.code_block(
-        "User taps Apply on AddWorkoutScreen\n"
-        "  -> services/api.createActivityLog(payload)\n"
-        "       POST /api/activitylog\n"
-        "         ActivityLogController.Create\n"
-        "           -> ActivityLogBL.Create (validate)\n"
-        "             -> ActivityLogDAL.Insert (sp_InsertActivityLog)\n"
-        "  -> services/api.calculateDailyLoad(userId)\n"
+        "AddWorkoutScreen (or LiveRun / Health Connect confirm)\n"
+        "  -> services/api.createActivityLog(payload)  # duration x exertion\n"
+        "       POST /api/activitylog -> ActivityLogBL -> ActivityLogDAL\n"
+        "  -> services/api.calculateDailyLoad(userId, date, tzOffsetMinutes) x2\n"
         "       POST /api/dailyload/user/{id}/calculate\n"
-        "         DailyLoadController.Calculate\n"
-        "           -> DailyLoadBL.CalculateForDay\n"
-        "             -> DailyLoadDAL.CalculateDailyLoad\n"
-        "                -- pulls 28d activity (sp_GetActivityLogsForLoad)\n"
-        "                -- pulls thresholds (sp_GetUserLoadContext)\n"
-        "                -- computes acute/chronic/AC/stress/level in C#\n"
-        "                -- persists (sp_SaveDailyLoad)\n"
-        "                -- returns tuple\n"
-        "  -> navigation.navigate('WorkoutSummary', { summary: {...} })\n"
+        "         LoadCalculationBL.CalculateAndSave\n"
+        "           bucket-by-local-day, acute 7d, EffectiveChronic 28d,\n"
+        "           ratio, level, stress -> sp_SaveDailyLoad\n"
+        "  -> navigate WorkoutSummary { summary }\n"
     )
-
-    p.h2("Sync from Health Connect  (Android real-build only)")
+    p.h2("Coach analytics / forecast (ML)")
     p.code_block(
-        "GoogleFitScreen 'Sync Now'\n"
-        "  -> useSyncWorkouts.triggerSync\n"
-        "       SyncService.syncWorkoutsToBackend(userId, deviceId, 7)\n"
-        "         step 1: initializeHealthConnect\n"
-        "         step 2: checkPermissions\n"
-        "         step 3: getStructuredWorkouts(start, end) from native HC\n"
-        "         step 4: getActivityLogs(userId)  [GET /api/ActivityLog/user/{id}]\n"
-        "         step 5: dedup by 60s startTime tolerance\n"
-        "         step 6: for each new workout: POST /api/ActivityLog\n"
-        "         step 7: PUT /api/users/{userId}/devices/{deviceId} {LastSync}\n"
+        "CoachTraineeAnalyticsScreen (also the trainee's 'My analytics')\n"
+        "  -> services/mlApi.getTrainee{Pmc|Acwr|Analytics|Forecast|WhatIf}\n"
+        "       GET http://<host>:8000/api/ml/trainee/{id}/...\n"
+        "         features.py (rolling + EWMA) / forecast.py / risk.py\n"
+        "         reads ActivityLogs directly (never stale DailyLoad rows)\n"
+        "  -> SVG charts (PMC, ACWR safe-zone), forecast card, what-if planner\n"
+        "  If the ML service is unreachable, the screen degrades to the C#\n"
+        "  fallback (LoadAnalyticsBL) and then the on-device JS mirror.\n"
     )
 
-    # ============================================================================
-    # 9. BUILD & RUN
-    # ============================================================================
-    p.h1("9.  Build & Run instructions")
-
-    p.h2("9.1  Database")
-    p.bullet("Open SSMS connected to Lirone\\SQLEXPRESS (Windows auth)")
-    p.bullet("Convert SQL/TrainWiseDB_Script.sql to UTF-8 if SSMS complains "
-             "about UTF-16 BOM, or open with 'Open with Encoding' -> UTF-16 LE")
-    p.bullet("Execute the script - creates 16 tables, 49 procs, seeds "
-             "ActivityTypes / InjuryTypes / TrainingGoals / LoadParameters")
-    p.bullet("Verify: SELECT * FROM sys.objects WHERE type='P' should "
-             "return 49 rows")
-
-    p.h2("9.2  Backend")
-    p.code_block(
-        "cd TrainWise_GitHub\n"
-        "dotnet restore\n"
-        "dotnet run\n"
-        "\n"
-        "# verify\n"
-        "open http://localhost:5249/swagger\n"
-    )
-    p.warning("HTTPS redirect breaks phone testing",
-              "Comment out app.UseHttpsRedirection() in Program.cs before "
-              "pointing the phone at the backend. The phone won't trust the "
-              "ASP.NET dev cert and the redirect will hang the request.")
-
-    p.h2("9.3  Frontend  (Expo Go on Android via USB)")
-    p.code_block(
-        "# in TrainWiseExpo/\n"
-        "npm install\n"
-        "npx expo start --tunnel        # or --localhost when using adb\n"
-        "\n"
-        "# in another terminal (USB plugged in)\n"
-        "adb reverse tcp:5249 tcp:5249  # phone localhost:5249 -> PC :5249\n"
-        "\n"
-        "# on phone: open Expo Go, scan QR\n"
-    )
-    p.h3("If using WiFi instead of USB")
-    p.bullet("Phone and PC must be on the SAME WiFi (no AP isolation)")
-    p.bullet("Open Windows Defender Firewall, allow inbound TCP 5249")
-    p.bullet("Edit src/api/api.js AND src/services/api.js, replace 127.0.0.1 "
-             "with PC's LAN IPv4 (e.g. 192.168.1.117)")
-
-    # ============================================================================
-    # 10. KNOWN ISSUES
-    # ============================================================================
-    p.h1("10. Known Issues & Architectural Gaps")
-
-    p.warning("No AuthController exists (login is broken)",
-              "Frontend POSTs to /api/auth/login. Database has sp_LoginUser. "
-              "Backend has no AuthController, no AuthBL, no UserDAL.Login* "
-              "method. Login throws every time. Fix: add AuthController + "
-              "AuthBL + UserDAL.LoginByEmailPassword (wraps sp_LoginUser).")
-
-    p.warning("User model is missing half of the SQL columns",
-              "BL/Models/User.cs has 10 properties. The SQL Users table has "
-              "22 columns including Email, Password, IsCoach, "
-              "ExperienceLevel, BaseLineDailyLoad, BaseLineWeeklyLoad, "
-              "HealthDeclaration, ConfirmTerms, IsBaselineEstablished, "
-              "BaselineEstablishedDate. Anything UserDAL hands back through "
-              "this model silently drops those columns.")
-
-    p.warning("ActivityLog model missing 4 fields",
-              "AddWorkoutScreen sends exertionLevel, duration, "
-              "calculatedLoadForSession, isConfirmed. The C# ActivityLog.cs "
-              "model has none of them. They reach SQL only because "
-              "sp_InsertActivityLog accepts them as parameters - but the "
-              "round-trip (Get / Update) cannot read them back into the "
-              "model.")
-
-    p.warning("CoachRecommendationsController and UserDevicesController "
-              "missing [ApiController] / [Route] attributes",
-              "Without [Route(\"api/...\")] ASP.NET cannot map HTTP requests "
-              "to actions. Both controllers are effectively unreachable. "
-              "Frontend calls to /api/coachrecommendations/user/{id} and "
-              "/api/userdevice/user/{id} will 404.")
-
-    p.warning("Two parallel api.js files",
-              "src/api/api.js and src/services/api.js both export overlapping "
-              "axios calls under different names (getActivityLogs vs "
-              "getActivityLogsByUser, etc). Different baseURL conventions "
-              "(/api included vs not). Hooks-rule fixes had to track "
-              "imports carefully.")
-
-    p.warning("Severity scale mismatch",
-              "InjuryReportScreen renders a 1-10 picker (10 dots). "
-              "InjuryReportBL.Create throws if Severity > 5. Today the "
-              "picker silently submits invalid values. Fix one of: clip in "
-              "BL, change UI to 1-5, or change validator to 1-10.")
-
-    p.warning("Plain-text 8-char password",
-              "Users.Password is char(8), stored as plain text. sp_LoginUser "
-              "compares with COLLATE Latin1_General_CS_AS (case-sensitive). "
-              "When auth is wired up, hash before storing.")
-
-    p.warning("No auth middleware",
-              "Program.cs calls UseAuthorization but never AddAuthentication. "
-              "Every endpoint is public. Adding [Authorize] would have no "
-              "effect.")
-
-    p.warning("Hooks at module scope was the source of the red-screen crash",
-              "The `useContext of null` red error on the phone was caused by "
-              "5 screens calling `const { userId } = useAuth();` at the TOP "
-              "of the file, outside the component function. React hooks MUST "
-              "be inside a component body. All five are now fixed - keep "
-              "the rule in mind for any new screen.")
-
-    # ============================================================================
-    # 11. FILE INDEX
-    # ============================================================================
-    p.h1("11. File Index")
-
-    p.h2("Frontend (TrainWiseExpo/src/)")
-    file_idx_fe = [
-        "App.js                                  Provider chain root",
-        "index.js                                registerRootComponent",
-        "app.json                                Expo config",
-        "assets/images/wowowow.png               Brand logo",
-        "src/api/AuthContext.js                  Session context + useAuth()",
-        "src/api/api.js                          axios + login + ActivityLog CRUD",
-        "src/api/HealthConnectService.js         Real native HC wrapper",
-        "src/api/HealthConnectService.mock.js    Expo Go fallback",
-        "src/api/SyncService.js                  Health Connect -> backend pipeline",
-        "src/api/useSyncWorkouts.js              Hook: triggerSync, state",
-        "src/api/GoogleFitScreen.js              Health Connect UI",
-        "src/services/api.js                     Full CRUD axios surface",
-        "src/navigation/NavigationStack.js       AppNavigator + tabs",
-        "src/screens/WelcomeScreen.js            Brand cover",
-        "src/screens/LoginScreen.js              Email/password login",
-        "src/screens/HomeScreen.js               Dashboard",
-        "src/screens/StatsScreen.js              Charts + edit",
-        "src/screens/WarningsDashboardScreen.js  Load level + AC ratio",
-        "src/screens/AddWorkoutScreen.js         Manual workout entry",
-        "src/screens/WorkoutSummaryScreen.js     Result card after add",
-        "src/screens/InjuryReportScreen.js       Injury logging + drill-down",
-        "src/screens/ActiveInjuriesScreen.js     Active list + Mark Recovered",
-        "src/screens/SignUpScreen.js             Step 1 of registration",
-        "src/screens/SignUpFinal.js              Step 2 of registration",
-        "src/screens/SettingsScreen.js           Profile editor",
-        "src/screens/ConnectQRScreen.js          Coach/trainee handshake",
-        "src/screens/ProfileScreen.js            Profile + logout",
-        "src/components/Card.js                  Rounded card wrapper",
-        "src/components/PrimaryButton.js         Pink CTA button",
-        "src/components/ScreenHeader.js          Title + back arrow",
-        "src/theme/colors.js                     Color/Font/Spacing tokens",
-        "src/constants/google.js                 GOOGLE_WEB_CLIENT_ID",
-    ]
-    for f in file_idx_fe:
-        p.body(f)
-
-    p.h2("Backend (TrainWise/TrainWise/)")
-    file_idx_be = [
-        "Program.cs                              ASP.NET startup",
-        "appsettings.json                        ConnectionString",
-        "TrainWise.csproj                        Net8 project",
-        "TrainWise.sln                           Solution",
-        "Controllers/UsersController.cs",
-        "Controllers/ActivityLogController.cs",
-        "Controllers/DailyLoadController.cs",
-        "Controllers/RecommendationController.cs",
-        "Controllers/InjuryReportController.cs",
-        "Controllers/InjuryTypesController.cs",
-        "Controllers/CoachController.cs",
-        "Controllers/CoachRecommendationsController.cs    (broken attrs)",
-        "Controllers/TrainingGoalsController.cs",
-        "Controllers/UserGoalsController.cs",
-        "Controllers/UserActivityPreferencesController.cs",
-        "Controllers/UserDevicesController.cs             (broken attrs)",
-        "BL/UserBL.cs / DailyLoadBL.cs / ActivityLogBL.cs / etc (12)",
-        "BL/Models/*.cs                          15 POCO models",
-        "DAL/DBservice.cs                        Connect + sproc helper",
-        "DAL/UserDAL.cs / ActivityLogDAL.cs / DailyLoadDAL.cs / etc (14)",
-    ]
-    for f in file_idx_be:
-        p.body(f)
-
+    # ========================================================================
+    # 14. BUILD, RUN & DEPLOY
+    # ========================================================================
+    p.h1("14. Build, Run & Deploy")
     p.h2("Database")
-    p.body("../SQL/TrainWiseDB_Script.sql      UTF-16LE encoded - convert "
-           "to UTF-8 before reading with most tools")
+    p.bullet("Run sql/TWDB.sql, then the dated migrations in order, then "
+             "seed_reference_data.sql (see CLAUDE.md for the exact run-order). "
+             "Run on BOTH local and Azure DBs.")
+    p.h2("Backend")
+    p.bullet("Open TrainWise.sln in VS 2022, run (Swagger at "
+             "https://localhost:5249/swagger in Development). For Azure: "
+             "right-click Publish.")
+    p.bullet("Local LAN: bind 0.0.0.0:5249, firewall TCP 5249 (Private).")
+    p.h2("ML service")
+    p.code_block(
+        "cd ml\n"
+        "python -m venv venv & venv\\Scripts\\activate\n"
+        "pip install -r requirements.txt\n"
+        "python app.py            # http://0.0.0.0:8000  (firewall TCP 8000)\n"
+        "# Azure: deploy the ml_deploy_clean folder; 4 App Settings for SQL auth\n"
+    )
+    p.h2("Frontend APK")
+    p.code_block(
+        "cd TrainWiseExpo\n"
+        "npm install\n"
+        "npx expo run:android --variant release     # or:\n"
+        "cd android & gradlew assembleRelease        # delete app/.cxx + app/build\n"
+        "                                            # first to force a fresh build\n"
+        "# output: android/app/build/outputs/apk/release/app-release.apk\n"
+    )
+    p.warning("Do NOT run expo prebuild / EAS Build",
+              "Both regenerate android/ from app.json + plugins and WIPE the "
+              "manual Health-Connect manifest edits (the activity-alias for "
+              "Android 14+), which silently breaks HC. Use gradlew / "
+              "expo run:android instead. Verify a fresh APK by its timestamp, "
+              "not the 'BUILD SUCCESSFUL' line.")
 
-    p.h2("Documentation")
-    p.body("generate_docs_pdf.py                THIS script (PyMuPDF)")
-    p.body("TrainWise_Project_Documentation.pdf Output of this script")
+    # ========================================================================
+    # 15. KNOWN ISSUES & BACKLOG
+    # ========================================================================
+    p.h1("15. Known Issues & Backlog")
+    p.warning("ML service is local-only by default",
+              "mlApi.js ML_MODE defaults to 'local', so the coach analytics, "
+              "trainee Load Trend and the what-if planner need the local Python "
+              "service reachable on the same WiFi. The code is Azure-ready "
+              "(ml/db.py dual-mode, the trainwise-ml resource is live); flip "
+              "ML_MODE to 'azure' + rebuild to use the cloud.")
+    p.warning("mlApi.js hardcodes its own ML IP",
+              "It carries its own ML_BASE_URL instead of importing LOCAL_ML_URL "
+              "from config/backend.js, so the PC-IP change is a two-file edit "
+              "(backend.js AND mlApi.js) rather than one.")
+    p.warning("AI key shipped in the APK",
+              "The OpenAI + Google Maps keys use the EXPO_PUBLIC_ prefix, so "
+              "they are baked into the APK in plaintext. Fine for the demo; do "
+              "not distribute the APK publicly. Production fix: proxy the calls "
+              "through the backend.")
+    p.warning("wwwroot/images on Azure",
+              "Profile-pic + chat-image uploads write to wwwroot/images, which "
+              "Azure App Service may wipe on restart. Migrate to Azure Blob "
+              "Storage or a persisted disk for production persistence.")
+    p.small("Resolved since the 2026-04 draft: the login/AuthController now "
+            "exists (JWT), passwords are PBKDF2-hashed (not plaintext), the "
+            "controller-attribute and model-column gaps are closed, "
+            "intensityFactor is removed, and the two axios clients now share one "
+            "API_BASE_URL. The forward backlog (IDs 110-185) lives in "
+            "tasks/feature_backlog.md.")
+
+    # ========================================================================
+    # 16. FILE INDEX & CHANGE LOG
+    # ========================================================================
+    p.h1("16. File Index & Change Log")
+    p.h2("Key documents")
+    p.body("CLAUDE.md                         master engineering doc (architecture, "
+           "HC rules, secrets, deploy)")
+    p.body("PROJECT_SUMMARY.md                full project overview")
+    p.body("tasks/lessons.md                  the self-learning log (~90 entries)")
+    p.body("tasks/feature_backlog.md          forward backlog (IDs 110-185)")
+    p.body("sql/seed_reference_data.sql       required lookup + demo seed")
+    p.body("ml/notebook/*.ipynb               gradeable ML notebooks")
+    p.h2("What changed in this edition (vs 2026-04-16)")
+    p.bullet("Added: JWT auth + security hardening (section 6).")
+    p.bullet("Added: the Python ML service (section 11) and the 4-tier architecture.")
+    p.bullet("Added: deployment modes, the feature inventory, and the corrected "
+             "cold-start load math.")
+    p.bullet("Corrected: intensityFactor removed; counts (29 controllers, ~60 "
+             "screens, ~40 tables); release APK (not Expo Go); PBKDF2 passwords.")
+    p.bullet("Removed: obsolete 'no auth' / 'broken controller' / 'plaintext "
+             "password' warnings (all resolved).")
 
     # ===== END =====
-    p.spacer(20)
+    p.spacer(16)
     p.h2("End of document")
     p.small("Regenerate at any time:  py generate_docs_pdf.py")
 

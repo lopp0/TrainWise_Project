@@ -1,4 +1,6 @@
 import React, {useState, useEffect, useMemo} from 'react';
+import ScreenTutorial from '../components/ScreenTutorial';
+import { isTutorialDone, markTutorialDone } from '../utils/tutorialManager';
 import {
   View,
   Text,
@@ -95,10 +97,59 @@ const buildRecommendation = (level, ratio, stress) => {
 // Beginner/Regular/Advanced acute loads). Used as the cold-start chronic floor.
 const BOOTSTRAP_WEEKLY = { 1: 150, 2: 280, 3: 420 };
 
+const WARNINGS_TUTORIAL_STEPS = [
+  {
+    icon: '📈',
+    title: 'Your Load Trend Chart',
+    body: 'This chart shows how your AC Ratio has changed over time. ' +
+          'The X-axis shows dates, the Y-axis shows your AC Ratio value. ' +
+          'A rising line means your load is increasing.',
+  },
+  {
+    icon: '🟢',
+    title: 'The Safe Zone (Sweet Spot)',
+    body: 'The GREEN zone (0.8 to 1.3) is your sweet spot. ' +
+          'Training here builds fitness without injury risk. ' +
+          'Aim to keep your line inside this zone consistently.',
+  },
+  {
+    icon: '🔴',
+    title: 'The Danger Zone',
+    body: 'Above 1.5 (RED zone) means you are pushing too hard. ' +
+          'Research shows this significantly increases injury risk. ' +
+          'Rest or reduce intensity immediately when you are here.',
+  },
+  {
+    icon: '🟡',
+    title: 'Easing Off Zone',
+    body: 'Below 0.8 means you are training too little compared to ' +
+          'your normal level. This causes detraining — your fitness ' +
+          'declines and you become injury-prone when you return.',
+  },
+  {
+    icon: '🔄',
+    title: 'Classic vs Smooth (EWMA)',
+    body: 'Classic AC Ratio = last 7 days vs your 4-week average. ' +
+          'Smooth (EWMA) is a weighted version that reacts faster to ' +
+          'recent changes. Both are valid — check both for a full picture.',
+  },
+  {
+    icon: '🩹',
+    title: 'Injuries Change Your Thresholds',
+    body: 'When you have an active injury, the safe zone becomes stricter. ' +
+          'The app protects you by warning you at lower load levels ' +
+          'until you mark your injury as recovered.',
+  },
+];
+
 const WarningsDashboardScreen = () => {
   const { userId, user } = useAuth();
   const styles = useThemedStyles(makeStyles);
   const [loading, setLoading] = useState(true);
+  const [showTutorial, setShowTutorial] = useState(false);
+  useEffect(() => {
+    isTutorialDone('warnings').then((d) => { if (!d) setShowTutorial(true); });
+  }, []);
   const [weeklyLoad, setWeeklyLoad] = useState([0, 0, 0, 0, 0, 0, 0]);
   const [weekLabels, setWeekLabels] = useState(['Sun','Mon','Tue','Wed','Thu','Fri','Sat']);
   const [currentLoadLevel, setCurrentLoadLevel] = useState('Green');
@@ -732,6 +783,11 @@ const WarningsDashboardScreen = () => {
       <View style={styles.bottomActions}>
         <PrimaryButton title="Refresh" onPress={handleRefresh} />
       </View>
+      <ScreenTutorial
+        visible={showTutorial}
+        steps={WARNINGS_TUTORIAL_STEPS}
+        onFinish={() => { setShowTutorial(false); markTutorialDone('warnings'); }}
+      />
     </View>
   );
 };

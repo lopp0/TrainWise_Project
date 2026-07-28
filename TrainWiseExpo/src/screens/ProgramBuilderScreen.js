@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import ScreenTutorial from '../components/ScreenTutorial';
+import { isTutorialDone, markTutorialDone } from '../utils/tutorialManager';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
@@ -42,6 +44,29 @@ const activityIcon = (name = '') => {
   return 'fitness';
 };
 
+const PROGRAM_BUILDER_TUTORIAL_STEPS = [
+  {
+    icon: '🗓️',
+    title: 'Build a Weekly Plan',
+    body: 'Create a workout pattern that repeats every week. Set how many weeks the whole program should run for.',
+  },
+  {
+    icon: '➕',
+    title: 'Add a Workout',
+    body: 'Tap "Add workout" to place a session on a day. Choose the day, the activity type, and how long it should take.',
+  },
+  {
+    icon: '📌',
+    title: 'One Workout Per Day',
+    body: "Each day can only have one workout in the weekly pattern. Pick a different day if one is already taken.",
+  },
+  {
+    icon: '✅',
+    title: 'Save or Assign',
+    body: 'Save the program to reuse later, or assign it directly to a trainee — it will start on their calendar next Sunday.',
+  },
+];
+
 const ProgramBuilderScreen = ({ route, navigation }) => {
   const coachUserId = route?.params?.coachUserId;
   const editing = route?.params?.program || null; // existing program to edit
@@ -51,6 +76,10 @@ const ProgramBuilderScreen = ({ route, navigation }) => {
   const traineeName = assignToTrainee?.fullName ?? assignToTrainee?.FullName ?? 'trainee';
 
   const [activityTypes, setActivityTypes] = useState([]);
+  const [showTutorial, setShowTutorial] = useState(false);
+  useEffect(() => {
+    isTutorialDone('programBuilder').then((d) => { if (!d) setShowTutorial(true); });
+  }, []);
   const [name, setName] = useState(editing?.name ?? editing?.Name ?? '');
   const [description, setDescription] = useState(editing?.description ?? editing?.Description ?? '');
   const [weeks, setWeeks] = useState(editing?.durationWeeks ?? editing?.DurationWeeks ?? 4);
@@ -308,6 +337,11 @@ const ProgramBuilderScreen = ({ route, navigation }) => {
           <View style={{ height: 60 }} />
         </ScrollView>
       </KeyboardAvoidingView>
+      <ScreenTutorial
+        visible={showTutorial}
+        steps={PROGRAM_BUILDER_TUTORIAL_STEPS}
+        onFinish={() => { setShowTutorial(false); markTutorialDone('programBuilder'); }}
+      />
     </View>
   );
 };

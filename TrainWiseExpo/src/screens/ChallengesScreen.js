@@ -1,4 +1,6 @@
-import React, { useCallback, useState } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
+import ScreenTutorial from '../components/ScreenTutorial';
+import { isTutorialDone, markTutorialDone } from '../utils/tutorialManager';
 import {
   View,
   Text,
@@ -57,11 +59,38 @@ const statusColor = (status, C) =>
   status === 'active' ? C.success : status === 'upcoming' ? C.warning : C.textMuted;
 const medal = (i) => (i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`);
 
+const CHALLENGES_TUTORIAL_STEPS = [
+  {
+    icon: '🏆',
+    title: 'Create a Challenge',
+    body: 'Tap the + button to start a friendly competition. Pick a name, a metric (load, workouts, or distance), and how long it runs.',
+  },
+  {
+    icon: '👥',
+    title: 'Invite Friends',
+    body: 'Choose which trainee friends to invite. They will get a request they can accept or decline — no one joins automatically.',
+  },
+  {
+    icon: '✅',
+    title: 'Respond to Invites',
+    body: 'When a friend invites you, it shows up at the top of this screen. Tap Join to compete, or the X to decline.',
+  },
+  {
+    icon: '🥇',
+    title: 'Live Standings',
+    body: 'Tap any challenge to see the leaderboard, calculated live from real workouts — no manual score entry needed.',
+  },
+];
+
 const ChallengesScreen = ({ navigation }) => {
   const { userId } = useAuth();
   const { markChallengeInvitesSeen } = useSocial();
   const styles = useThemedStyles(makeStyles);
   const [items, setItems] = useState([]);
+  const [showTutorial, setShowTutorial] = useState(false);
+  useEffect(() => {
+    isTutorialDone('challenges').then((d) => { if (!d) setShowTutorial(true); });
+  }, []);
   const [invites, setInvites] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -412,6 +441,11 @@ const ChallengesScreen = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+      <ScreenTutorial
+        visible={showTutorial}
+        steps={CHALLENGES_TUTORIAL_STEPS}
+        onFinish={() => { setShowTutorial(false); markTutorialDone('challenges'); }}
+      />
     </SafeAreaView>
   );
 };

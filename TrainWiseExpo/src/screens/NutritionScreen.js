@@ -1,4 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import ScreenTutorial from '../components/ScreenTutorial';
+import { isTutorialDone, markTutorialDone } from '../utils/tutorialManager';
 import {
   View,
   Text,
@@ -29,6 +31,29 @@ const FOOD_BARCODES = ['ean13', 'ean8', 'upc_a', 'upc_e'];
  * Food Facts). Shows the day's totals and keeps the Home calorie ring (#167) in
  * sync by mirroring the food-calorie total into the local intake store.
  */
+const NUTRITION_TUTORIAL_STEPS = [
+  {
+    icon: '💧',
+    title: 'Log Your Water',
+    body: 'Tap 250, 500, or 750 ml to quickly add water. Your daily total is capped at 2 liters.',
+  },
+  {
+    icon: '🍎',
+    title: 'Log a Meal',
+    body: 'Enter the food name and calorie count, then tap Add. It will appear in your log for today.',
+  },
+  {
+    icon: '📷',
+    title: 'Scan a Barcode',
+    body: "No time to type? Tap Scan barcode and point your camera at a product — we'll fill in the calories for you.",
+  },
+  {
+    icon: '📊',
+    title: "Today's Totals",
+    body: 'Everything you log today shows up in the list below, and feeds your calorie ring on the Home screen.',
+  },
+];
+
 const NutritionScreen = ({ navigation }) => {
   const styles = useThemedStyles(makeStyles);
   const C = styles._colors;
@@ -36,6 +61,10 @@ const NutritionScreen = ({ navigation }) => {
   const [permission, requestPermission] = useCameraPermissions();
 
   const [loading, setLoading] = useState(true);
+  const [showTutorial, setShowTutorial] = useState(false);
+  useEffect(() => {
+    isTutorialDone('nutrition').then((d) => { if (!d) setShowTutorial(true); });
+  }, []);
   const [entries, setEntries] = useState([]);
   const [totals, setTotals] = useState({ calories: 0, waterMl: 0 });
   const [foodName, setFoodName] = useState('');
@@ -286,6 +315,11 @@ const NutritionScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       </Modal>
+      <ScreenTutorial
+        visible={showTutorial}
+        steps={NUTRITION_TUTORIAL_STEPS}
+        onFinish={() => { setShowTutorial(false); markTutorialDone('nutrition'); }}
+      />
     </View>
   );
 };

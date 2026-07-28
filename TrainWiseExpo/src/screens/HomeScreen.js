@@ -53,8 +53,8 @@ import {
   getEquippedChartTheme,
   findShopItem,
 } from '../utils/shopManager';
-import OnboardingOverlay from '../components/OnboardingOverlay';
-import { isOnboardingDone, markOnboardingDone } from '../utils/onboardingManager';
+import ScreenTutorial from '../components/ScreenTutorial';
+import { isTutorialDone, markTutorialDone } from '../utils/tutorialManager';
 import {
   DASHBOARD_SECTIONS,
   DEFAULT_DASHBOARD_LAYOUT,
@@ -243,6 +243,44 @@ const severityColor = (sev) => {
 // ─────────────────────────────────────────────
 // HomeScreen
 // ─────────────────────────────────────────────
+const HOME_TUTORIAL_STEPS = [
+  {
+    icon: '📊',
+    title: 'Your Weekly Training Log',
+    body: 'The bar chart shows your training load for each day this week. ' +
+          'Each bar height represents how hard you trained. ' +
+          'Tap any bar to see full details for that day.',
+  },
+  {
+    icon: '➕',
+    title: 'Log Your Workouts',
+    body: 'Tap "Add a workout" after every training session. ' +
+          'The more consistently you log, the more accurate your ' +
+          'load analysis becomes.',
+  },
+  {
+    icon: '👥',
+    title: 'Connect With Your Coach',
+    body: 'Use the Connect tab to link with your personal coach. ' +
+          'Your coach can see your training data and send you ' +
+          'personalized recommendations.',
+  },
+  {
+    icon: '⚠️',
+    title: 'Monitor Your Load',
+    body: 'Tap "See warnings" to check your AC Ratio — the key metric ' +
+          'that tells you if you are training too hard or too easy. ' +
+          'Check it regularly to stay injury-free.',
+  },
+  {
+    icon: '🔥',
+    title: 'Daily Check-In Streak',
+    body: 'Open the app every day to build your streak and earn coins. ' +
+          'Use coins in the Shop to unlock badges and themes. ' +
+          'Tap the streak badge at the top to visit the Shop.',
+  },
+];
+
 const HomeScreen = ({ navigation }) => {
   const { user, userId } = useAuth();
   const { unreadCount } = useMessages();
@@ -262,7 +300,7 @@ const HomeScreen = ({ navigation }) => {
   const [equippedChartThemeId, setEquippedChartThemeId] = useState(null);
   const [coach, setCoach] = useState(null); // first connected coach, if any
   const [coachBubbleDismissed, setCoachBubbleDismissed] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   // B-2 — Add-Workout / Add-Injury sections. Each section always shows a compact
   // horizontal row by default ("folded"); the chevron EXPANDS it into a full
@@ -472,27 +510,27 @@ const HomeScreen = ({ navigation }) => {
 
   // First-launch tutorial: show the overlay until the user finishes/skips it
   // (or replays it from Settings -> Reset Tutorial).
-  const checkOnboarding = useCallback(async () => {
+  const checkTutorial = useCallback(async () => {
     try {
-      const done = await isOnboardingDone();
-      if (!done) setShowOnboarding(true);
+      const done = await isTutorialDone('home');
+      if (!done) setShowTutorial(true);
     } catch (e) {
-      console.warn('[HomeScreen] onboarding check failed:', e.message);
+      console.warn('[HomeScreen] tutorial check failed:', e.message);
     }
   }, []);
 
   useFocusEffect(
     useCallback(() => {
       runCheckIn();
-      checkOnboarding();
+      checkTutorial();
       loadEquippedCosmetics();
       loadData();
-    }, [runCheckIn, checkOnboarding, loadEquippedCosmetics, loadData])
+    }, [runCheckIn, checkTutorial, loadEquippedCosmetics, loadData])
   );
 
-  const handleOnboardingFinish = async () => {
-    await markOnboardingDone();
-    setShowOnboarding(false);
+  const handleTutorialFinish = async () => {
+    await markTutorialDone('home');
+    setShowTutorial(false);
   };
 
   // Auto-dismiss the "+X coins!" celebration after 2 seconds.
@@ -1111,9 +1149,10 @@ const HomeScreen = ({ navigation }) => {
         />
       )}
 
-      <OnboardingOverlay
-        visible={showOnboarding}
-        onFinish={handleOnboardingFinish}
+      <ScreenTutorial
+        visible={showTutorial}
+        steps={HOME_TUTORIAL_STEPS}
+        onFinish={handleTutorialFinish}
       />
 
       {/* #173 — milestone celebration */}

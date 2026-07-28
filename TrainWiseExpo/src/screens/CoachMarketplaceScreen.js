@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import ScreenTutorial from '../components/ScreenTutorial';
+import { isTutorialDone, markTutorialDone } from '../utils/tutorialManager';
 import {
   View,
   Text,
@@ -47,11 +49,33 @@ const Stars = ({ value, size = 14, color }) => {
   );
 };
 
+const COACH_MARKETPLACE_TUTORIAL_STEPS = [
+  {
+    icon: '🔎',
+    title: 'Browse Coaches',
+    body: 'Search by name or sort by top rated. Every coach shows their rating, experience, and how many trainees they have.',
+  },
+  {
+    icon: '⭐',
+    title: 'Read Reviews',
+    body: 'Tap any coach to see reviews from their trainees before you decide to connect with them.',
+  },
+  {
+    icon: '✍️',
+    title: 'Leave a Review',
+    body: "Once you're connected to a coach, you can rate them 1-5 stars and share your experience. You can update it any time.",
+  },
+];
+
 const CoachMarketplaceScreen = ({ navigation, route }) => {
   const openCoachId = route?.params?.openCoachId ?? null; // 5b — arrive from the map
   const { userId } = useAuth();
   const styles = useThemedStyles(makeStyles);
   const [items, setItems] = useState([]);
+  const [showTutorial, setShowTutorial] = useState(false);
+  useEffect(() => {
+    isTutorialDone('coachMarketplace').then((d) => { if (!d) setShowTutorial(true); });
+  }, []);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('rating');
@@ -274,6 +298,11 @@ const CoachMarketplaceScreen = ({ navigation, route }) => {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+      <ScreenTutorial
+        visible={showTutorial}
+        steps={COACH_MARKETPLACE_TUTORIAL_STEPS}
+        onFinish={() => { setShowTutorial(false); markTutorialDone('coachMarketplace'); }}
+      />
     </SafeAreaView>
   );
 };

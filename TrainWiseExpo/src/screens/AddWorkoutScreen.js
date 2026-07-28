@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ScreenTutorial from '../components/ScreenTutorial';
+import { isTutorialDone, markTutorialDone } from '../utils/tutorialManager';
 import {
   View,
   Text,
@@ -99,12 +101,48 @@ const LiveIntervalStepper = ({ label, value, set, min, max, step, suffix, styles
   );
 };
 
+const ADD_WORKOUT_TUTORIAL_STEPS = [
+  {
+    icon: '🏃',
+    title: 'Select Your Activity Type',
+    body: 'Choose the type of workout you did. ' +
+          'The fields below will automatically adjust — ' +
+          'running shows distance, yoga does not.',
+  },
+  {
+    icon: '⏱️',
+    title: 'Session Duration',
+    body: 'Enter how long your workout lasted in minutes. ' +
+          'Be as accurate as possible — duration is one of the ' +
+          'two main factors in calculating your training load.',
+  },
+  {
+    icon: '💪',
+    title: 'Exertion Level (RPE)',
+    body: 'Rate how hard you worked on a scale of 1 to 10. ' +
+          '1 = very easy walk, 10 = maximum effort. ' +
+          'This is called RPE (Rate of Perceived Exertion) and is ' +
+          'the most important value you enter. Be honest with yourself.',
+  },
+  {
+    icon: '🧮',
+    title: 'How Your Load Is Calculated',
+    body: 'Your Session Load = Duration x Exertion Level. ' +
+          'Example: 60 minutes at exertion 7 = load of 420 units. ' +
+          'This feeds into your AC Ratio and weekly load trend.',
+  },
+];
+
 const AddWorkoutScreen = ({ navigation, route }) => {
   const { userId } = useAuth();
   const styles = useThemedStyles(makeStyles);
 
   // Shared
   const [activityTypes, setActivityTypes] = useState([]);
+  const [showTutorial, setShowTutorial] = useState(false);
+  useEffect(() => {
+    isTutorialDone('addWorkout').then((d) => { if (!d) setShowTutorial(true); });
+  }, []);
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -1154,6 +1192,11 @@ const AddWorkoutScreen = ({ navigation, route }) => {
           </Pressable>
         </Pressable>
       </Modal>
+      <ScreenTutorial
+        visible={showTutorial}
+        steps={ADD_WORKOUT_TUTORIAL_STEPS}
+        onFinish={() => { setShowTutorial(false); markTutorialDone('addWorkout'); }}
+      />
     </KeyboardAvoidingView>
   );
 };

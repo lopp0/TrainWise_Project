@@ -29,7 +29,7 @@ import {
   getWeekStartDay,
   setWeekStartDay,
 } from '../constants/weekStart';
-import { resetOnboarding } from '../utils/onboardingManager';
+import { resetAllTutorials } from '../utils/tutorialManager';
 import {
   getNotifPrefs,
   setNotifPrefs,
@@ -917,8 +917,8 @@ const SettingsScreen = ({navigation}) => {
         <TouchableOpacity
           style={styles.resetOnboardingBtn}
           onPress={async () => {
-            await resetOnboarding();
-            Alert.alert('Done', 'Onboarding will show again on next app open.');
+            await resetAllTutorials();
+            Alert.alert('Done', 'Screen tutorials will show again next time you visit each screen.');
           }}
         >
           <Text style={styles.resetOnboardingText}>🔄 Reset Tutorial</Text>

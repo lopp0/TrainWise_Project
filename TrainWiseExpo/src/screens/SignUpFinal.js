@@ -50,11 +50,15 @@ const RECAPTCHA_HTML = `
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
-      height: 100%;
+      min-height: 100%;
+      margin: 0;
+      background: #ffffff;
+    }
+    body {
       display: flex;
       justify-content: center;
-      align-items: center;
-      background: #ffffff;
+      align-items: flex-start;
+      padding-top: 28px;
     }
   </style>
 </head>
@@ -116,6 +120,7 @@ const SignUpFinal = ({ navigation, route }) => {
   // 'idle' | 'verified' | 'failed' — Done stays disabled until 'verified'
   const [captchaState, setCaptchaState] = useState('idle');
   const [captchaToken, setCaptchaToken] = useState(null);
+  const [captchaVisible, setCaptchaVisible] = useState(false); // full-screen reCAPTCHA modal
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -331,34 +336,64 @@ const SignUpFinal = ({ navigation, route }) => {
             </Checkbox>
           </View>
 
-          {/* Google reCAPTCHA — must be solved before Done enables */}
-          <View style={s.recaptchaContainer}>
-            <WebView
-              style={s.recaptchaInline}
-              source={{ html: RECAPTCHA_HTML, baseUrl: 'http://localhost' }}
-              onMessage={(e) => {
-                try {
-                  const data = JSON.parse(e.nativeEvent.data);
-                  if (data.type === 'success') {
-                    setCaptchaToken(data.token);
-                    setCaptchaState('verified');
-                  } else if (data.type === 'expire') {
-                    setCaptchaToken(null);
-                    setCaptchaState('idle');
-                  }
-                } catch {}
-              }}
-              onError={() => {
-                setCaptchaToken(null);
-                setCaptchaState('failed');
-              }}
-              javaScriptEnabled
-              domStorageEnabled
-              mixedContentMode="always"
-              scrollEnabled={false}
-              nestedScrollEnabled={false}
+          {/* Google reCAPTCHA — opens full-screen so Google's image-challenge
+              (select all the motorcycles, etc.) has the whole screen to render
+              and scroll. An inline WebView clipped the challenge grid. */}
+          <TouchableOpacity
+            style={[s.captchaButton, captchaState === 'verified' && s.captchaButtonVerified]}
+            onPress={() => { if (captchaState !== 'verified') setCaptchaVisible(true); }}
+            activeOpacity={0.8}
+            disabled={captchaState === 'verified'}
+          >
+            <Ionicons
+              name={captchaState === 'verified' ? 'checkmark-circle' : 'shield-checkmark-outline'}
+              size={22}
+              color={captchaState === 'verified' ? '#00c853' : Colors.primary}
             />
-          </View>
+            <Text style={[s.captchaButtonText, captchaState === 'verified' && s.captchaButtonTextVerified]}>
+              {captchaState === 'verified' ? "You're verified" : "Verify you're human"}
+            </Text>
+          </TouchableOpacity>
+
+          <Modal
+            visible={captchaVisible}
+            animationType="slide"
+            onRequestClose={() => setCaptchaVisible(false)}
+          >
+            <SafeAreaView style={s.captchaModalSafe}>
+              <View style={s.captchaModalHeader}>
+                <Text style={s.captchaModalTitle}>Verify you're human</Text>
+                <TouchableOpacity onPress={() => setCaptchaVisible(false)} hitSlop={10}>
+                  <Ionicons name="close" size={26} color={Colors.textPrimary} />
+                </TouchableOpacity>
+              </View>
+              <WebView
+                style={s.captchaModalWeb}
+                source={{ html: RECAPTCHA_HTML, baseUrl: 'http://localhost' }}
+                originWhitelist={['*']}
+                onMessage={(e) => {
+                  try {
+                    const data = JSON.parse(e.nativeEvent.data);
+                    if (data.type === 'success') {
+                      setCaptchaToken(data.token);
+                      setCaptchaState('verified');
+                      setCaptchaVisible(false);
+                    } else if (data.type === 'expire') {
+                      setCaptchaToken(null);
+                      setCaptchaState('idle');
+                    }
+                  } catch {}
+                }}
+                onError={() => {
+                  setCaptchaToken(null);
+                  setCaptchaState('failed');
+                }}
+                javaScriptEnabled
+                domStorageEnabled
+                mixedContentMode="always"
+              />
+            </SafeAreaView>
+          </Modal>
 
           {/* Done */}
           <TouchableOpacity
@@ -538,16 +573,52 @@ const makeStyles = (Colors) => StyleSheet.create({
   checkLabel: { color: Colors.textPrimary, fontSize: 13, fontWeight: '500', flex: 1 },
   checkLink: { color: Colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
 
-  // reCAPTCHA — keep the widget on a white card (it renders on white).
-  recaptchaContainer: {
+  // reCAPTCHA trigger — opens a full-screen modal so Google's image-challenge
+  // has the whole screen to render + scroll (an inline WebView clipped it).
+  captchaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
     width: '100%',
-    height: 100,
     marginTop: 28,
-    borderRadius: 4,
-    overflow: 'hidden',
-    backgroundColor: '#ffffff',
+    paddingVertical: 16,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    backgroundColor: Colors.cardBackground,
   },
-  recaptchaInline: {
+  captchaButtonVerified: {
+    borderColor: '#00c853',
+    backgroundColor: 'rgba(0,200,83,0.10)',
+  },
+  captchaButtonText: {
+    color: Colors.primary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  captchaButtonTextVerified: {
+    color: '#00c853',
+  },
+  captchaModalSafe: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  captchaModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.inputBorder,
+  },
+  captchaModalTitle: {
+    color: Colors.textPrimary,
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  captchaModalWeb: {
     flex: 1,
     backgroundColor: '#ffffff',
   },

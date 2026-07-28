@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import ScreenTutorial from '../components/ScreenTutorial';
+import { isTutorialDone, markTutorialDone } from '../utils/tutorialManager';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, ActivityIndicator,
   KeyboardAvoidingView, Platform, Alert, Image, Modal,
@@ -96,6 +98,29 @@ const errText = (e) => {
   return e?.message || 'Please try again.';
 };
 
+const EVENT_CHAT_TUTORIAL_STEPS = [
+  {
+    icon: '💬',
+    title: 'Chat With the Group',
+    body: 'Send text, photos, or videos to everyone in this event or program thread.',
+  },
+  {
+    icon: '🎙️',
+    title: 'Voice Messages',
+    body: 'No text field? Tap the mic to record and send a voice message with one tap.',
+  },
+  {
+    icon: '😀',
+    title: 'React to Messages',
+    body: 'Long-press any message to add an emoji reaction.',
+  },
+  {
+    icon: '✓✓',
+    title: 'Read Receipts',
+    body: 'The double checkmark and number under your messages show how many people have seen them.',
+  },
+];
+
 const EventChatScreen = ({ navigation, route }) => {
   const { userId } = useAuth();
   const styles = useThemedStyles(makeStyles);
@@ -106,6 +131,10 @@ const EventChatScreen = ({ navigation, route }) => {
   const chatTitle = route?.params?.title || route?.params?.eventTitle || 'Chat';
 
   const [messages, setMessages] = useState([]);
+  const [showTutorial, setShowTutorial] = useState(false);
+  useEffect(() => {
+    isTutorialDone('eventChat').then((d) => { if (!d) setShowTutorial(true); });
+  }, []);
   const [reactions, setReactions] = useState({}); // messageId -> [emoji]
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
@@ -597,6 +626,11 @@ const EventChatScreen = ({ navigation, route }) => {
           </View>
         </TouchableOpacity>
       </Modal>
+      <ScreenTutorial
+        visible={showTutorial}
+        steps={EVENT_CHAT_TUTORIAL_STEPS}
+        onFinish={() => { setShowTutorial(false); markTutorialDone('eventChat'); }}
+      />
     </SafeAreaView>
   );
 };

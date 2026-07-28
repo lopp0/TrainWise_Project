@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ScreenTutorial from '../components/ScreenTutorial';
+import { isTutorialDone, markTutorialDone } from '../utils/tutorialManager';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView,
 } from 'react-native';
@@ -79,6 +81,29 @@ const paceStr = (km, sec) => {
   return `${m}:${String(s === 60 ? 0 : s).padStart(2, '0')}/km`;
 };
 
+const LIVE_RUN_TUTORIAL_STEPS = [
+  {
+    icon: '🏃',
+    title: 'Pick Your Activity',
+    body: 'Before you start, choose what you are tracking — run, walk, cycle, trail, hike, and more, using the chips at the top.',
+  },
+  {
+    icon: '📍',
+    title: 'Start GPS Tracking',
+    body: 'Tap Start to begin. We will ask for location access so we can draw your route live on the map, even if you lock your screen.',
+  },
+  {
+    icon: '⏸️',
+    title: 'Pause or Stop',
+    body: 'Pause any time without losing your route. When you are done, tap the red Stop button to finish.',
+  },
+  {
+    icon: '✅',
+    title: 'Rate & Save',
+    body: 'Rate how hard the session felt, then tap Save workout to add it to your training log with the full route.',
+  },
+];
+
 const LiveRunScreen = ({ navigation, route }) => {
   const { userId } = useAuth();
   const styles = useThemedStyles(makeStyles);
@@ -89,6 +114,10 @@ const LiveRunScreen = ({ navigation, route }) => {
   const initialActivity = TRACK_ACTIVITIES.some((a) => a.id === presetActivity) ? presetActivity : 1;
 
   const [phase, setPhase] = useState('idle');   // idle | running | paused | review
+  const [showTutorial, setShowTutorial] = useState(false);
+  useEffect(() => {
+    isTutorialDone('liveRun').then((d) => { if (!d) setShowTutorial(true); });
+  }, []);
   const [points, setPoints] = useState([]);
   const [distanceKm, setDistanceKm] = useState(0);
   const [elapsed, setElapsed] = useState(0);
@@ -456,6 +485,11 @@ const LiveRunScreen = ({ navigation, route }) => {
           </View>
         )}
       </View>
+      <ScreenTutorial
+        visible={showTutorial}
+        steps={LIVE_RUN_TUTORIAL_STEPS}
+        onFinish={() => { setShowTutorial(false); markTutorialDone('liveRun'); }}
+      />
     </View>
   );
 };

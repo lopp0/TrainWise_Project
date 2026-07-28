@@ -36,10 +36,11 @@ namespace TrainWise.BL
             if (uid == 0) return null;
             string code = NewCode();
             _dal.CreateCode(uid, "reset", PasswordHasher.Hash(code), 15);
-            // Actually deliver it. No-op (returns false) until SMTP_* env vars are
-            // configured — see EmailSender. Before 2026-07-19 nothing was sent at
-            // all, which is why reset codes never arrived.
-            EmailSender.SendCode(addr, code, isReset: true);
+            // Actually deliver it via Maileroo. No-op (returns false) until the
+            // Maileroo:ApiKey secret is configured; see EmailService. Before
+            // 2026-07-19 nothing was sent at all, which is why reset codes never
+            // arrived.
+            EmailService.SendCode(addr, code, isReset: true);
             return code;
         }
 
@@ -59,8 +60,8 @@ namespace TrainWise.BL
 
         // #114 — issue a verification code for the given (already-known) user and
         // email it to the address on their profile. Delivery is best-effort: it is
-        // a no-op until the SMTP_* env vars are set (see EmailSender), which is
-        // exactly why verification emails never arrived before 2026-07-19.
+        // a no-op until the Maileroo:ApiKey secret is set (see EmailService), which
+        // is exactly why verification emails never arrived before 2026-07-19.
         public string RequestEmailVerification(int userId)
         {
             if (userId <= 0) throw new ArgumentException("UserID must be positive");
@@ -68,7 +69,7 @@ namespace TrainWise.BL
             _dal.CreateCode(userId, "verify", PasswordHasher.Hash(code), 60);
             var address = _userDal.GetUserById(userId)?.Email;
             if (!string.IsNullOrWhiteSpace(address))
-                EmailSender.SendCode(address, code, isReset: false);
+                EmailService.SendCode(address, code, isReset: false);
             return code;
         }
 
