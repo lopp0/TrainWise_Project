@@ -20,7 +20,7 @@ import { getAuthToken } from '../api/authToken';
  * little point in the ML service being reachable from anywhere. Usually keep both
  * on the same mode.
  */
-const ML_MODE = 'local'; // 'local' | 'azure'  ← flip this to switch
+const ML_MODE = 'azure'; // 'local' | 'azure'  ← flip this to switch
 
 // PC LAN IP for local mode. DHCP can shift it — re-check with
 // `ipconfig | findstr IPv4` and keep it in sync with LOCAL_PC_IP in

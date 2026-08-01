@@ -2,7 +2,7 @@ import React, { createContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { login as apiLogin } from './api';
 import { setActiveUserId } from '../utils/activeUser';
-import { setAuthToken, clearAuthToken, loadAuthToken } from './authToken';
+import { setAuthToken, clearAuthToken, loadAuthToken, setUnauthorizedHandler } from './authToken';
 import { isBiometricEnabled, isBiometricSupported } from '../utils/biometric';
 
 // Auth responses are now { token, user }. Older builds/paths may still return a
@@ -196,6 +196,21 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setIsLoading(false);
     }
+  }, []);
+
+  // Let the axios interceptors force a logout when the backend rejects the
+  // stored token (401). Without this a stale token — e.g. one minted by the
+  // LOCAL backend after switching BACKEND_MODE to 'azure' — left the app
+  // "logged in" on cached data while every request silently failed.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+      setActiveUserId(null);
+      setUser(null);
+      setLocked(false);
+      setError('Your session expired. Please sign in again.');
+    });
+    return () => setUnauthorizedHandler(null);
   }, []);
 
   /**

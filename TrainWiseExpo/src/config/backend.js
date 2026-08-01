@@ -16,7 +16,7 @@
  *   4. Set env vars JWT_KEY (any ≥32 chars) so login can mint tokens locally.
  *   5. Phone + PC on the same WiFi; verify the IP below with `ipconfig`.
  */
-export const BACKEND_MODE = 'local'; // 'local' | 'azure'  ← flip this to switch
+export const BACKEND_MODE = 'azure'; // 'local' | 'azure'  ← flip this to switch
 
 // PC LAN IP for local mode. DHCP can change it — re-check with
 // `ipconfig | findstr IPv4` and update here if API calls start timing out.
