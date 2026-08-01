@@ -45,14 +45,23 @@ export const computeInjuryRisk = (logs, experienceLevel, hasActiveInjury = false
   // We can give a read as soon as the ACWR is computable (which uses the FULL
   // history via the cold-start floor + chronic window, not just this week). Only
   // when there's no ratio at all is there truly nothing to show.
-  if (ratio == null) {
+  //
+  // A ratio of exactly 0 with no load in the whole rolling window is NOT
+  // "detraining" — it means there is nothing to measure (a fresh account, or the
+  // logs failed to load). Left unguarded it fell into the `ratio < 0.8` branch
+  // and rendered a misleading amber "50 · Elevated" against ACWR 0.00.
+  const windowLoad = (a.series || []).reduce(
+    (s, p) => s + (Number(p.dailyLoad) || 0),
+    0,
+  );
+  if (ratio == null || (ratio === 0 && windowLoad === 0)) {
     return {
       score: null,
       band: 'unknown',
-      ratio,
+      ratio: null,
       monotony: Math.round(monotony * 100) / 100,
       strain,
-      tip: 'Log a workout to get a risk read.',
+      tip: 'Not enough data yet — log a workout to get your injury-risk read.',
     };
   }
 

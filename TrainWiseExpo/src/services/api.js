@@ -1,12 +1,17 @@
 import axios from 'axios';
-import { getAuthToken } from '../api/authToken';
+import { getAuthToken, handleUnauthorized } from '../api/authToken';
 // Single source of truth for the backend URL — flip BACKEND_MODE in
 // src/config/backend.js to switch the whole app between Local‑LAN and Azure.
-import { API_BASE_URL } from '../config/backend';
+import { API_BASE_URL, BACKEND_MODE } from '../config/backend';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000,
+  // Azure: the free-tier App Service cold-starts AND the serverless Azure SQL
+  // auto-pauses after idle — the first request after a quiet period measured
+  // ~30s end-to-end (and returned 500 when the DB wake outran the timeout).
+  // 15s aborted it and surfaced as "Network Error" on the phone. Local LAN is
+  // fast, so keep it snappy there.
+  timeout: BACKEND_MODE === 'azure' ? 60000 : 15000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -18,6 +23,22 @@ api.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
+
+// A 401 means the stored token is no longer accepted — most often after
+// switching BACKEND_MODE (local and Azure sign with different JWT_KEYs), after
+// expiry, or after an Azure restart when JWT_KEY isn't pinned. Clear it and send
+// the user to Login instead of leaving every screen stuck on a spinner.
+// The login call itself is excluded: a 401 there just means wrong credentials.
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const url = err?.config?.url || '';
+    if (err?.response?.status === 401 && !/auth\/login|google-login/i.test(url)) {
+      handleUnauthorized();
+    }
+    return Promise.reject(err);
+  }
+);
 
 // ==================== USERS ====================
 export const getUserById = (userId) =>

@@ -2,17 +2,20 @@ import axios from 'axios';
 import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
-import { getAuthToken } from './authToken';
+import { getAuthToken, handleUnauthorized } from './authToken';
 // Single source of truth for the backend URL — flip BACKEND_MODE in
 // src/config/backend.js to switch the whole app between Local‑LAN and Azure.
-import { API_BASE_URL } from '../config/backend';
+import { API_BASE_URL, BACKEND_MODE } from '../config/backend';
 
 /**
  * Shared axios instance for all API calls to the TrainWise backend.
  * Attaches the signed JWT (when present) so the backend can verify identity.
  */
 const BASE_URL = API_BASE_URL;
-const API_TIMEOUT = 30000; // 30 seconds
+// Azure cold start (App Service wake + serverless Azure SQL resume) measured
+// ~30s on the first request after idle, so 30s was borderline and surfaced as
+// a "Network Error". Local LAN stays snappy. Mirrors services/api.js.
+const API_TIMEOUT = BACKEND_MODE === 'azure' ? 60000 : 30000;
 
 // Create axios instance with default config
 const apiClient = axios.create({
@@ -29,6 +32,20 @@ apiClient.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
+
+// Mirror of the 401 handling in services/api.js: a rejected token (mode switch,
+// expiry, Azure restart without a pinned JWT_KEY) clears the session and sends
+// the user to Login rather than hanging every screen on a spinner.
+apiClient.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const url = err?.config?.url || '';
+    if (err?.response?.status === 401 && !/login|google-login/i.test(url)) {
+      handleUnauthorized();
+    }
+    return Promise.reject(err);
+  }
+);
 
 // ============================================================================
 // AUTH ENDPOINTS
