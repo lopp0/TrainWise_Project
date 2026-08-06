@@ -35,6 +35,7 @@ import Avatar from '../components/Avatar';
 import ZoomableImage from '../components/ZoomableImage';
 import VideoPlayerModal from '../components/VideoPlayerModal';
 import { parseServerDate } from '../utils/serverDate';
+import { dayLabel, startsNewDay } from '../utils/chatDate';
 import { renderTextWithLinks, LINK_BLUE, LINK_BLUE_ON_ACCENT } from '../utils/linkify';
 import { Colors } from '../theme/colors';
 import { useThemedStyles } from '../theme/useThemedStyles';
@@ -392,7 +393,7 @@ const EventChatScreen = ({ navigation, route }) => {
     }
   };
 
-  const renderMsg = ({ item }) => {
+  const renderMsg = ({ item, index }) => {
     const mine = mSender(item) === userId;
     const id = mId(item);
     const text = mText(item);
@@ -404,8 +405,18 @@ const EventChatScreen = ({ navigation, route }) => {
     const audioUrl = audio ? resolveProfileImageUrl(audio) : null;
     const msgReactions = reactions[id] || [];
     const seenCount = mSeenCount(item);
+    // WhatsApp-style day separator above the first message of each day.
+    const at = (m) => m.createdAt ?? m.CreatedAt;
+    const prev = index > 0 ? messages[index - 1] : null;
+    const showDay = startsNewDay(at(item), prev ? at(prev) : null);
 
     return (
+      <>
+      {showDay && (
+        <View style={styles.dayChipRow}>
+          <Text style={styles.dayChipText}>{dayLabel(at(item))}</Text>
+        </View>
+      )}
       <View style={[styles.row, mine ? styles.rowMine : styles.rowTheir]}>
         {!mine && (
           <Avatar
@@ -512,6 +523,7 @@ const EventChatScreen = ({ navigation, route }) => {
           )}
         </View>
       </View>
+      </>
     );
   };
 
@@ -677,6 +689,14 @@ const makeStyles = (C) => StyleSheet.create({
 
   reactionRow: { flexDirection: 'row', gap: 3, marginTop: 2, paddingHorizontal: 4 },
   reactionChip: { fontSize: 13 },
+
+  // WhatsApp-style day separator between message groups.
+  dayChipRow: { alignItems: 'center', marginVertical: 10 },
+  dayChipText: {
+    color: C.textSecondary, fontSize: 11, fontWeight: '700',
+    backgroundColor: C.cardBackgroundLight,
+    paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, overflow: 'hidden',
+  },
 
   empty: { color: C.textMuted, textAlign: 'center', marginTop: 50, fontSize: 14, paddingHorizontal: 30, lineHeight: 20 },
 
