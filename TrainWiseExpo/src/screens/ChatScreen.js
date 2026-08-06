@@ -19,6 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import ZoomableImage from '../components/ZoomableImage';
 import VideoPlayerModal from '../components/VideoPlayerModal';
 import { renderTextWithLinks, LINK_BLUE, LINK_BLUE_ON_ACCENT } from '../utils/linkify';
+import { dayLabel, startsNewDay } from '../utils/chatDate';
 import {
   useAudioRecorder,
   RecordingPresets,
@@ -492,7 +493,7 @@ const ChatScreen = ({ route, navigation }) => {
     return bars;
   };
 
-  const renderItem = ({ item }) => {
+  const renderItem = ({ item, index }) => {
     const mine = mSender(item) === selfId;
     const text = mText(item);
     const img = mImage(item);
@@ -502,7 +503,16 @@ const ChatScreen = ({ route, navigation }) => {
     const video = mVideo(item);
     const videoUrl = video ? resolveProfileImageUrl(video) : null;
     const msgReactions = reactions[mId(item)] || [];
+    // WhatsApp-style day separator above the first message of each day.
+    const prev = index > 0 ? messages[index - 1] : null;
+    const showDay = startsNewDay(mSentAt(item), prev ? mSentAt(prev) : null);
     return (
+      <>
+      {showDay && (
+        <View style={styles.dayChipRow}>
+          <Text style={styles.dayChipText}>{dayLabel(mSentAt(item))}</Text>
+        </View>
+      )}
       <View style={[styles.bubbleRow, mine ? styles.rowMine : styles.rowTheirs]}>
         <View style={{ maxWidth: '80%' }}>
         <TouchableOpacity
@@ -613,6 +623,7 @@ const ChatScreen = ({ route, navigation }) => {
         )}
         </View>
       </View>
+      </>
     );
   };
 
@@ -919,6 +930,19 @@ const makeStyles = (C) =>
       paddingVertical: 2,
     },
     reactionChip: { fontSize: 13 },
+
+    // WhatsApp-style day separator between message groups.
+    dayChipRow: { alignItems: 'center', marginVertical: 10 },
+    dayChipText: {
+      color: C.textSecondary,
+      fontSize: 11,
+      fontWeight: '700',
+      backgroundColor: C.cardBackgroundLight,
+      paddingHorizontal: 12,
+      paddingVertical: 4,
+      borderRadius: 12,
+      overflow: 'hidden',
+    },
     reactBackdrop: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.5)',

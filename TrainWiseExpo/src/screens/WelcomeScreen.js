@@ -21,7 +21,11 @@ const FONT_SIZE = 14;
 const CONTAINER_SIZE = (CIRCLE_RADIUS + FONT_SIZE + 14) * 2;
 
 function CurvedText({ text, radius, curveUp, color = '#00e6c3' }) {
-  const chars = text.split('');
+  // The bottom arc sweeps right-to-left (cos decreases as the angle passes
+  // through +PI/2), so laying the string out in order renders it mirrored
+  // ("and your safety" -> "ytefas ruoy dna"). Reverse the characters for the
+  // bottom arc so they read left-to-right; the top arc is already correct.
+  const chars = curveUp ? text.split('') : text.split('').reverse();
   const charStep = (FONT_SIZE * 0.62) / radius;
   const totalAngle = charStep * chars.length;
   const cx = CONTAINER_SIZE / 2;
